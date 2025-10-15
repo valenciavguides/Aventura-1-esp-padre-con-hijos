@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audioguía Interactiva – Valencia</title>
+<style>
+  body{font-family:'Segoe UI',sans-serif;background:#f4f6f8;margin:0;text-align:center}
+  header{background:#0078d7;color:#fff;padding:15px 0;font-size:20px;font-weight:700}
+  main{max-width:900px;margin:20px auto;background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1);overflow:hidden}
+  img{width:100%;height:auto;display:block}
+  h2{color:#0060b6;margin:10px 0}
+  .controls{margin:20px 0}
+  button{background:#0078d7;color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:15px;margin:0 5px;cursor:pointer;transition:background .3s}
+  button:hover{background:#005fa3}
+  #status{margin:10px 0 20px;color:#555;font-style:italic;min-height:1.2em}
+</style>
+</head>
+<body>
+<header>🎧 Audioguía Interactiva – Valencia</header>
+
+<main>
+  <img id="foto" src="fotos_Av1/00_torres_de_serranos_back.jpg" alt="Imagen del punto">
+  <h2 id="titulo">Torres de Serranos</h2>
+
+  <!-- Reproductor sin <source> interno, gestionamos src por JS -->
+  <audio id="player" preload="auto" controls></audio>
+
+  <div class="controls">
+    <button id="prevBtn">⏮️ Anterior</button>
+    <button id="playPauseBtn">▶️ Reproducir</button>
+    <button id="nextBtn">⏭️ Siguiente</button>
+  </div>
+
+  <div id="status"></div>
+</main>
+
+<script>
+  // 👉 Asegúrate de tener estos dos ficheros reales en Av1_audio_esp/
+  //     Av1_audio_esp/test1.mp3
+  //     Av1_audio_esp/test2.mp3
+  //   (pueden ser cualquier MP3 que SUENE)
+  const tracks = [
+  { img:'fotos_Av1/00_torres_de_serranos_back.jpg', title:'Torres de Serranos', audio:'Av1_audio_esp/04 Av1 Pista 4 ESPAÑOL montada.mp3' },
+  { img:'fotos_Av1/02_cortes_valencianas.jpg', title:'Corts Valencianes ', audio:'Av1_audio_esp/05 Av1 Pista 4.1 ESPAÑOL montada.mp3' },
+  { img:'fotos_Av1/03_iglesia_de_san_lorenzo.jpg', title:'Iglesia de San Lorenzo', audio:'Av1_audio_esp/06 Av1 Pista 5 Español montada.mp3' },
+  { img:'fotos_Av1/04_plaza_de_la_virgen.jpg', title:'Plaza de la Virgen', audio:'Av1_audio_esp/07 Av1 Pista 5.1 ESPAÑOL montada.mp3' },
+  { img:'fotos_Av1/05_plaza_de_la_almoina.jpg', title:'Plaza de la Almoina', audio:'Av1_audio_esp/08 Av1 Pista 5.2 ESPAÑOL montada.mp3' }
+];
+
+
+  let index = 0;
+  const foto = document.getElementById('foto');
+  const titulo = document.getElementById('titulo');
+  const player = document.getElementById('player');
+  const status = document.getElementById('status');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+
+  function cacheBust(url){
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + 'v=' + Date.now();
+  }
+
+  function setStatus(msg){ status.textContent = msg || ''; }
+
+  function loadTrack(i){
+    const t = tracks[i];
+    foto.src = t.img;
+    titulo.textContent = t.title;
+
+    // Pausamos, reseteamos tiempo y asignamos src directo con cache-buster
+    player.pause();
+    try { player.currentTime = 0; } catch(e){}
+    player.src = cacheBust(t.audio);
+
+    // Eventos para diagnóstico de carga
+    const onCanPlay = () => { setStatus('Listo para reproducir: ' + t.title); cleanup(); };
+    const onError = () => {
+      let code = player.error ? player.error.code : 'desconocido';
+      let msg =
+        code === 1 ? 'MEDIA_ERR_ABORTED' :
+        code === 2 ? 'MEDIA_ERR_NETWORK' :
+        code === 3 ? 'MEDIA_ERR_DECODE (archivo dañado o códec raro)' :
+        code === 4 ? 'MEDIA_ERR_SRC_NOT_SUPPORTED (ruta/nombre/Mayúsculas-acentos)' :
+        'desconocido';
+      setStatus('⚠️ Error cargando audio (' + msg + '). Revisa nombre, carpeta y que el MP3 suene fuera del navegador.');
+      cleanup();
+    };
+    function cleanup(){
+      player.removeEventListener('canplay', onCanPlay);
+      player.removeEventListener('error', onError);
+    }
+    player.addEventListener('canplay', onCanPlay);
+    player.addEventListener('error', onError);
+
+    // Forzamos carga
+    player.load();
+    playPauseBtn.textContent = '▶️ Reproducir';
+  }
+
+  function togglePlay(){
+    if(player.paused){
+      player.play().then(()=>{
+        playPauseBtn.textContent = '⏸️ Pausar';
+        setStatus('🎵 Reproduciendo: ' + tracks[index].title);
+      }).catch(err=>{
+        // Si el navegador protesta, pedir segundo clic
+        setStatus('🔇 Pulsa otra vez para permitir sonido (gesto de usuario).');
+      });
+    }else{
+      player.pause();
+      playPauseBtn.textContent = '▶️ Reproducir';
+      setStatus('⏸️ Pausado');
+    }
+  }
+
+  function prev(){
+    if(index > 0){
+      index--; loadTrack(index);
+    }else{
+      setStatus('📍 Primer punto.');
+    }
+  }
+  function next(){
+    if(index < tracks.length - 1){
+      index++; loadTrack(index);
+    }else{
+      setStatus('🏁 Último punto.');
+    }
+  }
+
+  document.getElementById('prevBtn').addEventListener('click', prev);
+  document.getElementById('nextBtn').addEventListener('click', next);
+  playPauseBtn.addEventListener('click', togglePlay);
+
+  // Inicializa
+  loadTrack(index);
+</script>
+</body>
+</html>
