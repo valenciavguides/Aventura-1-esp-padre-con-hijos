@@ -1,172 +1,128 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🧠 Diagnóstico Total - PROM Maestro Automatizador</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico Total - Sistema PROM</title>
 <style>
-body{font-family:system-ui;background:#f5f7fa;margin:0;padding:1.5rem;color:#222;}
-h1{color:#0d47a1;text-align:center;}
-section{margin:1.5rem auto;padding:1rem;max-width:900px;border-radius:8px;}
+body{font-family:system-ui;background:#f5f9f6;margin:0;padding:1rem;color:#222;}
+h1{color:#00695c;}
+section{margin-bottom:2rem;padding:1rem;border-radius:8px;}
 .ok{background:#e8f7e8;border-left:6px solid #2e8b57;}
 .warn{background:#fff9e6;border-left:6px solid #e6b800;}
 .err{background:#ffe5e5;border-left:6px solid #c00;}
-li{margin:6px 0;}
-button{padding:0.6rem 1.2rem;margin:0.4rem;border:none;border-radius:6px;cursor:pointer;background:#1565c0;color:white;}
-button:hover{background:#1976d2;}
-.status{font-weight:bold;}
+button{background:#007bff;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;}
+button:hover{background:#005fcc;}
 </style>
 </head>
 <body>
 
-<h1>🧠 Diagnóstico Total - Sistema PROM</h1>
+<h1>🧩 Diagnóstico Total - Sistema PROM</h1>
 
-<section class="ok">
+<section id="js" class="warn">
   <h2>📦 Módulos JavaScript</h2>
-  <ul id="jsResults"></ul>
-  <button onclick="testJS()">Comprobar JS</button>
+  <ul id="js-results"></ul>
+  <button onclick="comprobarJS()">Comprobar JS</button>
 </section>
 
-<section class="ok">
-  <h2>⚙️ Estructura del Proyecto</h2>
-  <ul id="folders"></ul>
-  <button onclick="testFolders()">Comprobar carpetas</button>
+<section id="carpetas" class="warn">
+  <h2>🗂️ Estructura del Proyecto</h2>
+  <ul id="folders-results"></ul>
+  <button onclick="comprobarCarpetas()">Comprobar carpetas</button>
 </section>
 
-<section class="ok">
-  <h2>🧾 Archivos de Configuración</h2>
-  <ul id="configFiles"></ul>
-  <button onclick="testConfig()">Verificar .env y requisitos</button>
-</section>
-
-<section class="ok">
-  <h2>🎧 Recursos multimedia</h2>
-  <ul id="mediaResults"></ul>
-  <button onclick="testMedia()">Comprobar audios e imágenes</button>
-</section>
-
-<section class="ok">
-  <h2>📍 GPS y ubicación</h2>
-  <p id="gpsStatus" class="status">Esperando...</p>
-  <button onclick="testGPS()">Probar GPS</button>
+<section id="config" class="warn">
+  <h2>📘 Archivos de Configuración</h2>
+  <ul id="config-results"></ul>
+  <button onclick="comprobarConfig()">Comprobar configuración</button>
 </section>
 
 <script>
+const basePath = (()=>{
+  // Detecta si se está ejecutando local (file://) o remoto
+  if (location.protocol === 'file:') {
+    return './';  // entorno local o VS Code
+  } else {
+    const url = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+    return url;
+  }
+})();
+
 const jsFiles = [
-  "js/constants.js","js/logger.js","js/config.js",
-  "js/utils.js","js/funciones-mapa.js","js/eventos-usuario.js"
+  'constants.js','logger.js','config.js','utils.js',
+  'funciones-mapa.js','eventos-usuario.js'
 ];
 
-const folders = [
-  "src/","data/","outputs/","logs/","tests/"
-];
+async function comprobarJS() {
+  const ul = document.getElementById('js-results');
+  ul.innerHTML = '';
+  let errores = 0;
 
-const configFiles = [
-  "README.md","requirements.txt","env_example.txt",".env"
-];
-
-const mediaFiles = [
-  "Av1_audio_esp/03 Av1 Pista 3 ESPAÑOL.mp3",
-  "fotos_Av1/00_torres_de_serranos_back.jpg",
-  "mapas/Av1_mapa.png"
-];
-
-// === TEST DE JS ===
-async function testJS(){
-  const ul=document.getElementById("jsResults");
-  ul.innerHTML="";
-  for(const f of jsFiles){
-    const li=document.createElement("li");
-    try{
-      const r=await fetch(f,{cache:"no-store"});
-      if(!r.ok) throw new Error();
-      li.textContent="✅ "+f+" cargado correctamente";
-      li.style.color="green";
-    }catch(e){
-      li.textContent="⚠️ "+f+" no encontrado o inaccesible";
-      li.style.color="orange";
+  for (const file of jsFiles) {
+    const li = document.createElement('li');
+    try {
+      const path = `${basePath}js/${file}`;
+      const r = await fetch(path, {cache:'no-store'});
+      if (!r.ok) throw new Error();
+      li.textContent = `✅ ${file} accesible`;
+      li.style.color = 'green';
+    } catch {
+      li.textContent = `⚠️ ${file} no encontrado o inaccesible (${basePath}js/${file})`;
+      li.style.color = 'orange';
+      errores++;
     }
     ul.appendChild(li);
   }
+  document.getElementById('js').className = errores ? 'warn' : 'ok';
 }
 
-// === TEST DE CARPETAS ===
-async function testFolders(){
-  const ul=document.getElementById("folders");
-  ul.innerHTML="";
-  for(const folder of folders){
-    const li=document.createElement("li");
-    try{
-      const r=await fetch(folder);
-      if(!r.ok) throw new Error();
-      li.textContent="✅ Carpeta '"+folder+"' accesible";
-      li.style.color="green";
-    }catch(e){
-      li.textContent="⚠️ Carpeta '"+folder+"' no encontrada (verifica estructura)";
-      li.style.color="orange";
-    }
+function comprobarCarpetas() {
+  const expected = ['src/','data/','outputs/','logs/','tests/'];
+  const ul = document.getElementById('folders-results');
+  ul.innerHTML = '';
+  let errores = 0;
+
+  expected.forEach(folder=>{
+    const li=document.createElement('li');
+    li.textContent = `⚠️ Carpeta '${folder}' no encontrada (verifica estructura)`;
+    li.style.color='orange';
     ul.appendChild(li);
-  }
+    errores++;
+  });
+
+  document.getElementById('carpetas').className = errores ? 'warn' : 'ok';
 }
 
-// === TEST DE CONFIGURACIÓN ===
-async function testConfig(){
-  const ul=document.getElementById("configFiles");
-  ul.innerHTML="";
-  for(const f of configFiles){
-    const li=document.createElement("li");
-    try{
-      const r=await fetch(f,{cache:"no-store"});
-      if(!r.ok) throw new Error();
-      li.textContent="✅ "+f+" disponible";
-      li.style.color="green";
-    }catch(e){
-      li.textContent="⚠️ "+f+" no localizado";
-      li.style.color="orange";
-    }
-    ul.appendChild(li);
-  }
-}
+function comprobarConfig() {
+  const files = ['README.md','requirements.txt','env_example.txt','.env'];
+  const ul = document.getElementById('config-results');
+  ul.innerHTML = '';
+  let errores = 0;
 
-// === TEST MULTIMEDIA ===
-async function testMedia(){
-  const ul=document.getElementById("mediaResults");
-  ul.innerHTML="";
-  for(const f of mediaFiles){
-    const li=document.createElement("li");
-    try{
-      const r=await fetch(f,{cache:"no-store"});
-      if(!r.ok) throw new Error();
-      li.textContent="✅ "+f+" accesible";
-      li.style.color="green";
-    }catch(e){
-      li.textContent="⚠️ "+f+" no disponible o faltante";
-      li.style.color="orange";
-    }
-    ul.appendChild(li);
-  }
-}
-
-// === TEST GPS ===
-function testGPS(){
-  const status=document.getElementById("gpsStatus");
-  if("geolocation" in navigator){
-    navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const {latitude,longitude}=pos.coords;
-        status.textContent=`✅ GPS activo (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-        status.style.color="green";
-      },
-      err=>{
-        status.textContent="⚠️ No se pudo obtener ubicación ("+err.message+")";
-        status.style.color="orange";
+  files.forEach(file=>{
+    const li=document.createElement('li');
+    const path=`${basePath}${file}`;
+    fetch(path,{cache:'no-store'}).then(r=>{
+      if(r.ok){
+        li.textContent=`✅ ${file} disponible`;
+        li.style.color='green';
+      } else {
+        li.textContent=`⚠️ ${file} no localizado`;
+        li.style.color='orange';
+        errores++;
       }
-    );
-  }else{
-    status.textContent="❌ Este navegador no soporta geolocalización";
-    status.style.color="red";
-  }
+      ul.appendChild(li);
+    }).catch(()=>{
+      li.textContent=`⚠️ ${file} no localizado`;
+      li.style.color='orange';
+      ul.appendChild(li);
+      errores++;
+    });
+  });
+
+  setTimeout(()=>{document.getElementById('config').className = errores ? 'warn' : 'ok';},1000);
 }
 </script>
+
 </body>
 </html>
