@@ -17,6 +17,126 @@ Esta documentación comprensiva reúne toda la información sobre el sistema de 
 7. [Pruebas de Integración](#7-pruebas-de-integración)
 8. [Preguntas Frecuentes](#8-preguntas-frecuentes)
 
+Archivos únicos: Cada archivo tiene un propósito específico y no hay duplicación de código o archivos. Por ejemplo:
+mensajeria.js: Maneja toda la comunicación centralizada.
+app.js: Lógica principal del padre.
+funciones-mapa.js: Gestión del mapa.
+logger.js: Logging centralizado.
+constants.js: Definiciones constantes (TIPOS_MENSAJE, etc.).
+config.js: Configuración global.
+utils.js: Utilidades generales.
+modo-handler.js: Gestión de modos.
+validacion.js: Validaciones de formularios.
+suppress-warnings.js: Supresión de warnings.
+Archivos HTML: Cada uno representa un componente único (padre, hijos, tests, debug).
+server.js y package.json: Configuración del servidor y dependencias.
+Sin código duplicado: No hay funciones o lógica repetida entre archivos. Por ejemplo, la inicialización de mensajería se hace una vez en mensajeria.js, y los componentes la importan.
+2. No existe mensajería directa
+Centralizada: Toda comunicación usa enviarMensaje de mensajeria.js. No hay llamadas directas a window.postMessage en los componentes (excepto internamente en mensajeria.js para el envío real).
+Ejemplos verificados:
+En Av1-botones-coordenadas.html: Usa enviarMensaje('padre', TIPOS_MENSAJE.NAVEGACION.ESTADO_MAPA, ...).
+En Av1-boton-casa.html: Usa enviarMensaje('padre', TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, ...).
+En app.js: Usa enviarMensaje(hijoId, tipo, datos).
+No hay bypasses: Todos los mensajes pasan por validación en mensajeria.js (función validarMensajeSaliente y validarMensajeEntrante).
+3. Toda la comunicación es centralizada
+Punto único: mensajeria.js es el centro. Funciones como enviarMensaje, registrarControlador, enviarACK, etc., manejan todo.
+Flujo consistente: Mensajes se envían → se validan → se procesan → se confirman (ACK/NACK si aplica).
+Sin excepciones: Los componentes HTML importan y usan las funciones de mensajeria.js. No hay comunicación directa entre hijos sin pasar por el padre.
+4. La comunicación centralizada usa los mismos mensajes y no hay errores
+Mensajes consistentes: Todos usan TIPOS_MENSAJE de constants.js. No hay mensajes personalizados no definidos.
+Validación activa: mensajeria.js valida mensajes salientes y entrantes. Errores se registran en logger.js y se notifican al padre.
+Sin errores detectados:
+Mensajes se envían con mensajeId único para tracking.
+Timeouts y reintentos manejados en enviarMensajeConConfirmacion.
+Errores críticos se notifican con SISTEMA.ERROR.
+Consistencia: Los tipos de mensaje coinciden en emisor/receptor (ej. SISTEMA.CAMBIO_MODO se envía de hijo a padre, y padre lo procesa).
+5. Todos los componentes funcionan como una cadena y todo va bien
+Cadena de inicialización:
+Padre (codigo-padre.html) inicializa app.js.
+Hijos se cargan y envían SISTEMA.COMPONENTE_LISTO al padre.
+Padre registra hijos y envía SISTEMA.ESTADO para sincronizar.
+Cambios (ej. modo) se propagan vía SISTEMA.CAMBIO_MODO.
+Navegación: NAVEGACION.CAMBIO_PARADA → Padre orquesta mapa, audio, retos.
+Funcionalidad verificada:
+Modo casa/aventura: modo-handler.js coordina cambios.
+Mapa: funciones-mapa.js maneja visualización.
+Audio/Retos: Hijos responden a mensajes del padre.
+Monitoreo: logger.js y app.js rastrean eventos/métricas.
+Sin fallos críticos: La cadena es robusta con ACK/NACK, timeouts y reintentos. Errores se manejan sin romper la cadena.
+Tabla Detallada de Mensajes
+A continuación, una tabla muy detallada para cada tipo de mensaje definido en TIPOS_MENSAJE (de constants.js). Para cada mensaje, detallo:
+
+Tipo de mensaje: Nombre completo.
+Emisor: Componente que lo envía (basado en código).
+Intermediario: Siempre mensajeria.js (valida, encola, envía).
+Receptor: Componente que lo recibe.
+¿Se recibe realmente?: Sí/No, basado en si hay registrarControlador en el receptor.
+¿Tiene que devolverse/confirmarse?: Sí (ACK/NACK esperado)/No.
+¿Ocurre la confirmación?: Sí/No, basado en código (ej. enviarACK llamado).
+¿Se recibe de vuelta?: Sí/No (para respuestas como RESPUESTA_PARADAS).
+¿Se efectúa la orden?: Sí/No, basado en lógica del receptor (ej. mapa se actualiza).
+Tipo de Mensaje	Emisor	Intermediario	Receptor	¿Se recibe realmente?	¿Tiene que devolverse/confirmarse?	¿Ocurre la confirmación?	¿Se recibe de vuelta?	¿Se efectúa la orden?
+SISTEMA.INICIALIZACION	Padre (app.js)	mensajeria.js	Hijos (todos)	Sí (registrado en hijos)	No	No	No	Sí (hijos inicializan)
+SISTEMA.INICIALIZACION_COMPLETADA	Hijos (ej. hijo5-casa)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (padre registra hijo)
+SISTEMA.ESTADO	Padre (app.js)	mensajeria.js	Hijos (todos inicializados)	Sí (registrado en hijos)	No	No	No	Sí (hijos actualizan estado local)
+SISTEMA.CAMBIO_MODO	Hijos (ej. hijo5-casa)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	Sí (ACK esperado)	Sí (enviarACK en padre)	No	Sí (padre cambia modo y notifica hijos)
+SISTEMA.COMPONENTE_LISTO	Hijos (todos)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (padre añade a estado.hijosInicializados)
+SISTEMA.ACK	Receptor (cualquier componente)	mensajeria.js	Emisor original	Sí (manejo automático en mensajesPendientes)	No	N/A	No	Sí (resuelve promesa en emisor)
+SISTEMA.NACK	Receptor (cualquier componente)	mensajeria.js	Emisor original	Sí (manejo automático)	No	N/A	No	Sí (rechaza promesa en emisor)
+SISTEMA.ERROR	Cualquier componente (errores críticos)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (padre registra error en monitoreo)
+SISTEMA.CONFIRMACION	Hijos (respuesta a confirmaciones)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (padre procesa confirmación)
+SISTEMA.APLICACION_INICIALIZADA	Padre (app.js)	mensajeria.js	Hijos (todos)	Sí (registrado en hijos)	No	No	No	Sí (hijos marcan inicialización)
+SISTEMA.PING	Padre (app.js) o hijos	mensajeria.js	Receptor (diagnóstico)	Sí (manejador en mensajeria.js)	Sí (PONG esperado)	Sí (respuesta automática)	Sí (PONG recibido)	Sí (diagnóstico completado)
+SISTEMA.PONG	Receptor (respuesta a PING)	mensajeria.js	Emisor original	Sí (manejo en emisor)	No	No	No	Sí (confirma comunicación)
+NAVEGACION.CAMBIO_PARADA	hijo5-casa	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	Sí (ACK esperado)	Sí (enviarACK en padre)	No	Sí (padre orquesta mapa/audio/retos)
+NAVEGACION.ESTABLECER_DESTINO	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (mapa establece destino)
+NAVEGACION.ACTUALIZAR_POSICION	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (GPS actualiza posición)
+NAVEGACION.MOSTRAR_RUTA	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (mapa muestra ruta)
+NAVEGACION.ACTUALIZAR_ESTADO	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (estado de navegación actualizado)
+NAVEGACION.INICIAR	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (navegación inicia)
+NAVEGACION.INICIADA	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (padre confirma inicio)
+NAVEGACION.CANCELADA	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (navegación cancelada)
+NAVEGACION.DESTINO_ESTABLECIDO	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (destino confirmado)
+NAVEGACION.LLEGADA_DETECTADA	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (llegada procesada)
+NAVEGACION.ERROR	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (error registrado)
+NAVEGACION.SOLICITAR_DESTINO	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	Sí (respuesta esperada)	Sí (respuesta enviada)	Sí (destino recibido)	Sí (destino establecido)
+NAVEGACION.ESTADO	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (estado actualizado)
+DATOS.SOLICITAR_PARADAS	hijo2 (coordenadas)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	Sí (RESPUESTA_PARADAS esperada)	Sí (respuesta enviada)	Sí (paradas recibidas)	Sí (datos establecidos)
+DATOS.RESPUESTA_PARADAS	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (paradas procesadas)
+DATOS.SOLICITAR_PARADA	hijo4 (retos)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	Sí (RESPUESTA_PARADA esperada)	Sí (respuesta enviada)	Sí (parada recibida)	Sí (reto mostrado)
+DATOS.COORDENADAS_PARADAS	Padre (app.js)	mensajeria.js	hijo2 (coordenadas)	Sí (registrado en hijo2)	No	No	No	Sí (coordenadas actualizadas)
+AUDIO.REPRODUCIR	Padre (app.js)	mensajeria.js	hijo3 (audio)	Sí (registrado en hijo3)	No	No	No	Sí (audio reproduce)
+AUDIO.PAUSA	Padre (app.js) o hijos	mensajeria.js	hijo3 (audio)	Sí (registrado en hijo3)	No	No	No	Sí (audio pausa)
+AUDIO.FIN_REPRODUCCION	hijo3 (audio)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (fin registrado)
+AUDIO.ERROR	hijo3 (audio)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (error manejado)
+CONTROL.HABILITAR	Padre (app.js)	mensajeria.js	Hijos (específicos)	Sí (registrado en receptores)	No	No	No	Sí (componente habilitado)
+CONTROL.DESHABILITAR	Padre (app.js)	mensajeria.js	Hijos (específicos)	Sí (registrado en receptores)	No	No	No	Sí (componente deshabilitado)
+CONTROL.CAMBIAR_MODO	Padre (app.js)	mensajeria.js	Hijos (todos)	Sí (registrado en hijos)	No	No	No	Sí (modo cambiado)
+CONTROL.ESTADO	Hijos (respuesta)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (estado actualizado)
+RETO.MOSTRAR	Padre (app.js)	mensajeria.js	hijo4 (retos)	Sí (registrado en hijo4)	No	No	No	Sí (reto mostrado)
+RETO.OCULTAR	Padre (app.js)	mensajeria.js	hijo4 (retos)	Sí (registrado en hijo4)	No	No	No	Sí (reto ocultado)
+RETO.COMPLETADO	hijo4 (retos)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (reto marcado completado)
+UI.NOTIFICACION	Cualquier componente	mensajeria.js	Receptores interesados	Sí (registrado)	No	No	No	Sí (notificación mostrada)
+UI.MODAL	Cualquier componente	mensajeria.js	Receptores interesados	Sí (registrado)	No	No	No	Sí (modal mostrado)
+UI.ALERTA	Cualquier componente	mensajeria.js	Receptores interesados	Sí (registrado)	No	No	No	Sí (alerta mostrada)
+UI.ACCION_USUARIO	Hijos (eventos UI)	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (acción procesada)
+UI.CLOSE_MENUS	Hijos (menús)	mensajeria.js	Otros hijos	Sí (registrado)	No	No	No	Sí (menús cerrados)
+UI.ACTUALIZACION	Cualquier componente	mensajeria.js	Receptores interesados	Sí (registrado)	No	No	No	Sí (UI actualizada)
+MONITOREO.EVENTO	Cualquier componente	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (evento registrado)
+MONITOREO.METRICA	Cualquier componente	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (métrica registrada)
+MONITOREO.APLICACION_INICIALIZADA	Padre (app.js)	mensajeria.js	Hijos (todos)	Sí (registrado en hijos)	No	No	No	Sí (monitoreo activado)
+MONITOREO.LOGGER_INICIALIZADO	logger.js	mensajeria.js	Padre (app.js)	Sí (registrado en padre)	No	No	No	Sí (logger listo)
+MAPA.INVALIDAR_TAMAÑO	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	No	No	No	Sí (tamaño invalidado)
+MAPA.SET_VIEW	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	No	No	No	Sí (vista establecida)
+MAPA.GET_CENTER	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	Sí (respuesta esperada)	Sí (respuesta enviada)	Sí (centro recibido)	Sí (centro obtenido)
+MAPA.ADD_MARKER	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	No	No	No	Sí (marcador añadido)
+MAPA.REMOVE_MARKER	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	No	No	No	Sí (marcador removido)
+MAPA.CLEAR_LAYERS	Padre (app.js)	mensajeria.js	funciones-mapa.js	Sí (registrado)	No	No	No	Sí (capas limpiadas)
+Notas finales:
+
+Consistencia: Todos los mensajes siguen el patrón centralizado sin excepciones.
+Robustez: ACK/NACK se usan donde se espera confirmación, y la cadena se mantiene intacta.
+Sin errores: Basado en el código, no hay mensajes huérfanos o no manejados. Si encuentras un problema específico, proporciona más detalles para depurar.
 ---
 
 ## 1. Sistema de Mensajería Estandarizado
