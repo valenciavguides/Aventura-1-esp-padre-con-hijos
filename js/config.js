@@ -5,75 +5,45 @@
 
 import { LOG_LEVELS } from './constants.js';
 
-// Helper function for environment detection in browsers
-function isDevelopmentMode() {
-    // Browser environment check instead of process.env
-    if (typeof window !== 'undefined') {
-        return window.__DEV__ === true || 
-               window.location.hostname === 'localhost' || 
-               window.location.hostname === '127.0.0.1';
-    }
-    return false;
-}
-
 /**
  * Configuración de la aplicación
  */
 export const CONFIG = {
     // Configuración general
-    DEBUG: isDevelopmentMode(),
-    LOG_LEVEL: isDevelopmentMode() ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO,
+    DEBUG: true,
+    LOG_LEVEL: LOG_LEVELS.DEBUG,
     ID_PADRE: 'codigo-padre', // Confirmado: ID coincide con el iframe real del padre
-    IFRAME_ID: 'padre',
+    IFRAME_ID: 'hijo4',
     
     // Configuración de iframes
     HIJOS: {
+        HAMBURGUESA: { id: 'hijo1-hamburguesa', nombre: 'Menú Hamburguesa' },
+        OPCIONES: { id: 'hijo1-opciones', nombre: 'Menú Opciones' },
         CASA: { id: 'hijo5-casa', nombre: 'Botón Casa' },
         COORDENADAS: { id: 'hijo2', nombre: 'Coordenadas' },
         AUDIO: { id: 'hijo3', nombre: 'Audio' },
         RETOS: { id: 'hijo4', nombre: 'Retos' } // Confirmado: ID coincide con el iframe real
     },
     
-    // Configuración de reintentos
-    REINTENTOS: {
-        maximos: 3,
-        tiempoEspera: 1000,
-        factor: 2
-    },
-    
-    // Configuración del sistema de mensajería
+    // Configuración de mensajería
     MENSAJERIA: {
-        // Valores por defecto
-        iframeId: 'unknown',
-        logLevel: isDevelopmentMode() ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO,
-        debug: isDevelopmentMode(),
-        reintentos: {
-            maximos: 3,
-            tiempoEspera: 1000,
-            factor: 2
+        // Configuración de reintentos
+        REINTENTOS: {
+            MAXIMOS: 3,
+            TIEMPO_ESPERA: 1000,
+            FACTOR: 2
         },
-        // Tiempo de limpieza de instancias inactivas (ms)
-        tiempoLimpieza: 15 * 60 * 1000, // 15 minutos
-        tiempoInactividad: 30 * 60 * 1000, // 30 minutos
         
-        // Configuración de la cola de mensajes pendientes
-        COLA_PENDIENTES: {
-            // Máximo de mensajes en la cola
-            MAXIMO: 50,
-            // Máximo de mensajes urgentes en la cola
-            MAX_URGENTES: 10,
-            // Intervalo entre procesamiento de la cola (ms)
-            INTERVALO: 5000,
-            // Número de mensajes a procesar en cada lote
-            LOTE: 5,
-            // Factor de backoff exponencial para reintentos
-            FACTOR_BACKOFF: 1.5,
-            // Retraso base para reintentos (ms)
-            RETRASO_BASE: 1000,
-            // Retraso máximo para reintentos (ms)
-            MAX_RETRASO: 30000,
-            // Edad máxima de un mensaje en cola (ms) - 24 horas por defecto
-            MAX_EDAD_MS: 24 * 60 * 60 * 1000
+        // Límites de mensajería
+        LIMITES: {
+            MAX_MENSAJES_PADRE: 100,
+            THROTTLE_TIMEOUT: 2000
+        },
+        
+        // Tiempos de espera
+        TIMEOUTS: {
+            CONFIRMACION: 10000,  // Increased from 5000ms to 10000ms for initial messages
+            RESPUESTA: 10000     // 10 segundos para respuesta
         }
     },
     
@@ -83,17 +53,21 @@ export const CONFIG = {
         ZOOM: 13,
         MIN_ZOOM: 12,
         MAX_ZOOM: 18,
-        ZOOM_CONTROL: false
+        ZOOM_CONTROL: true // Habilitado
     }
 };
 
-// Exportar constantes y configuración
-export { LOG_LEVELS };
-
-// Exportar CONFIG como predeterminado para facilitar importación
-export default CONFIG;
-
-// Proporcionar acceso global para compatibilidad con versiones anteriores del código
-if (typeof window !== 'undefined') {
-    window.Config = { CONFIG, LOG_LEVELS };
+// Cambiar las exportaciones para usar CommonJS si ES6 no es compatible
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = CONFIG;
+} else {
+    window.Config = CONFIG;
 }
+
+// Mapa centralizado de tipos de datos por hijo para consultas homogéneas
+export const MAPA_TIPOS_HIJO = {
+    'hijo2': 'COORDENADAS',
+    'hijo3': 'AUDIO', 
+    'hijo4': 'RETOS',
+    'hijo5-casa': 'PARADAS'
+};
