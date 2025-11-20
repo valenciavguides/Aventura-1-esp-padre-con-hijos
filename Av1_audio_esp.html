@@ -82,7 +82,7 @@
             height: var(--btn-size);
             border-radius: 50%;
             border: none;
-            background: linear-gradient(135deg, #28a745, #1e7e34);
+            background: linear-gradient(to right, #28a745, #218838);
             color: white;
             font-size: var(--icon-size);
             display: flex;
@@ -104,16 +104,10 @@
             transform: scale(0.95); 
         }
 
-        #playPauseBtn.active {
-            background: linear-gradient(135deg, #28a745, #1e7e34);
-            border: none;
-        }
-
         #playPauseBtn:disabled { 
-            background: linear-gradient(135deg, #dc3545, #c82333);
+            background: linear-gradient(to right, #dc3545, #c82333);
             opacity: 0.6;
             cursor: not-allowed; 
-            border: none;
         }
 
         #retosBtn {
@@ -121,7 +115,7 @@
             height: var(--btn-size);
             border-radius: 50%;
             border: none;
-            background: linear-gradient(135deg, #dc3545, #c82333);
+            background: linear-gradient(to right, #28a745, #218838);
             color: white;
             font-size: var(--icon-size);
             display: flex;
@@ -140,7 +134,7 @@
         }
 
         #retosBtn:disabled { 
-            background: linear-gradient(135deg, #999, #666);
+            background: linear-gradient(to right, #dc3545, #c82333);
             cursor: not-allowed; 
             opacity: 0.6;
         }
@@ -219,20 +213,57 @@
             font-variant-numeric: tabular-nums;
         }
 
-        /* Estilos para el modo casa (ocultar controles) */
-        body.modo-casa .audio-player-controls {
-            display: none;
+        /* Estilos para los botones del hijo3 */
+        #hijo3 .boton {
+            transition: background 0.3s ease, color 0.3s ease;
+            background: none; /* Se asegura que no haya colores adicionales */
         }
 
-        /* Estilos para el modo aventura (mostrar controles) */
+        /* Botón habilitado: degradado verde */
+        #hijo3 .boton.habilitado {
+            background: linear-gradient(to right, #28a745, #218838);
+            color: white;
+        }
+
+        /* Botón deshabilitado: degradado rojo */
+        #hijo3 .boton.deshabilitado {
+            background: linear-gradient(to right, #dc3545, #c82333);
+            color: white;
+        }
+
+        /* Estilos para el modo casa (controles completamente visibles y habilitados) */
+        body.modo-casa .audio-player-controls {
+            display: flex;
+            opacity: 1;
+        }
+
+        body.modo-casa #playPauseBtn,
+        body.modo-casa #retosBtn {
+            background: linear-gradient(to right, #28a745, #218838) !important;
+            opacity: 1 !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+
+        body.modo-casa #playPauseBtn:disabled,
+        body.modo-casa #retosBtn:disabled {
+            background: linear-gradient(to right, #28a745, #218838) !important;
+            opacity: 1 !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+
+        /* Estilos para el modo aventura (controles normales) */
         body.modo-aventura .audio-player-controls {
             display: flex;
+            opacity: 1;
         }
     </style>
 </head>
 <body class="modo-aventura hijo3-container">
+    <!-- ARRAY DE AUDIOS - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear audioId a archivos MP3. Cualquier cambio debe coordinarse con el padre. -->
     <script type="module">
-       // Array de audios correspondientes a las paradas y tramos del recorrido
+        // Array de audios correspondientes a las paradas y tramos del recorrido
         // Usando P- para paradas y TR- para tramos, coincidiendo con los IDs del hijo 2
         const audioFiles = [
             // Parada 0 - Inicio
@@ -600,7 +631,7 @@
             },
             
             // Parada 33: Lonja Gárgolas fornicador ventana
-            { 
+           { 
                 id: "audio-P-33", 
                 title: "Parada 33: Lonja - Gárgola del fornicador en ventana", 
                 file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
@@ -655,15 +686,15 @@
                 file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
             }
         ];
-
     </script>
+    
     <div class="audio-player-controls">
         <div class="player-buttons-row">
             <button id="playPauseBtn" aria-label="Reproducir/Pausar">
                 <i class="fas fa-play icon-play"></i>
             </button>
             <button id="retosBtn" aria-label="Retos">
-                <i class="fas fa-puzzle-piece icon-puzzle"></i>
+                <span class="icon-puzzle">🧩</span>
             </button>
         </div>
         <div class="progress-row">
@@ -682,399 +713,555 @@
     </audio>
 
     <script type="module">
-        // Importar utilidades y mensajería
-        import logger from './js/logger.js';
-        import { 
-            inicializarMensajeria, 
-            registrarControlador, 
-            enviarMensaje,
-            enviarACK,
-            enviarNACK
-        } from './js/mensajeria.js';
-        import { TIPOS_MENSAJE } from './js/constants.js';
-        import { modoHandler } from './js/modo-handler.js';
-        
-        // =================================================================================
-        // CONFIGURACIÓN
-        // =================================================================================
-        const CONFIG = {
-            IFRAME_ID: 'hijo3',
-            COMPONENTE_ID: 'AUDIO_PLAYER',
-            DEBUG: true,
-            LOG_LEVEL: 1, // 0: debug, 1: info, 2: warn, 3: error, 4: none
-            REINTENTOS: {
-                MAXIMOS: 3,
-                TIEMPO_ESPERA: 2000,
-                FACTOR: 2
-            }
-        };
-        
-        // Alias para compatibilidad
-        const IFRAME_ID = CONFIG.IFRAME_ID;
-        
-        // Inicializar el sistema de mensajería
-        console.log(`[${CONFIG.IFRAME_ID}] Inicializando sistema de mensajería...`);
-        await inicializarMensajeria({
-            ...CONFIG.MENSAJERIA,
-            iframeId: CONFIG.IFRAME_ID
-        });
-        console.log(`[${CONFIG.IFRAME_ID}] Sistema de mensajería inicializado correctamente`);
-        
-        // =================================================================================
-        // FUNCIONES DE MENSAJERÍA MEJORADAS
-        // =================================================================================
-        
-        /**
-         * Envía un mensaje con confirmación ACK/NACK
-         * @param {string} destino - Destino del mensaje ('padre' o ID de iframe)
-         * @param {string} tipo - Tipo de mensaje
-         * @param {Object} datos - Datos del mensaje
-         * @param {Object} opciones - Opciones de envío
-         * @returns {Promise<Object>} Respuesta del destinatario
-         */
-        async function enviarMensajeConACK(destino, tipo, datos, opciones = {}) {
-            const config = {
-                timeout: opciones.timeout || CONFIG.REINTENTOS.TIEMPO_ESPERA,
-                reintentos: opciones.reintentos || CONFIG.REINTENTOS.MAXIMOS,
-                silencioso: opciones.silencioso || false,
-                ...opciones
-            };
+    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
 
-            if (!destino || !tipo) {
-                throw new Error('Se requieren destino y tipo de mensaje');
-            }
+    const CONFIG_HIJO = {
+        IFRAME_ID: 'hijo3',
+        COMPONENTE_ID: 'AUDIO',
+        DEBUG: true
+    };
 
-            const solicitudId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            const mensaje = {
-                tipo,
-                datos: {
-                    ...datos,
-                    solicitudId,
-                    timestamp: new Date().toISOString(),
-                    origen: CONFIG.IFRAME_ID
-                }
-            };
+    let currentAudioId = null;
 
-            let ultimoError = null;
+    // Funciones de reproductor (fusionadas y adaptadas)
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
 
-            for (let intento = 1; intento <= config.reintentos; intento++) {
-                try {
-                    console.log(`📤 [${CONFIG.IFRAME_ID}] Enviando mensaje (${solicitudId}) [${intento}/${config.reintentos}]:`, { tipo, destino });
-
-                    const respuesta = await new Promise((resolve, reject) => {
-                        const timeoutId = setTimeout(() => {
-                            reject(new Error(`Tiempo de espera agotado (${config.timeout}ms)`));
-                        }, config.timeout);
-
-                        const manejarRespuesta = (event) => {
-                            if (event.data?.tipo === 'SISTEMA.ACK' &&
-                                event.data?.datos?.solicitudId === solicitudId) {
-                                clearTimeout(timeoutId);
-                                window.removeEventListener('message', manejarRespuesta);
-                                resolve(event.data);
-                            } else if (event.data?.tipo === 'SISTEMA.NACK' &&
-                                     event.data?.datos?.solicitudId === solicitudId) {
-                                clearTimeout(timeoutId);
-                                window.removeEventListener('message', manejarRespuesta);
-                                const error = new Error(event.data.datos.mensaje || 'Error en el servidor');
-                                error.codigo = event.data.datos.codigo || 'NACK_RECIBIDO';
-                                error.detalles = event.data.datos.detalles;
-                                reject(error);
-                            }
-                        };
-
-                        window.addEventListener('message', manejarRespuesta, false);
-
-                        try {
-                            window.parent.postMessage(mensaje, '*');
-                        } catch (error) {
-                            clearTimeout(timeoutId);
-                            window.removeEventListener('message', manejarRespuesta);
-                            reject(new Error(`Error al enviar mensaje: ${error.message}`));
-                        }
-                    });
-
-                    console.log(`✅ [${CONFIG.IFRAME_ID}] ACK recibido para ${solicitudId}`, respuesta);
-                    return respuesta.datos;
-
-                } catch (error) {
-                    ultimoError = error;
-                    if (config.onRetry && intento < config.reintentos) {
-                        config.onRetry(intento, config.reintentos);
-                    }
-                    if (intento < config.reintentos) {
-                        const delay = Math.min(1000 * Math.pow(2, intento - 1), 10000);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            }
-
-            if (!config.silencioso) {
-                console.error(`❌ [${CONFIG.IFRAME_ID}] No se pudo enviar el mensaje después de ${config.reintentos} intentos`);
-                if (ultimoError) {
-                    console.error('Último error:', ultimoError);
-                }
-            }
-            throw ultimoError || new Error('Error desconocido al enviar mensaje');
-        }
-
-        // Elementos del DOM
-        const audioPlayer = document.getElementById('audioPlayer');
+    function updateUI() {
         const playPauseBtn = document.getElementById('playPauseBtn');
-        const retosBtn = document.getElementById('retosBtn');
-        const progressBar = document.getElementById('progressBar');
-        const progressContainer = document.getElementById('progressContainer');
-        const currentTimeElement = document.getElementById('currentTime');
-        const durationElement = document.getElementById('duration');
-
-        let currentAudioId = null;
-
-        // --- LÓGICA DEL REPRODUCTOR ---
-        
-        function formatTime(seconds) {
-            const minutes = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        if (audioPlayer.paused) {
+            playPauseBtn.innerHTML = '<i class="fas fa-play icon-play"></i>';
+        } else {
+            playPauseBtn.innerHTML = '<i class="fas fa-pause icon-play"></i>';
         }
+    }
 
-        function updateUI() {
-            if (audioPlayer.paused) {
-                playPauseBtn.innerHTML = '<i class="fas fa-play icon-play"></i>';
-            } else {
-                playPauseBtn.innerHTML = '<i class="fas fa-pause icon-play"></i>';
+    function cargarYReproducirAudio(audioId) {
+        const audioData = audioFiles.find(audio => audio.id === audioId);
+        if (!audioData) {
+            logger.error(`Audio no encontrado: ${audioId}`);
+            return;
+        }
+        audioPlayer.src = audioData.file;
+        currentAudioId = audioId;
+        audioPlayer.play();
+    }
+
+    // Elementos DOM
+    const audioPlayer = document.getElementById('audioPlayer');
+    const progressBar = document.getElementById('progressBar');
+    const currentTimeElement = document.getElementById('currentTime');
+    const durationElement = document.getElementById('duration');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const retosBtn = document.getElementById('retosBtn');
+
+    // Event listener para botón de Play/Pause
+    playPauseBtn.addEventListener('click', () => {
+        if (audioPlayer.paused) {
+            audioPlayer.play();
+        } else {
+            audioPlayer.pause();
+        }
+    });
+
+    // Event listener para botón de Retos
+    retosBtn.addEventListener('click', async () => {
+        try {
+            logger.info(`[hijo3] Botón de retos clickeado, solicitando reto al padre`);
+            
+            // Enviar solicitud al padre para mostrar un reto
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.RETO.SOLICITAR_RETO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: 'padre',
+                datos: { 
+                    contexto: 'manual',
+                    audioId: currentAudioId 
+                }
+            });
+            
+            logger.debug(`[hijo3] Solicitud de reto enviada exitosamente`);
+        } catch (error) {
+            logger.error(`[hijo3] Error al solicitar reto:`, error);
+        }
+    });
+
+    // Event listener para barra de progreso (seek)
+    const progressContainer = document.getElementById('progressContainer');
+    progressContainer.addEventListener('click', (e) => {
+        try {
+            // Calcular posición del click relativa a la barra
+            const rect = progressContainer.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percent = clickX / rect.width;
+            
+            // Validar rango (0-100%)
+            const validPercent = Math.max(0, Math.min(1, percent));
+            
+            // Validar que el audio esté cargado y duration sea finito
+            if (!audioPlayer || !isFinite(audioPlayer.duration) || audioPlayer.duration === 0) {
+                logger.warn(`[hijo3] Audio no cargado o duration inválido, ignorando seek`);
+                return;
             }
+            
+            // Saltar a la posición clickeada
+            audioPlayer.currentTime = validPercent * audioPlayer.duration;
+            
+            logger.debug(`[hijo3] Seek en barra de progreso: ${(validPercent * 100).toFixed(1)}%`);
+        } catch (error) {
+            logger.error(`[hijo3] Error al hacer seek en barra de progreso:`, error);
         }
+    });
 
-        audioPlayer.addEventListener('timeupdate', () => {
+    // Event listeners para audio (adaptados para notificar al padre con enviarMensaje)
+    audioPlayer.addEventListener('timeupdate', () => {
+        // Validar que duration sea finito antes de calcular porcentaje
+        if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
             const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
             progressBar.style.width = `${percent}%`;
             currentTimeElement.textContent = formatTime(audioPlayer.currentTime);
+        }
+    });
+
+    audioPlayer.addEventListener('loadedmetadata', () => {
+        durationElement.textContent = formatTime(audioPlayer.duration);
+    });
+
+    audioPlayer.addEventListener('play', async () => {
+        updateUI();
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: 'padre',
+                datos: { audioId: currentAudioId, estado: 'reproduciendo' }
+            });
+        }
+    });
+
+    audioPlayer.addEventListener('pause', async () => {
+        updateUI();
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO,
+                origen: CONFIG_HIJO.IFRAME_ID, // Se agrega el valor correcto
+                datos: { audioId: currentAudioId, estado: 'pausado' }
+            });
+        }
+    });
+
+    audioPlayer.addEventListener('ended', async () => {
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: 'padre',
+                datos: { audioId: currentAudioId, estado: 'finalizado' }
+            });
+        }
+        updateUI();
+    });
+
+    audioPlayer.addEventListener('error', async () => {
+        // Enviar AUDIO.ERROR al padre en caso de fallo
+        await enviarMensaje({
+            tipo: TIPOS_MENSAJE.AUDIO.ERROR,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: 'padre',
+            datos: { audioId: currentAudioId, error: audioPlayer.error?.message || 'Error desconocido' }
+        });
+    });
+
+    // Función para actualizar la interfaz según el modo
+    function actualizarInterfazModo(modo) {
+        console.log(`[AUDIO] Actualizando interfaz para modo: ${modo}`);
+        const body = document.body;
+        
+        // Actualizar clases CSS
+        body.classList.remove('modo-casa', 'modo-aventura');
+        body.classList.add(`modo-${modo}`);
+        
+        logger.info(`[hijo3] Interfaz actualizada para modo: ${modo}`);
+    }
+
+    // Inicialización y controladores (adaptados a mensajería actual)
+    try {
+        await inicializarMensajeria({
+            iframeId: CONFIG_HIJO.IFRAME_ID,
+            debug: CONFIG_HIJO.DEBUG
         });
 
-        audioPlayer.addEventListener('loadedmetadata', () => {
-            durationElement.textContent = formatTime(audioPlayer.duration);
-        });
+        // ============================================================
+        // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+        // ============================================================
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo3][PADRE_LISTO]`;
 
-        // Modificar manejo de reproducción de audio para notificar al padre
-        audioPlayer.addEventListener('play', async () => {
-            updateUI();
-            
-            // Notificar al padre que se inició la reproducción con ACK
-            if (currentAudioId) {
+            try {
+                if (!mensaje || !mensaje.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+
+                // ✅ PROCESAR MODO INICIAL DEL PADRE
+                if (mensaje.datos && mensaje.datos.modo) {
+                    const modoInicial = mensaje.datos.modo;
+                    logger.info(`${logPrefix} Procesando modo inicial del padre: ${modoInicial}`);
+
+                    // Aplicar lógica específica del componente
+                    actualizarInterfazModo(modoInicial);
+                }
+
+                // Enviar HIJO_LISTO al padre para confirmar que estamos listos
                 try {
-                    await enviarMensajeConACK('padre', TIPOS_MENSAJE.AUDIO.REPRODUCIR, { 
-                        audioId: currentAudioId,
-                        timestamp: new Date().toISOString(),
-                        origen: CONFIG.IFRAME_ID,
-                        duracion: audioPlayer.duration || 0,
-                        tiempoActual: audioPlayer.currentTime || 0
-                    }, {
-                        reintentos: 3,
-                        timeout: 3000,
-                        onRetry: (intento, total) => {
-                            console.log(`🔄 [${CONFIG.IFRAME_ID}] Reintentando notificación de reproducción (${intento}/${total})...`);
+                    await enviarMensaje({
+                        destino: 'padre',
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: 'hijo3',
+                        datos: {
+                            version: '1.0.0',
+                            capacidades: ['audio', 'retos-button'],
+                            tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
+                            timestamp: Date.now()
                         }
                     });
-                    console.log(`▶️ [${CONFIG.IFRAME_ID}] Notificación de reproducción confirmada`);
+                    console.log(`✅ [hijo3] HIJO_LISTO enviado al padre`);
                 } catch (error) {
-                    console.error(`❌ [${CONFIG.IFRAME_ID}] Error al notificar reproducción:`, error);
-                    // No detenemos la reproducción por un error de notificación
+                    console.error(`❌ [hijo3] Error enviando HIJO_LISTO:`, error);
                 }
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
             }
         });
 
-        audioPlayer.addEventListener('pause', async () => {
-            updateUI();
-            
-            // Notificar al padre que se pausó la reproducción
-            if (currentAudioId) {
-                try {
-                    await enviarMensajeConACK('padre', TIPOS_MENSAJE.AUDIO.PAUSA, { 
-                        audioId: currentAudioId,
-                        timestamp: new Date().toISOString(),
-                        origen: CONFIG.IFRAME_ID,
-                        tiempoActual: audioPlayer.currentTime || 0
-                    }, {
-                        reintentos: 2,
-                        timeout: 2000,
-                        silencioso: true
-                    });
-                    console.log(`⏸️ [${CONFIG.IFRAME_ID}] Notificación de pausa confirmada`);
-                } catch (error) {
-                    console.error(`❌ [${CONFIG.IFRAME_ID}] Error al notificar pausa:`, error);
-                }
-            }
-        });
+        /**
+         * Controlador: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
+         * Descripción: Recibe confirmación del padre de que los controladores están listos
+         * Origen esperado: padre
+         * Respuesta: Ninguna (preparado para futuras solicitudes de datos)
+         */
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo3][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
 
-        audioPlayer.addEventListener('ended', async () => {
-            // Notificar al padre que terminó el audio con ACK
-            if (currentAudioId) {
-                try {
-                    await enviarMensajeConACK('padre', TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, { 
-                        audioId: currentAudioId,
-                        timestamp: new Date().toISOString(),
-                        origen: CONFIG.IFRAME_ID,
-                        duracion: audioPlayer.duration || 0,
-                        tiempoFinal: audioPlayer.currentTime || 0
-                    }, {
-                        reintentos: 3,
-                        timeout: 3000,
-                        silencioso: true // No mostrar errores de reintentos
-                    });
-                    console.log(`⏹️ [${CONFIG.IFRAME_ID}] Notificación de fin de reproducción confirmada`);
-                } catch (error) {
-                    console.error(`❌ [${CONFIG.IFRAME_ID}] Error al notificar fin de reproducción:`, error);
-                }
-            }
-            updateUI();
-        });
-        
-        // Manejar errores de reproducción
-        audioPlayer.addEventListener('error', async () => {
-            const errorDetails = {
-                code: audioPlayer.error ? audioPlayer.error.code : 'UNKNOWN_ERROR',
-                message: audioPlayer.error ? audioPlayer.error.message : 'Error desconocido',
-                currentSrc: audioPlayer.currentSrc,
-                currentTime: audioPlayer.currentTime,
-                duration: audioPlayer.duration,
-                audioId: currentAudioId,
-                timestamp: new Date().toISOString(),
-                origen: CONFIG.IFRAME_ID
-            };
-            
-            logger.error('Error en reproductor de audio', errorDetails);
-            console.error(`❌ [${CONFIG.IFRAME_ID}] Error en el reproductor de audio:`, errorDetails);
-            
-            // Notificar al padre del error
             try {
-                await enviarMensajeConACK('padre', TIPOS_MENSAJE.AUDIO.ERROR, errorDetails, {
-                    reintentos: 2,
-                    timeout: 3000,
-                    silencioso: false
+                if (!mensaje?.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
+
+                // Preparado para futuras solicitudes de datos adicionales del padre
+                logger.debug(`${logPrefix} Componente listo para recibir datos adicionales si es necesario`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación del padre:`, error);
+            }
+        });
+
+        // Controlador para reproducir audio (REQUEST del padre)
+        registrarControlador(TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] REPRODUCIR_REQUEST recibido:`, mensaje.datos);
+                const { audioId } = mensaje.datos;
+                
+                if (!audioId) {
+                    throw new Error('audioId no proporcionado');
+                }
+
+                cargarYReproducirAudio(audioId);
+                
+                // Enviar RESPONSE confirmando
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        audioId,
+                        exito: true,
+                        mensajeOriginal: mensaje.id 
+                    }
                 });
             } catch (error) {
-                logger.error('Error al notificar error de audio al padre', { 
-                    error: error.message,
-                    stack: error.stack,
-                    timestamp: new Date().toISOString()
-                });
-                console.error(`❌ [${CONFIG.IFRAME_ID}] No se pudo notificar el error al padre:`, error);
-            }
-        });
-
-        playPauseBtn.addEventListener('click', () => {
-            if (audioPlayer.src) {
-                audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
-            }
-        });
-
-        progressContainer.addEventListener('click', (e) => {
-            if (!audioPlayer.src || !audioPlayer.duration) return;
-            const rect = progressContainer.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            audioPlayer.currentTime = percent * audioPlayer.duration;
-        });
-
-        // --- MANEJADORES DE MENSAJES ---
-
-        // Inicializar manejadores de mensajes
-        async function inicializarManejadoresMensajes() {
-            // Ping del sistema
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.PING, async (mensaje) => {
-                console.log(`[${CONFIG.IFRAME_ID}] Recibido PING, respondiendo...`);
-                try {
-                    await enviarACK(mensaje, {
-                        timestamp: new Date().toISOString(),
-                        componente: CONFIG.IFRAME_ID,
-                        responseType: 'PONG'
-                    });
-                } catch (error) {
-                    console.error(`[${CONFIG.IFRAME_ID}] Error al responder PING:`, error);
-                }
-            });
-
-            // Control de audio
-            registrarControlador(TIPOS_MENSAJE.AUDIO.CONTROL, async (mensaje) => {
-                const { accion, audioId, tiempo } = mensaje.datos || {};
-                
-                try {
-                    if (accion === 'reproducir') {
-                        if (audioId) {
-                            await cargarYReproducirAudio(audioId);
-                        } else if (audioPlayer.src) {
-                            audioPlayer.play();
-                        }
-                        await enviarACK(mensaje, { 
-                            estado: 'reproduciendo', 
-                            audioId: currentAudioId || audioId,
-                            tiempoActual: audioPlayer.currentTime || 0
-                        });
-                    } else if (accion === 'pausar') {
-                        if (audioPlayer.src && !audioPlayer.paused) {
-                            audioPlayer.pause();
-                        }
-                        await enviarACK(mensaje, { 
-                            estado: 'pausado', 
-                            audioId: currentAudioId,
-                            tiempoActual: audioPlayer.currentTime || 0
-                        });
-                    } else if (accion === 'detener') {
-                        if (audioPlayer.src) {
-                            audioPlayer.pause();
-                            audioPlayer.currentTime = 0;
-                        }
-                        await enviarACK(mensaje, { 
-                            estado: 'detenido', 
-                            audioId: currentAudioId
-                        });
-                    } else if (accion === 'saltar') {
-                        if (audioPlayer.src && tiempo !== undefined) {
-                            audioPlayer.currentTime = tiempo;
-                            await enviarACK(mensaje, { 
-                                estado: 'tiempo_actualizado', 
-                                audioId: currentAudioId,
-                                tiempoActual: audioPlayer.currentTime || 0
-                            });
-                        } else {
-                            await enviarNACK(mensaje, { 
-                                codigo: 'PARAMETRO_INVALIDO', 
-                                mensaje: 'Se requiere un valor de tiempo válido'
-                            });
-                        }
-                    } else {
-                        await enviarNACK(mensaje, { 
-                            codigo: 'ACCION_DESCONOCIDA', 
-                            mensaje: `Acción desconocida: ${accion}`
-                        });
+                logger.error(`[hijo3] Error procesando REPRODUCIR_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
                     }
-                } catch (error) {
-                    console.error(`[${CONFIG.IFRAME_ID}] Error al manejar control de audio:`, error);
-                    await enviarNACK(mensaje, { 
-                        codigo: 'ERROR_PROCESAMIENTO', 
-                        mensaje: error.message || 'Error al procesar la solicitud de audio' 
-                    });
-                }
-            });
-
-            // Manejadores para confirmaciones del sistema (retrocompatibilidad)
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.CONFIRMACION, async (mensaje) => {
-                console.log('✅ [AUDIO] Recibida confirmación:', mensaje);
-                await enviarACK(mensaje, { 
-                    estado: 'ok',
-                    timestamp: new Date().toISOString(),
-                    origen: CONFIG.IFRAME_ID
                 });
+            }
+        });
+
+        // Controlador para pausar audio (REQUEST del padre)
+        registrarControlador(TIPOS_MENSAJE.AUDIO.PAUSA_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] PAUSA_REQUEST recibido:`, mensaje.datos);
+                audioPlayer.pause();
+                
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.PAUSA_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: true,
+                        audioId: currentAudioId,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            } catch (error) {
+                logger.error(`[hijo3] Error procesando PAUSA_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.PAUSA_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            }
+        });
+
+        // Controlador para control genérico (REQUEST del padre)
+        registrarControlador(TIPOS_MENSAJE.AUDIO.CONTROL_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] CONTROL_REQUEST recibido:`, mensaje.datos);
+                const { accion } = mensaje.datos || {};
+                
+                if (accion === 'pausar') {
+                    audioPlayer.pause();
+                } else if (accion === 'reproducir') {
+                    audioPlayer.play();
+                } else if (accion === 'detener') {
+                    audioPlayer.pause();
+                    audioPlayer.currentTime = 0;
+                }
+                
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.CONTROL_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: true,
+                        accion,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            } catch (error) {
+                logger.error(`[hijo3] Error procesando CONTROL_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.CONTROL_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            }
+        });
+
+        /**
+         * Controlador: SISTEMA.CAMBIO_MODO
+         * Descripción: Actualiza la interfaz según el modo (casa/aventura)
+         */
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+            const logPrefix = `[hijo3][CAMBIO_MODO]`;
+
+            try {
+                const { modo } = mensaje.datos;
+
+                // Validar modo
+                if (!modo || (modo !== 'casa' && modo !== 'aventura')) {
+                    throw new Error(`Modo inválido: ${modo}. Debe ser 'casa' o 'aventura'`);
+                }
+
+                logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+
+                // Aplicar lógica específica del componente
+                actualizarInterfazModo(modo);
+
+                // Enviar confirmación al padre
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_RESPONSE,
+                    origen: 'hijo3',
+                    destino: 'padre',
+                    datos: {
+                        exito: true,
+                        modo: modo,
+                        timestamp: Date.now()
+                    }
+                }).catch(error => logger.error('[hijo3] Error enviando confirmación de cambio de modo:', error));
+
+                logger.info(`${logPrefix} Modo cambiado exitosamente a: ${modo}`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+            }
+        });
+
+        /**
+         * Controlador: CONTROL.HABILITAR
+         * Descripción: Habilita controles específicos según el mensaje del padre
+         */
+        registrarControlador(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+            try {
+                const { control } = mensaje.datos;
+                logger.info(`[hijo3] CONTROL.HABILITAR recibido para: ${control}`);
+
+                // Solo aplicar en modo aventura - en modo casa los botones siempre están habilitados
+                if (document.body.classList.contains('modo-aventura')) {
+                    if (control === 'retosBtn') {
+                        retosBtn.disabled = false;
+                        retosBtn.style.opacity = '1';
+                        retosBtn.style.pointerEvents = 'auto';
+                        logger.debug(`[hijo3] Botón de retos habilitado (modo aventura)`);
+                    }
+                } else {
+                    logger.debug(`[hijo3] CONTROL.HABILITAR ignorado - modo casa mantiene botones siempre habilitados`);
+                }
+            } catch (error) {
+                logger.error(`[hijo3] Error en CONTROL.HABILITAR:`, error);
+            }
+        });
+
+        /**
+         * Controlador: CONTROL.DESHABILITAR
+         * Descripción: Deshabilita controles específicos según el mensaje del padre
+         */
+        registrarControlador(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+            try {
+                const { control } = mensaje.datos;
+                logger.info(`[hijo3] CONTROL.DESHABILITAR recibido para: ${control}`);
+
+                // Solo aplicar en modo aventura - en modo casa los botones siempre están habilitados
+                if (document.body.classList.contains('modo-aventura')) {
+                    if (control === 'retosBtn') {
+                        retosBtn.disabled = true;
+                        retosBtn.style.opacity = '0.5';
+                        retosBtn.style.pointerEvents = 'none';
+                        logger.debug(`[hijo3] Botón de retos deshabilitado (modo aventura)`);
+                    }
+                } else {
+                    logger.debug(`[hijo3] CONTROL.DESHABILITAR ignorado - modo casa mantiene botones siempre habilitados`);
+                }
+            } catch (error) {
+                logger.error(`[hijo3] Error en CONTROL.DESHABILITAR:`, error);
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+            enviarMensaje({
+                destino: mensaje.origen,
+                tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: { timestamp: Date.now() }
             });
-        }
+            logger.debug(`[hijo3] HEARTBEAT recibido, respuesta enviada.`);
+        });
 
-        // Inicializar los manejadores de mensajes
-        await inicializarManejadoresMensajes();
-        console.log(`[${CONFIG.IFRAME_ID}] Manejadores de mensajes inicializados correctamente`);
+        await enviarMensaje({
+            destino: 'padre',
+            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            datos: { componenteId: CONFIG_HIJO.COMPONENTE_ID }
+        });
 
-        // Cargar el primer audio si está configurado
-        if (CONFIG.AUDIO_INICIAL) {
-            await cargarYReproducirAudio(CONFIG.AUDIO_INICIAL);
-        }
+        // Controlador para solicitud de audio del padre
+        registrarControlador(TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO, async (mensaje) => {
+            const logPrefix = `[hijo3][AUDIO.SOLICITAR_AUDIO][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                const { paradaId, tipoConsulta } = mensaje.datos;
+                
+                // Validar datos requeridos
+                if (!paradaId) {
+                    logger.error(`${logPrefix} paradaId requerido faltante`);
+                    return;
+                }
+                if (!tipoConsulta) {
+                    logger.error(`${logPrefix} tipoConsulta requerido faltante`);
+                    return;
+                }
+                if (tipoConsulta !== 'AUDIO') {
+                    logger.error(`${logPrefix} tipoConsulta inválido: ${tipoConsulta}, esperado: AUDIO`);
+                    return;
+                }
+                
+                logger.debug(`${logPrefix} Solicitud de audio para ${paradaId}`);
+                
+                // Buscar audio en array (simulado, en producción mapear paradaId a audioId)
+                const audioData = {
+                    paradaId,
+                    url: `audio/parada_${paradaId.replace('padre-P-', '')}.mp3`, // Ejemplo
+                    duracion: 30,
+                    descripcion: `Audio para ${paradaId}`
+                };
+                
+                // Responder al padre
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.AUDIO.RESPUESTA_AUDIO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: audioData
+                });
+                
+                logger.info(`${logPrefix} Audio enviado para ${paradaId}`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error respondiendo audio:`, error);
+            }
+        });
+
+        // Controlador para ACK del sistema
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+            const logPrefix = `[hijo3][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                logger.debug(`${logPrefix} ACK recibido, respondiendo...`);
+                
+                // Responder al ACK
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        timestamp: Date.now(),
+                        estado: 'activo'
+                    }
+                });
+                
+                logger.debug(`${logPrefix} ACK respondido`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error respondiendo ACK:`, error);
+            }
+        });
+
+        logger.info(`[hijo3] Inicialización completada exitosamente`);
+    } catch (error) {
+        logger.error(`[hijo3] Error durante la inicialización:`, error);
+    }
+
+    // Implementar pagehide para limpiar recursos
+    window.addEventListener('pagehide', () => {
+        logger.info(`[hijo3] Limpiando recursos en pagehide`);
+    });
     </script>
 </body>
 </html>
