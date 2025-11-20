@@ -382,7 +382,7 @@
     <div id="mapa"></div>
     <div id="map-debug"></div>
     <iframe id="fondo-blanco" tabindex="-1" aria-hidden="true"></iframe>
-    <img id="logo-aventura" src="img/LOGO LETRAS FINAL transparente recorte.png" alt="Logo" 
+    <img id="logo-aventura" src="fotos_Av1/LOGO LETRAS FINAL transparente recorte.png" alt="Logo" 
          onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'100\'%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'%23f0f0f0\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-family=\'Arial\' font-size=\'20\' fill=\'%23333\'%3EValencia VGuides%3C/text%3E%3C/svg%3E';" />
     <div id="info-parada"></div>
 
@@ -490,12 +490,25 @@
         //  No importar TIPOS_MENSAJE desde js/mensajeria.js.
         //  Siempre importar TIPOS_MENSAJE desde js/constants.js.
         //  Si se añade otro HTML que inicialice mensajería, seguir esta norma.
-        import { inicializarMensajeria, registrarControlador, enviarMensaje, enviarMensajeConConfirmacion } from './js/mensajeria.js';
-        import { TIPOS_MENSAJE, MODOS } from './js/constants.js';
-        import logger from './js/logger.js';
-        import { generarIdUnico } from './js/utils.js';
         
-        await inicializarMensajeria({ rol: 'padre', estado: 'activo' });
+        // Fase 1: Carga de Módulos Base (Sin Dependencias)
+        const { TIPOS_MENSAJE: TIPOS_MENSAJE_S1, MODOS: MODOS_S1 } = await import('./js/constants.js');
+        const { generarIdUnico: generarIdUnico_S1 } = await import('./js/utils.js');
+        const { esMovil: esMovil_S1 } = await import('./js/device-detection.js');
+        const { validarDato: validarDato_S1 } = await import('./js/validacion.js');
+        await import('./js/suppress-warnings.js');
+        
+        // Fase 2: Módulos con Dependencias Simples
+        const logger_S1 = (await import('./js/logger.js')).default;
+        const { inicializarMonitoreo: inicializarMonitoreo_S1 } = await import('./js/monitoreo.js');
+        const { CONFIG: CONFIG_S1 } = await import('./js/config.js');
+        
+        // Fase 3: Módulos con Dependencias Complejas
+        const { inicializarMensajeria: inicializarMensajeria_S1, registrarControlador: registrarControlador_S1, enviarMensaje: enviarMensaje_S1, enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1 } = await import('./js/mensajeria.js');
+        const { manejarCambioModo: manejarCambioModo_S1, actualizarInterfazModo: actualizarInterfazModo_S1, enviarCambioModo: enviarCambioModo_S1, notificarError: notificarError_S1 } = await import('./js/app.js');
+        const { inicializarServicioMapa: inicializarServicioMapa_S1 } = await import('./js/funciones-mapa.js');
+        
+        await inicializarMensajeria_S1({ rol: 'padre', estado: 'activo' });
 
         // ============================================================
         // CONFIGURACIÓN DEL COMPONENTE PADRE (compartida con Script 2)
@@ -763,8 +776,8 @@
                         logger.debug(`${logPrefix} Ubicación GPS: [${lat.toFixed(6)}, ${lng.toFixed(6)}] (±${Math.round(accuracy)}m)`);
 
                         // Notificar a todos los hijos de la actualización de ubicación
-                        enviarMensaje({
-                            tipo: TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
+                        enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
                             origen: 'padre',
                             destino: 'todos',
                             datos: {
@@ -798,8 +811,8 @@
                         logger.error(`${logPrefix} Error GPS: ${errorMsg} (código: ${error.code})`);
 
                         // Notificar error a todos los hijos
-                        enviarMensaje({
-                            tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ERROR,
+                        enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ERROR,
                             origen: 'padre',
                             destino: 'todos',
                             datos: {
@@ -844,8 +857,8 @@
                 logger.info(`${logPrefix} GPS activado exitosamente (watchId: ${estado.gps.watchId})`);
 
                 // Notificar estado actualizado
-                enviarMensaje({
-                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
+                enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
                     origen: 'padre',
                     destino: 'todos',
                     datos: {
@@ -893,7 +906,7 @@
         // ============================================================
         // IMPORTANTE: Se registra AQUÍ (Script 1) ANTES de cargar iframes
         // para garantizar que esté activo cuando los hijos envíen sus mensajes
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.HIJO_LISTO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[HIJO_LISTO]`;
             const timestamp = Date.now();
             
@@ -931,9 +944,9 @@
                 // Si es hijo2, enviar datos de paradas para inicializar funciones-mapa
                 if (hijoId === 'hijo2') {
                     try {
-                        await enviarMensaje({
+                        await enviarMensaje_S1({
                             destino: 'hijo2',
-                            tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS,
+                            tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
                             origen: 'padre',
                             datos: {
                                 paradas: window.AVENTURA_PARADAS,
@@ -966,14 +979,15 @@
                         
                         const hijosCriticos = ['hijo2', 'hijo3', 'hijo4'];
                         for (const hijoId of hijosCriticos) {
-                            await enviarMensaje({
-                                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                            await enviarMensaje_S1({
+                                tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
                                 origen: CONFIG_PADRE.ID,
                                 destino: hijoId,
                                 datos: {
                                     modo: modoActual,
                                     timestamp: Date.now(),
-                                    razon: 'sincronizacion_inicial'
+                                    razon: 'sincronizacion_inicial',
+                                    secuenciaCompleta: true
                                 }
                             });
                             logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${hijoId}`);
@@ -1013,7 +1027,7 @@
         // ============================================================
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO]`;
 
             try {
@@ -1033,15 +1047,16 @@
                     // Enviar SISTEMA.CAMBIO_MODO a cada hijo crítico
                     for (const hijoId of hijosCriticos) {
                         try {
-                            await enviarMensaje({
-                                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                            await enviarMensaje_S1({
+                                tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
                                 origen: CONFIG_PADRE.ID,
                                 destino: hijoId,
                                 datos: {
                                     modo: modo,
                                     timestamp: Date.now(),
                                     propagadoDesde: mensaje.origen,
-                                    razon: 'cambio_modo_global'
+                                    razon: 'cambio_modo_global',
+                                    secuenciaCompleta: true
                                 }
                             });
                             logger.debug(`${logPrefix} SISTEMA.CAMBIO_MODO enviado a ${hijoId}`);
@@ -1090,7 +1105,7 @@
         });
 
         // CONTROLADOR: SISTEMA.HEARTBEAT
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[HEARTBEAT]`;
             
             try {
@@ -1101,8 +1116,8 @@
 
                 logger.debug(`${logPrefix} Heartbeat recibido de ${mensaje.origen}`);
 
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                await enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_RESPONSE,
                     origen: CONFIG_PADRE.ID,
                     destino: mensaje.origen,
                     datos: {
@@ -1133,7 +1148,7 @@
         });
 
         // CONTROLADOR: SISTEMA.HEARTBEAT_RESPONSE
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_RESPONSE, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[HEARTBEAT_RESPONSE]`;
             
             try {
@@ -1167,7 +1182,7 @@
         });
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO_RESPONSE
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_RESPONSE, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_RESPONSE, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_RESPONSE]`;
 
             try {
@@ -1201,7 +1216,7 @@
         logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ Controladores SISTEMA registrados (Script 1)`);
 
         // CONTROLADOR: SISTEMA.APLICACION_INICIALIZADA
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.APLICACION_INICIALIZADA, async (mensaje) => {
+        registrarControlador_S1(TIPOS_MENSAJE_S1.SISTEMA.APLICACION_INICIALIZADA, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[APLICACION_INICIALIZADA]`;
             const timestamp = Date.now();
             
@@ -1226,8 +1241,8 @@
 
                 for (const hijoId of estado.hijosInicializados) {
                     try {
-                        await enviarMensaje({
-                            tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
+                        await enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.NOTIFICACION,
                             origen: CONFIG_PADRE.ID,
                             destino: hijoId,
                             datos: {
@@ -1347,9 +1362,9 @@
                     // Enviar PADRE_LISTO inmediatamente después de cargar
                     logger.info(`${CONFIG_PADRE.LOG_PREFIX} Enviando PADRE_LISTO a ${iframe.id}...`);
                     try {
-                        await enviarMensaje({
+                        await enviarMensaje_S1({
                             destino: iframe.id,
-                            tipo: TIPOS_MENSAJE.SISTEMA.PADRE_LISTO,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
                             origen: CONFIG_PADRE.ID,
                             datos: {
                                 version: CONFIG_PADRE.VERSION,
@@ -1457,9 +1472,9 @@
                         await new Promise(resolve => setTimeout(resolve, 500));
                         
                         // Enviar PADRE_LISTO con flag de reconexión
-                        await enviarMensaje({
+                        await enviarMensaje_S1({
                             destino: id,
-                            tipo: TIPOS_MENSAJE.SISTEMA.PADRE_LISTO,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
                             origen: CONFIG_PADRE.ID,
                             datos: {
                                 version: CONFIG_PADRE.VERSION,
@@ -1596,17 +1611,22 @@
     <!-- ============================================================ -->
     <script type="module">
         // ============================================================
-        import { registrarControlador, enviarMensaje } from './js/mensajeria.js';
-        import { TIPOS_MENSAJE, MODOS } from './js/constants.js';
-        import logger from './js/logger.js';
-        import { generarIdUnico } from './js/utils.js';
-        import { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, inicializarServicioMapa } from './js/funciones-mapa.js';
-        import { 
-            manejarCambioModo,
-            actualizarInterfazModo,
-            enviarCambioModo,
-            notificarError
-        } from './js/app.js';
+        // Fase 1: Carga de Módulos Base (Sin Dependencias)
+        const { TIPOS_MENSAJE: TIPOS_MENSAJE_S2, MODOS: MODOS_S2 } = await import('./js/constants.js');
+        const { generarIdUnico: generarIdUnico_S2 } = await import('./js/utils.js');
+        const { esMovil: esMovil_S2 } = await import('./js/device-detection.js');
+        const { validarDato: validarDato_S2 } = await import('./js/validacion.js');
+        await import('./js/suppress-warnings.js');
+        
+        // Fase 2: Módulos con Dependencias Simples
+        const loggerScript2 = (await import('./js/logger.js')).default;
+        const { inicializarMonitoreo: inicializarMonitoreo_S2 } = await import('./js/monitoreo.js');
+        const { CONFIG: CONFIG_S2 } = await import('./js/config.js');
+        
+        // Fase 3: Módulos con Dependencias Complejas
+        const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = await import('./js/mensajeria.js');
+        const { manejarCambioModo: manejarCambioModo_S2, actualizarInterfazModo: actualizarInterfazModo_S2, enviarCambioModo: enviarCambioModo_S2, notificarError: notificarError_S2 } = await import('./js/app.js');
+        const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
 
         // ============================================================
         // USAR ESTADO GLOBAL DEL SCRIPT 1
@@ -1627,6 +1647,7 @@
         // eslint-disable-next-line no-redeclare, no-undef
         var estado = estadoScript2;
         const registrarEvento = registrarEventoScript2;
+        let logger = loggerScript2;
 
         // ============================================================
         // FUNCIONES AUXILIARES (ya definidas en Script 1)
@@ -1750,8 +1771,8 @@
                 
                 logger.info(`${logPrefix} Solicitando coordenadas para ${destinoId}`);
                 
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA,
+                await enviarMensaje_S2({
+                    tipo: TIPOS_MENSAJE_S2.DATOS.SOLICITAR_PARADA,
                     origen: CONFIG_PADRE_LOCAL.ID,
                     destino: 'hijo2',
                     datos: {
@@ -1811,7 +1832,7 @@
         // CONTROLADOR 1: RETO.SOLICITAR_RETO
         // Reenvía solicitudes de retos de hijo3 a hijo4
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.RETO.SOLICITAR_RETO, async (mensaje) => {
+        registrarControlador_S2(TIPOS_MENSAJE_S2.RETO.SOLICITAR_RETO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[RETO.SOLICITAR_RETO]`;
             
             try {
@@ -3195,11 +3216,12 @@
     <!-- Add JavaScript to manage iframe visibility -->
     <script type="module">
         // Import the messaging system and utils
-        import { registrarControlador, enviarMensaje } from './js/mensajeria.js';
-        import { TIPOS_MENSAJE } from './js/constants.js';
-        import { CONFIG } from './js/config.js';
-        import logger from './js/logger.js';
-        import { coordinarAccion } from './js/app.js';
+        // Fase 1
+        const { TIPOS_MENSAJE: TIPOS_MENSAJE_IFRAME } = await import('./js/constants.js');
+        const { CONFIG: CONFIG_IFRAME } = await import('./js/config.js');
+        const loggerIframe = (await import('./js/logger.js')).default;
+        const { coordinarAccion } = await import('./js/app.js');
+        const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = await import('./js/mensajeria.js');
         
         // Functions to manage hijo4 visibility through the centralized messaging system
         window.mostrarHijo4 = async function() {
@@ -3227,7 +3249,7 @@
                 try {
                     await coordinarAccion('mostrar_retos', [{
                         componente: 'hijo4',
-                        tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                        tipo: TIPOS_MENSAJE_IFRAME.UI.NOTIFICACION,
                         datos: {
                             accion: 'mostrar_retos',
                             elemento: 'hijo4',
@@ -3304,7 +3326,7 @@
             }
             
             // Register message handler for backdrop clicks
-            registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, (mensaje) => {
+            registrarControladorIframe(TIPOS_MENSAJE_IFRAME.UI.ACCION_USUARIO, (mensaje) => {
                 if (mensaje.datos && mensaje.datos.accion === 'backdrop_click') {
                     window.ocultarHijo4();
                     return { exito: true, accion: 'hijo4_ocultado' };
@@ -3342,7 +3364,7 @@
     </script>
 
     <script type="module">
-        import { iniciarHeartbeat } from './js/mensajeria.js';
+        const { iniciarHeartbeat } = await import('./js/mensajeria.js');
         // Iniciar el sistema de heartbeat
         iniciarHeartbeat(10000); // Intervalo de 10 segundos
         
