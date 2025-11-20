@@ -1,1843 +1,1100 @@
 /**
- * Módulo de mensajería para comunicación entre iframes.
- * Implementa un sistema de mensajería estandarizado para la comunicación entre los
- * componentes de la aplicación Valencia Tour con formato CATEGORIA.ACCION.
- * 
+ * Módulo de mensajería para comunicación entre componentes
  * @module Mensajeria
- * @version 3.0.0
- * @description
- * Este módulo gestiona toda la comunicación entre componentes de la aplicación,
- * utilizando un sistema de mensajes estandarizados con formato CATEGORIA.ACCION.
- * Incluye un sistema robusto de confirmación (ACK/NACK) para mensajes críticos
- * con reintentos, backoff exponencial y manejo detallado de errores.
+ * @version 4.0.0
+ * @description Sistema centralizado de mensajería para comunicación entre iframes
+ * con manejo de errores, reintentos, validación de mensajes y limpieza de recursos.
  */
 
-// Importamos lo necesario
-import logger, { configurarEnvioMensajes } from './logger.js';
-import utils, { generarHashContenido, configurarUtils, crearObjetoError, generarIdUnico } from './utils.js';
-import { TIPOS_MENSAJE, MENSAJES_CRITICOS } from './constants.js';
-import { CONFIG } from './config.js';
+import { CONFIG_MENSAJERIA, TIPOS_MENSAJE } from './constants.js';
+// NOTA: No importar desde utils.js para evitar dependencia circular
+// import { generarIdUnico } from './utils.js'; // ❌ Causa dependencia circular
+import logger from './logger.js';
 
-// Alias para mejor legibilidad en el código
-const configGlobal = CONFIG;
+// Detect mobile devices for optimizations
+const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// Lista de tipos de mensajes válidos - Usando las constantes estandarizadas
-const TIPOS_MENSAJE_VALIDOS = [
-    // SISTEMA
-    ...Object.values(TIPOS_MENSAJE.SISTEMA),
-    
-    // CONTROL
-    ...Object.values(TIPOS_MENSAJE.CONTROL),
-    
-    // DATOS
-    ...Object.values(TIPOS_MENSAJE.DATOS),
-    
-    // NAVEGACION
-    ...Object.values(TIPOS_MENSAJE.NAVEGACION),
-    
-    // AUDIO
-    ...Object.values(TIPOS_MENSAJE.AUDIO),
-    
-    // RETO
-    ...Object.values(TIPOS_MENSAJE.RETO),
-    
-    // UI
-    ...Object.values(TIPOS_MENSAJE.UI),
-    
-    // MEDIOS
-    ...Object.values(TIPOS_MENSAJE.MEDIOS),
-    TIPOS_MENSAJE.DATOS.PUNTOS,
-    TIPOS_MENSAJE.DATOS.PUNTOS_RUTA,
-    
-    // UI
-    TIPOS_MENSAJE.UI.MODAL,
-    
-    // MEDIOS
-    TIPOS_MENSAJE.MEDIOS.EVENTO,
-    TIPOS_MENSAJE.MEDIOS.MOSTRAR,
-    TIPOS_MENSAJE.MEDIOS.OCULTAR
-];
+// ================== UTILIDADES INTERNAS =====================
 
-// Función auxiliar para validar el formato del tipo de mensaje
-const validarFormatoTipoMensaje = (tipo) => {
-    if (typeof tipo !== 'string') {
-        return { valido: false, error: 'El tipo de mensaje debe ser una cadena' };
+/**
+ * Genera un ID único para mensajes
+ * @returns {string} ID único
+ * @private
+ */
+function generarIdUnico() {
+    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// ================== MENSAJERÍA CENTRALIZADA =====================
+
+// Estado global de la mensajería (usando configuración centralizada)
+const estadoMensajeria = {
+    ...CONFIG_MENSAJERIA.ESTADO_INICIAL,
+    heartbeat: {
+        activo: false,
+        hijosConectados: new Set(),
+        ultimoHeartbeat: new Map(),
+        timeoutsHeartbeat: new Map(),
+        intervalo: 5000,
+        timer: null
     }
-    
-    const tipoLimpio = tipo.trim();
-    if (tipoLimpio === '') {
-        return { valido: false, error: 'El tipo de mensaje no puede estar vacío' };
-    }
-    
-    // Verificar el formato: DEBERIA.SER_ASI
-    if (!/^[A-Z0-9_]+(\.[A-Z0-9_]+)*$/.test(tipoLimpio)) {
-        return { 
-            valido: false, 
-            error: `Formato de tipo de mensaje inválido: '${tipo}'. Debe ser en formato 'MODULO.ACCION'` 
-        };
-    }
-    
-    return { valido: true };
 };
 
-// Definición de códigos de error para mensajería
-const ERRORES_MENSAJERIA = {
-  // Errores generales de comunicación
-  TIMEOUT: 'TIMEOUT',
-  TIMEOUT_CONFIRMACION: 'TIMEOUT_CONFIRMACION',
-  MAX_REINTENTOS: 'MAX_REINTENTOS',
-  
-  // Errores relacionados con iframes
-  IFRAME_NO_ENCONTRADO: 'IFRAME_NO_ENCONTRADO',
-  IFRAME_NO_DISPONIBLE: 'IFRAME_NO_DISPONIBLE',
-  IFRAME_ERROR_CARGA: 'IFRAME_ERROR_CARGA',
-  DESTINO_NO_DISPONIBLE: 'DESTINO_NO_DISPONIBLE',
-  
-  // Errores de red y sistema
-  RED: 'ERROR_RED',
-  NO_INICIALIZADO: 'NO_INICIALIZADO',
-  NO_AUTORIZADO: 'NO_AUTORIZADO',
-  
-  // Errores de respuesta
-  NACK_RECIBIDO: 'NACK_RECIBIDO',
-  RESPUESTA_INVALIDA: 'RESPUESTA_INVALIDA',
-  
-  // Errores de validación
-  FORMATO_INVALIDO: 'FORMATO_INVALIDO',
-  DATOS_INVALIDOS: 'DATOS_INVALIDOS',
-  
-  // Errores de cola y procesamiento
-  ERROR_COLA_LLENA: 'ERROR_COLA_LLENA',
-  ERROR_ALMACENAMIENTO: 'ERROR_ALMACENAMIENTO',
-  ERROR_ENVIO: 'ERROR_ENVIO',
-  
-  // Fallback
-  DESCONOCIDO: 'ERROR_DESCONOCIDO'
-};
-
-// Estado interno de la mensajería
-const estado = {
-  iframeId: null,
-  logLevel: 1,
-  debug: false,
-  manejadores: new Map(),
-  iframes: [],
-  inicializado: false,
-  inicializando: false,
-  reintentos: { 
-    maximos: 3, 
-    tiempoEspera: 1000, 
-    factor: 2 
-  },
-  // Cache de instancias para evitar duplicados
-  instancias: new Map(),
-  // Cola de mensajes pendientes críticos que requieren reintento persistente
-  mensajesPendientes: [],
-  procesandoPendientes: false,
-  ultimoProcesamiento: null,
-  mensajesPendientes: new Map(),
-  // Problema #10: Agregar registro de mensajes procesados para evitar duplicados
-  mensajesProcesados: new Set()
-};
-
-// Limpiar mensajes procesados periódicamente para evitar crecimiento excesivo
-// Problema #10: Implementar limpieza de mensajes procesados
-setInterval(() => {
-  // Mantener solo los últimos 100 mensajes
-  if (estado.mensajesProcesados.size > 100) {
-    const mensajesArray = Array.from(estado.mensajesProcesados);
-    // Eliminar los mensajes más antiguos
-    const mensajesAEliminar = mensajesArray.slice(0, mensajesArray.length - 100);
-    mensajesAEliminar.forEach(id => estado.mensajesProcesados.delete(id));
-  }
-}, 60000); // Cada minuto
-
-// Procesamiento periódico de mensajes pendientes críticos
-setInterval(() => {
-  if (estado.mensajesPendientes.size > 0) {
-    logger.debug(`[Mensajeria] Procesando cola de mensajes pendientes: ${estado.mensajesPendientes.size} mensajes`);
-    
-    // Obtener hora actual para límite de caducidad (mensajes de hace más de 1 hora)
-    const tiempoCaducidad = Date.now() - 60 * 60 * 1000;
-    
-    // Procesar cada mensaje pendiente
-    estado.mensajesPendientes.forEach((mensaje, id) => {
-      // Eliminar mensajes caducados
-      if (mensaje.timestamp < tiempoCaducidad) {
-        estado.mensajesPendientes.delete(id);
-        logger.info(`[Mensajeria] Mensaje pendiente ${id} eliminado por caducidad`);
-        return;
-      }
-      
-      // Si es momento de reintentar según el backoff exponencial
-      if (Date.now() >= mensaje.proximoIntento) {
-        const { destino, tipo, datos, opciones } = mensaje;
-        
-        // Incrementar contador de intentos
-        mensaje.intentos += 1;
-        
-        // Calcular próximo tiempo de reintento con backoff exponencial
-        const factorBackoff = opciones.factorBackoff || CONFIG_DEFAULT.reintentos.factor;
-        const retrasoBase = opciones.tiempoEspera || CONFIG_DEFAULT.reintentos.tiempoEspera;
-        const jitter = 0.75 + (Math.random() * 0.5); // Factor aleatorio entre 0.75 y 1.25
-        
-        // Calcular retraso con backoff exponencial y jitter
-        const retraso = Math.min(
-          30 * 60 * 1000, // máximo 30 minutos
-          retrasoBase * Math.pow(factorBackoff, mensaje.intentos) * jitter
-        );
-        
-        // Actualizar próximo intento
-        mensaje.proximoIntento = Date.now() + retraso;
-        
-        // Reintentar el envío de forma silenciosa
-        enviarMensajeConACK(destino, tipo, datos, { 
-          ...opciones, 
-          silencioso: true,
-          intentoRecuperacion: true
-        })
-        .then(respuesta => {
-          // Si el envío tiene éxito, eliminar de la cola de pendientes
-          estado.mensajesPendientes.delete(id);
-          logger.info(`[Mensajeria] Mensaje pendiente ${id} entregado exitosamente en el intento ${mensaje.intentos}`);
-          
-          // Si hay callback de éxito, ejecutarlo
-          if (mensaje.onSuccess && typeof mensaje.onSuccess === 'function') {
-            try {
-              mensaje.onSuccess(respuesta);
-            } catch (e) {
-              logger.error('[Mensajeria] Error en callback de éxito:', e);
-            }
-          }
-        })
-        .catch(() => {
-          // Si aún hay reintentos disponibles, se mantiene en la cola
-          if (mensaje.intentos >= opciones.reintentosPendientes || mensaje.intentos > 50) {
-            estado.mensajesPendientes.delete(id);
-            logger.warn(`[Mensajeria] Mensaje pendiente ${id} eliminado después de ${mensaje.intentos} intentos`);
-            
-            // Si hay callback de error, ejecutarlo
-            if (mensaje.onError && typeof mensaje.onError === 'function') {
-              try {
-                mensaje.onError(new Error(`Mensaje no entregado después de ${mensaje.intentos} intentos`));
-              } catch (e) {
-                logger.error('[Mensajeria] Error en callback de error:', e);
-              }
-            }
-          }
-        });
-      }
-    });
-  }
-}, 10000); // Cada 10 segundos
-
-// Usar la configuración centralizada
-const CONFIG_DEFAULT = CONFIG.MENSAJERIA;
-
-// Estado de inicialización
-let isLoggerInitialized = true; // Set to true since we're importing logger directly
-
-// Problema #8: Implementar limpieza periódica de instancias no utilizadas
-setInterval(() => {
-  // Eliminar instancias que no se han usado en los últimos 30 minutos
-  const tiempoLimite = Date.now() - CONFIG.MENSAJERIA.tiempoInactividad;
-  estado.instancias.forEach((instancia, id) => {
-    if (instancia.ultimoUso && instancia.ultimoUso < tiempoLimite) {
-      estado.instancias.delete(id);
-      logger.debug(`[Mensajeria] Instancia eliminada por inactividad: ${id}`);
-    }
-  });
-}, CONFIG.MENSAJERIA.tiempoLimpieza);
+// ================== FUNCIONES PRINCIPALES CENTRALIZADAS =====================
 
 /**
- * Obtiene o crea una instancia de mensajería
- * @param {Object} config - Configuración de la instancia
- * @returns {Object} Instancia de mensajería
+ * Valida que un destino sea válido (existe como iframe o es 'padre')
+ * @param {string} destino - ID del destino a validar
+ * @returns {boolean} true si el destino es válido
  */
-function obtenerInstancia(config = {}) {
-  const id = config.iframeId || 'default';
-  
-  // Si ya existe una instancia para este ID, devolverla
-  if (estado.instancias.has(id)) {
-    const instancia = estado.instancias.get(id);
-    // Problema #8: Actualizar timestamp de último uso
-    instancia.ultimoUso = Date.now();
-    return instancia;
-  }
-  
-  // Crear nueva instancia
-  const instancia = {
-    id,
-    config: { ...CONFIG_DEFAULT, ...config },
-    manejadores: new Map(),
-    inicializado: false,
-    inicializando: false,
-    // Problema #8: Agregar timestamp de creación y último uso
-    creado: Date.now(),
-    ultimoUso: Date.now()
-  };
-  
-  estado.instancias.set(id, instancia);
-  return instancia;
+function validarDestino(destino) {
+    if (!destino || typeof destino !== 'string') {
+        return false;
+    }
+    
+    // 'padre' siempre es válido (desde hijo o para comunicación interna del padre)
+    if (destino === 'padre') {
+        return true;
+    }
+    
+    // Verificar si existe un iframe con ese ID
+    const iframe = document.getElementById(destino);
+    return iframe !== null && iframe.contentWindow !== null;
 }
 
 /**
- * Verifica si el sistema de mensajería está inicializado
- * @param {boolean} throwError - Si es true, lanza un error si no está inicializado
- * @returns {boolean} - True si está inicializado
+ * Inicializa el sistema de mensajería para el componente.
+ * @param {Object} config - Configuración de inicialización
+ * @param {string} [config.rol] - Rol del componente: 'padre' o 'hijo'
+ * @param {string} [config.iframeId] - ID del iframe (para hijos)
+ * @param {string} [config.componenteId] - ID del componente lógico
+ * @param {string} [config.idComponente] - Alias de componenteId
+ * @param {boolean} [config.debug] - Modo debug
+ * @param {string} [config.estado] - Estado inicial (obsoleto, se mantiene por compatibilidad)
+ * @returns {Promise<void>}
  */
-// Problema #9: Agregar función para verificar estado de inicialización
-function verificarInicializado(throwError = false) {
-  if (!estado.inicializado) {
-    if (throwError) {
-      throw new Error('El sistema de mensajería no está inicializado');
-    }
-    return false;
-  }
-  return true;
-}
-
-/**
- * Inicializa el sistema de mensajería.
- * @param {Object} config - Configuración de mensajería
- * @returns {Promise<Object>} Instancia de mensajería inicializada
- */
-// Función interna de inicialización
-async function _inicializarMensajeria(config = {}) {
-  // El logger ya está importado estáticamente, no necesitamos inicializarlo dinámicamente
-  isLoggerInitialized = true;
-  logger.debug('[Mensajeria] Logger inicializado');
-  
-  const instancia = obtenerInstancia(config);
-  
-  // Si ya está inicializado o en proceso de inicialización
-  if (instancia.inicializado) {
-    logger.info(`[Mensajeria] Ya inicializado para iframe: ${instancia.id}`);
-    return instancia;
-  }
-  
-  if (instancia.inicializando) {
-    logger.warn(`[Mensajeria] Inicialización ya en curso para iframe: ${instancia.id}`);
-    return new Promise(resolve => {
-      const checkInitialized = setInterval(() => {
-        if (instancia.inicializado) {
-          clearInterval(checkInitialized);
-          resolve(instancia);
-        }
-      }, 100);
-    });
-  }
-  
-  // Marcar como inicializando
-  instancia.inicializando = true;
-  
-  try {
-    // Configurar estado global
-    estado.iframeId = instancia.id;
-    estado.logLevel = instancia.config.logLevel;
-    estado.debug = instancia.config.debug;
-    estado.iframes = instancia.config.iframes || [];
-    estado.reintentos = { ...estado.reintentos, ...(instancia.config.reintentos || {}) };
-    
-    // Configurar la función de envío de mensajes en logger
-    configurarEnvioMensajes(enviarMensaje);
-    
-    // Configurar utilidades
-    configurarUtils({ 
-      iframeId: instancia.id, 
-      logLevel: instancia.config.logLevel, 
-      debug: instancia.config.debug 
-    });
-    
-    // Configurar logger
-    if (logger.configure) {
-      logger.configure({
-        iframeId: instancia.id,
-        logLevel: instancia.config.logLevel,
-        debug: instancia.config.debug
-      });
-    }
-    
-    // Registrar manejador de mensajes una sola vez
-    if (!estado.inicializado) {
-      window.addEventListener('message', recibirMensaje, false);
-      estado.inicializado = true;
-      
-      // Cargar mensajes pendientes del almacenamiento local
-      try {
-        cargarMensajesPendientes();
-      } catch (e) {
-        logger.warn('[Mensajeria] Error al cargar mensajes pendientes:', e);
-      }
-    }
-    
-    // Marcar como inicializado
-    instancia.inicializado = true;
-    logger.info(`[Mensajeria] Inicializado para iframe: ${instancia.id}`);
-    
-    return instancia;
-  } catch (error) {
-    instancia.inicializando = false;
-    logger.error(`[Mensajeria] Error al inicializar:`, error);
-    throw error;
-  }
-}
-
-/**
- * Registra un controlador para un tipo de mensaje.
- * @param {string} tipo - Tipo de mensaje.
- * @param {Function} manejador - Función manejadora.
- */
-// Función interna para registrar controladores
-function _registrarControlador(tipo, manejador) {
-  // Problema #4: Verificar que el manejador sea una función válida
-  if (typeof manejador !== 'function') {
-    logger.error(`[Mensajeria] Intento de registrar manejador inválido para tipo: ${tipo}`);
-    throw new Error(`Manejador inválido para tipo: ${tipo}`);
-  }
-
-  estado.manejadores.set(tipo, manejador);
-  logger.debug(`[Mensajeria] Controlador registrado para tipo: ${tipo}`);
-}
-
-/**
- * Envía un mensaje a un destino (iframe o 'padre').
- * @param {string} destino - ID del iframe destino o 'padre'/'todos'.
- * @param {string} tipo - Tipo de mensaje.
- * @param {Object} datos - Datos del mensaje.
- * @returns {Promise<Object>|undefined}
- */
-// Función interna para enviar mensajes
-/**
- * Envía un mensaje a un destino específico
- * @param {string} destino - ID del iframe destino o 'padre'/'todos'.
- * @param {string} tipo - Tipo de mensaje (debe estar en TIPOS_MENSAJE_VALIDOS).
- * @param {Object} [datos={}] - Datos adicionales del mensaje.
- * @returns {Promise<Object|undefined>} - Promesa que se resuelve con la respuesta o undefined en caso de error.
- * @throws {Error} Si los parámetros no son válidos.
- */
-/**
- * Envía un mensaje a un destino específico siguiendo el formato estándar
- * @param {string} destino - ID del iframe destino o 'padre'/'todos'.
- * @param {string} tipo - Tipo de mensaje (debe estar en formato CATEGORIA.ACCION).
- * @param {Object} [datos={}] - Datos adicionales del mensaje.
- * @returns {Promise<Object|undefined>} - Promesa que se resuelve con la respuesta.
- * @throws {Error} Si los parámetros no son válidos.
- */
-async function _enviarMensaje(destino, tipo, datos = {}) {
-    // Validar parámetros de entrada
-    if (typeof destino !== 'string' || destino.trim() === '') {
-        const error = new Error('El parámetro "destino" es requerido y debe ser una cadena no vacía');
-        logger.error('[Mensajeria] Error en _enviarMensaje:', error.message, { destino, tipo });
-        throw error;
-    }
-    
-    if (typeof tipo !== 'string' || tipo.trim() === '') {
-        const error = new Error('El parámetro "tipo" es requerido y debe ser una cadena no vacía');
-        logger.error('[Mensajeria] Error en _enviarMensaje:', error.message, { destino, tipo });
-        throw error;
-    }
-    
-    // Validar formato del tipo de mensaje (CATEGORIA.ACCION)
-    const tipoRegex = /^[A-Z0-9_]+\.[A-Z0-9_]+$/;
-    if (!tipoRegex.test(tipo)) {
-        const error = new Error(`El tipo de mensaje '${tipo}' no cumple con el formato CATEGORIA.ACCION`);
-        logger.error('[Mensajeria] Error en _enviarMensaje:', error.message, { tipo });
-        throw error;
-    }
-    
-    // Validar tipo de mensaje contra la lista de tipos válidos
-    if (!TIPOS_MENSAJE_VALIDOS.includes(tipo)) {
-        logger.warn(`[Mensajeria] El tipo de mensaje '${tipo}' no está en la lista de tipos válidos`);
-    }
-    
-    // Validar si estamos inicializados
-    if (!verificarInicializado()) {
-        logger.warn('[Mensajeria] Intentando enviar mensaje sin inicializar');
-        await inicializarMensajeria();
-    }
-    
-    // Generar ID único para este mensaje
-    const mensajeId = generarIdUnico(tipo.split('.')[0].toLowerCase());
-    
-    // Crear el mensaje en formato estándar v3.0
-    const mensaje = {
-        origen: window.IFRAME_ID || estado.iframeId || 'padre',
-        destino,
-        tipo,
-        datos: {
-            ...datos,
-            mensajeId // Incluir ID en cada mensaje para facilitar rastreo
-        },
-        timestamp: Date.now(),
-        version: '3.0', // Actualizado a versión 3.0
-        contentHash: generarHashContenido(tipo, datos)
-    };
-    
-    // Si el mensaje requiere confirmación o es un mensaje crítico, usamos enfoque con ACK/NACK
-    if (datos.requireConfirmation || MENSAJES_CRITICOS.includes(tipo)) {
-        // Usar el nuevo sistema de ACK/NACK para mensajes críticos
-        return await enviarMensajeConACK(destino, tipo, datos);
-    }
-    
+export async function inicializarMensajeria(config = {}) {
     try {
-        // Validar mensaje
-        if (!validarMensaje(mensaje)) {
-            throw new Error('Mensaje no válido');
+        // Detectar rol automáticamente si no se proporciona
+        const rol = config.rol || (window.parent === window ? 'padre' : 'hijo');
+        
+        // Asignar configuración al estado
+        estadoMensajeria.rol = rol;
+        estadoMensajeria.iframeId = config.iframeId || null;
+        estadoMensajeria.componenteId = config.componenteId || config.idComponente || config.iframeId || (rol === 'padre' ? 'padre' : null);
+        estadoMensajeria.debug = config.debug || false;
+        estadoMensajeria.inicializado = true;
+
+        if (estadoMensajeria.debug) {
+            console.log(`[MENSAJERIA] Inicializado - Rol: ${rol}, ID: ${estadoMensajeria.componenteId || estadoMensajeria.iframeId || 'desconocido'}`);
         }
+
+        return Promise.resolve();
+    } catch (error) {
+        console.error('[MENSAJERIA] Error durante inicialización:', error);
+        throw error;
+    }
+}
+
+/**
+ * Envía un mensaje a un destino específico.
+ * @param {Object} params - Parámetros del mensaje.
+ * @param {string} params.tipo - Tipo de mensaje.
+ * @param {string} params.origen - Origen del mensaje.
+ * @param {string} params.destino - Destino del mensaje.
+ * @param {Object} [params.datos={}] - Datos del mensaje.
+ * @param {string} [params.version='1.0.0'] - Versión del mensaje.
+ */
+export function enviarMensaje({ tipo, origen, destino, datos = {}, version = '1.0.0' }) {
+    if (!tipo || !origen || !destino) {
+        throw new Error('Campos obligatorios faltantes para enviarMensaje: tipo, origen y destino son obligatorios');
+    }
+
+    if (!validarDestino(destino)) {
+        const errorMsg = destino === 'funciones-mapa'
+            ? `Destino 'funciones-mapa' no válido. Los mensajes GPS ahora se manejan directamente llamando a las funciones de funciones-mapa.js desde el padre.`
+            : `Destino no válido: ${destino}`;
+        throw new Error(errorMsg);
+    }
+
+    // Validación específica para mensajes de consulta
+    if (tipo === TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS ||
+        tipo === TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO ||
+        tipo === TIPOS_MENSAJE.DATOS.SOLICITAR_RETO) {
+        
+        if (!datos.paradaId) {
+            throw new Error(`Mensaje de consulta ${tipo} requiere 'paradaId' en datos`);
+        }
+        if (!datos.tipoConsulta) {
+            throw new Error(`Mensaje de consulta ${tipo} requiere 'tipoConsulta' en datos`);
+        }
+    }
+
+    const mensaje = {
+        id: generarIdUnico(),
+        tipo,
+        origen,
+        destino,
+        datos,
+        version,
+        timestamp: new Date().toISOString()
+    };
+
+    // Determinar el destino del mensaje
+    let targetWindow;
+    const origenSeguro = window.location.origin;
+
+    if (destino === 'padre') {
+        // Comunicación hijo → padre: usar window.parent
+        // O padre → padre (comunicación interna): usar window
+        if (window.parent === window) {
+            // Ya estamos en el padre, usar window para comunicación interna
+            targetWindow = window;
+        } else {
+            targetWindow = window.parent;
+        }
+    } else {
+        // Comunicación padre → hijo: usar iframe
+        const iframe = document.getElementById(destino);
+        if (!iframe || !iframe.contentWindow) {
+            throw new Error(`Destino ${destino} no encontrado o no accesible`);
+        }
+        targetWindow = iframe.contentWindow;
+    }
+
+    // Enviar el mensaje al destino correspondiente
+    console.log(`📤 [MENSAJERIA] Enviando mensaje - tipo: ${mensaje.tipo}, origen: ${mensaje.origen}, destino: ${mensaje.destino}`);
+    targetWindow.postMessage(mensaje, origenSeguro);
+}
+
+/**
+ * Envía un mensaje y espera confirmación con timeout.
+ * @param {Object} params - Parámetros del mensaje (mismos que enviarMensaje)
+ * @param {number} [params.timeout=10000] - Timeout en milisegundos
+ * @returns {Promise<Object>} Promesa que resuelve con la respuesta
+ */
+export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = 10000 }) {
+    return new Promise((resolve, reject) => {
+        const mensajeId = generarIdUnico();
+        
+        // Configurar timeout
+        const timer = setTimeout(() => {
+            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            reject(new Error(`Timeout esperando confirmación de ${destino} para mensaje ${tipo}`));
+        }, timeout);
+        
+        // Registrar handler temporal para la respuesta
+        const handleResponse = (respuesta) => {
+            clearTimeout(timer);
+            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            resolve(respuesta.datos);
+        };
+        
+        estadoMensajeria.manejadores.set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
         
         // Enviar mensaje
-        if (destino === 'padre') {
-            // Enviar al padre
-            window.parent.postMessage(mensaje, '*');
-        } else if (destino === 'todos') {
-            // Enviar a todos los iframes
-            estado.iframes.forEach(iframe => {
-                const frame = document.getElementById(iframe.id);
-                if (frame && frame.contentWindow) {
-                    frame.contentWindow.postMessage(mensaje, '*');
-                }
-            });
-        } else {
-            // Enviar a un iframe específico
-            const frame = document.getElementById(destino);
-            if (frame && frame.contentWindow) {
-                frame.contentWindow.postMessage(mensaje, '*');
-            } else {
-                throw new Error(`Destino no encontrado: ${destino}`);
-            }
+        try {
+            enviarMensaje({ tipo, origen, destino, datos: { ...datos, mensajeId }, version });
+        } catch (error) {
+            clearTimeout(timer);
+            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            reject(error);
         }
-        
-        // Problema #6: Usar una función segura para logs de objetos grandes/complejos
-        logMensajeSeguro(`[Mensajeria] Mensaje enviado a ${destino}:`, mensaje);
-        return mensaje;
-    } catch (error) {
-        logger.error(`[Mensajeria] Error al enviar mensaje a ${destino}:`, error);
-        throw error;
-    }
+    });
 }
 
 /**
- * Determina si un mensaje recibido es externo (por ejemplo, de extensiones como Grammarly)
- * @param {Object} msg - Mensaje recibido
- * @returns {boolean} True si es externo y debe ser ignorado
+ * Registra un controlador para un tipo de mensaje específico.
+ * @param {string} tipo - Tipo de mensaje.
+ * @param {Function} callback - Función que manejará el mensaje.
  */
-function esMensajeExterno(msg) {
-    // Ignorar mensajes de extensiones conocidas (ejemplo: Grammarly, React DevTools, etc.)
-    if (!msg || typeof msg !== 'object') return true;
-    // Grammarly
-    if (msg.hasOwnProperty('isTrusted') && msg.hasOwnProperty('data') && typeof msg.data === 'string' && msg.data.startsWith('{"event":')) {
-        return true;
+export function registrarControlador(tipo, callback) {
+    if (!tipo || typeof callback !== 'function') {
+        throw new Error('Tipo de mensaje y callback son obligatorios para registrar un controlador');
     }
-    // React DevTools
-    if (msg.source === 'react-devtools-content-script') {
-        return true;
-    }
-    // Mensajes de postMessage sin los campos esperados
-    if (!msg.tipo && !msg.type) return true;
-    // Otros casos: puedes añadir más filtros aquí si aparecen más extensiones problemáticas
-    return false;
+
+    estadoMensajeria.manejadores.set(tipo, callback);
 }
 
 /**
- * Valida el formato de un mensaje recibido
- * @param {Object} msg - El mensaje a validar
- * @param {string} source - Origen del mensaje (opcional)
- * @returns {boolean} - True si el mensaje es válido
- */
-/**
- * Valida que un mensaje cumpla con el formato estándar
- * @param {Object} msg - Mensaje a validar
- * @param {string} source - Origen de la validación (para logging)
- * @returns {boolean} - True si el mensaje es válido
- */
-function validarMensaje(msg, source = 'desconocido') {
-    // Verificar que el mensaje es un objeto
-    if (!msg || typeof msg !== 'object') {
-        logger.warn(`[${source}] [Mensajeria] Mensaje no es un objeto`, { msg });
-        return false;
-    }
-    
-    // Filtrar mensajes de extensiones externas como Grammarly
-    if (esMensajeExterno(msg)) {
-        logger.debug(`[${source}] [Mensajeria] Mensaje externo ignorado`, { type: msg.type });
-        return false;
-    }
-    
-    // Verificar campos obligatorios del formato estándar
-    const requiredFields = ['tipo', 'origen', 'destino', 'datos', 'timestamp'];
-    const missingFields = requiredFields.filter(field => !msg.hasOwnProperty(field));
-    
-    if (missingFields.length > 0) {
-        logger.warn(`[${source}] [Mensajeria] Mensaje inválido: faltan campos requeridos`, { 
-            missingFields, 
-            msg 
-        });
-        return false;
-    }
-    
-    // Verificar que el tipo de mensaje sea válido (formato CATEGORIA.ACCION)
-    const tipoRegex = /^[A-Z0-9_]+\.[A-Z0-9_]+$/;
-    if (!tipoRegex.test(msg.tipo)) {
-        logger.warn(`[${source}] [Mensajeria] Formato de tipo de mensaje inválido`, {
-            tipo: msg.tipo,
-            formatoEsperado: 'CATEGORIA.ACCION'
-        });
-        return false;
-    }
-    
-    // Verificar que el tipo esté en la lista de tipos válidos
-    if (TIPOS_MENSAJE_VALIDOS && !TIPOS_MENSAJE_VALIDOS.includes(msg.tipo)) {
-        logger.warn(`[${source}] [Mensajeria] Tipo de mensaje no válido`, { 
-            tipo: msg.tipo
-        });
-        return false;
-    }
-    
-    // Verificar que datos sea un objeto
-    if (typeof msg.datos !== 'object' || msg.datos === null) {
-        logger.warn(`[${source}] [Mensajeria] Campo 'datos' no es un objeto`, { 
-            datos: msg.datos 
-        });
-        return false;
-    }
-    
-    // Verificar que el timestamp sea un número válido
-    if (typeof msg.timestamp !== 'number' || isNaN(msg.timestamp)) {
-        logger.warn(`[${source}] [Mensajeria] Timestamp inválido`, { 
-            timestamp: msg.timestamp 
-        });
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Recibe y procesa mensajes entrantes.
+ * Maneja mensajes entrantes.
  * @param {MessageEvent} event - Evento de mensaje.
  */
-function recibirMensaje(event) {
-    const mensaje = event.data;
-    
-    try {
-        // Validar mensaje
-        if (!validarMensaje(mensaje)) {
-            return;
-        }
-        
-        // Verificar si el mensaje es para este iframe
-        if (mensaje.destino !== 'todos' && 
-            mensaje.destino !== estado.iframeId && 
-            mensaje.destino !== 'padre') {
-            return;
-        }
-        
-        // Problema #10: Verificar si el mensaje ya se ha procesado (evitar duplicados)
-        if (mensaje.datos?.mensajeId || mensaje.contentHash) {
-            const mensajeId = mensaje.datos?.mensajeId;
-            const contentHash = mensaje.contentHash;
-            
-            // Control de duplicados por ID
-            if (mensajeId && estado.mensajesProcesados.has(mensajeId)) {
-                logger.debug(`[Mensajeria] Ignorando mensaje duplicado por ID: ${mensajeId}`);
-                return;
-            }
-            
-            // Mejorado: Control de duplicados por contenido
-            if (contentHash) {
-                // Solo para mensajes de navegación, que son los más propensos a duplicarse
-                if (mensaje.tipo.startsWith('NAVEGACION.') && 
-                    estado.hashesContenidoProcesados && 
-                    estado.hashesContenidoProcesados.has(contentHash)) {
-                    logger.debug(`[Mensajeria] Ignorando mensaje duplicado por contenido: ${contentHash}`);
-                    return;
-                }
-                
-                // Registrar hash para futuras comparaciones
-                if (!estado.hashesContenidoProcesados) {
-                    estado.hashesContenidoProcesados = new Set();
-                }
-                estado.hashesContenidoProcesados.add(contentHash);
-                
-                // Limpieza de hashes antiguos
-                if (estado.hashesContenidoProcesados.size > 100) {
-                    const hashesArray = Array.from(estado.hashesContenidoProcesados);
-                    // Eliminar los hashes más antiguos
-                    const hashesAEliminar = hashesArray.slice(0, hashesArray.length - 100);
-                    hashesAEliminar.forEach(hash => estado.hashesContenidoProcesados.delete(hash));
-                }
-            }
-            
-            // Registrar ID procesado
-            if (mensajeId) {
-                estado.mensajesProcesados.add(mensajeId);
-            }
-        }
-        
-        logger.debug(`[Mensajeria] Mensaje recibido de ${mensaje.origen}:`, mensaje);
-        
-        // Manejar ping directamente para optimizar tiempo de respuesta
-        if (mensaje.tipo === 'SISTEMA.PING') {
-            const respuesta = manejarPing(mensaje);
-            enviarMensaje(mensaje.origen, 'SISTEMA.PONG', respuesta).catch(error => {
-                // Problema #3: Estandarizar el nombre de la variable de error
-                logger.error('Error al enviar respuesta de ping:', error);
-            });
-            return;
-        }
-        
-        // Buscar manejador para este tipo de mensaje
-        const manejador = estado.manejadores.get(mensaje.tipo);
-        if (manejador) {
-            // Ejecutar manejador y enviar respuesta al origen si hay datos
-            try {
-                const resultado = manejador(mensaje);
-                // Si el manejador devuelve un valor (no undefined), enviar respuesta al origen
-                if (resultado !== undefined && mensaje.datos?.mensajeId) {
-                    // Solo enviar respuesta si hay un ID de mensaje para referenciar
-                    enviarMensaje(mensaje.origen, TIPOS_MENSAJE.SISTEMA.CONFIRMACION, {
-                        mensajeOriginalId: mensaje.datos.mensajeId,
-                        tipoOriginal: mensaje.tipo,
-                        resultado,
-                        timestamp: Date.now()
-                    }).catch(error => {
-                        // Problema #3: Estandarizar el nombre de la variable de error
-                        logger.error('Error al enviar confirmación de mensaje:', error);
-                    });
-                }
-            } catch (error) {
-                // Problema #3: Estandarizar el nombre de la variable de error
-                logger.error(`[Mensajeria] Error en manejador para ${mensaje.tipo}:`, error);
-                // Enviar error al origen si hay un ID de mensaje
-                if (mensaje.datos?.mensajeId) {
-                    enviarMensaje(mensaje.origen, TIPOS_MENSAJE.SISTEMA.ERROR, {
-                        mensajeOriginalId: mensaje.datos.mensajeId,
-                        tipoOriginal: mensaje.tipo,
-                        error: error.message,
-                        stack: error.stack,
-                        timestamp: Date.now()
-                    }).catch(error => {
-                        // Problema #3: Estandarizar el nombre de la variable de error
-                        logger.error('Error al enviar notificación de error:', error);
-                    });
-                }
-            }
-        } else {
-            logger.warn(`[Mensajeria] No hay manejador para el tipo: ${mensaje.tipo}`);
-        }
-    } catch (error) {
-        // Problema #3: Estandarizar el nombre de la variable de error
-        logger.error('[Mensajeria] Error al procesar mensaje:', error);
-    }
-}
-
-/**
- * Limpia los recursos de mensajería.
- */
-function limpiarMensajeria() {
-  if (estado.inicializado) {
-    window.removeEventListener('message', recibirMensaje);
-    estado.manejadores.clear();
-    estado.iframes = [];
-    estado.inicializado = false;
-    estado.instancias.clear();
-    // Problema #10: Limpiar también los mensajes procesados
-    estado.mensajesProcesados.clear();
-    logger.debug(`[Mensajeria] Recursos liberados para ${estado.iframeId}`);
-  }
-}
-
-/**
- * Envía un mensaje y espera confirmación de recepción
- * @param {string} destino - ID del iframe destino o 'padre'/'todos'
- * @param {string} tipo - Tipo de mensaje
- * @param {Object} datos - Datos del mensaje
- * @param {Object} opciones - Opciones adicionales
- * @param {number} opciones.timeout - Timeout en ms para la confirmación (default: 5000)
- * @param {boolean} opciones.silencioso - No lanzar error si no hay confirmación (default: false)
- * @returns {Promise<Object>} - Confirmación recibida
- */
-async function enviarMensajeConConfirmacion(destino, tipo, datos = {}, opciones = {}) {
-  const timeout = opciones.timeout || 5000;
-  const silencioso = opciones.silencioso || false;
-  
-  // Problema #9: Validar si estamos inicializados
-  if (!verificarInicializado()) {
-    logger.warn('[Mensajeria] Intentando enviar mensaje con confirmación sin inicializar');
-    await inicializarMensajeria();
-  }
-  
-  // Generar un ID único para este mensaje
-  const mensajeId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Problema #7: Usar una variable para seguimiento del manejador temporal
-  const manejadorKey = `${TIPOS_MENSAJE.SISTEMA.CONFIRMACION}_${mensajeId}`;
-  let timeoutId = null;
-  
-  try {
-    // Crear una promesa para esperar la confirmación
-    const confirmacionPromise = new Promise((resolve, reject) => {
-      // Manejador temporal para la confirmación
-      const manejadorConfirmacion = (mensaje) => {
-        if (mensaje.datos && mensaje.datos.mensajeOriginalId === mensajeId) {
-          // Quitar el manejador temporal y cancelar el timeout
-          estado.manejadores.delete(manejadorKey);
-          if (timeoutId) clearTimeout(timeoutId);
-          resolve(mensaje);
-        }
-      };
-      
-      // Registrar el manejador temporal
-      estado.manejadores.set(manejadorKey, manejadorConfirmacion);
-      
-      // Configurar timeout
-      timeoutId = setTimeout(() => {
-        // Quitar el manejador temporal
-        estado.manejadores.delete(manejadorKey);
-        
-        // Problema #5: Manejar mejor el caso silencioso
-        if (silencioso) {
-          // Resolver con un objeto que indica timeout, pero no es error
-          resolve({
-            timeout: true,
-            mensaje: `Timeout esperando confirmación para mensaje ${tipo} a ${destino}`,
-            timestamp: Date.now()
-          });
-        } else {
-          reject(new Error(`Timeout esperando confirmación para mensaje ${tipo} a ${destino}`));
-        }
-      }, timeout);
-    });
-    
-    // Enviar el mensaje con el ID único
-    await _enviarMensaje(destino, tipo, {
-      ...datos,
-      mensajeId
-    });
-    
-    // Esperar confirmación
-    return await confirmacionPromise;
-    
-  } catch (error) {
-    // Problema #7: Limpiar manejador y timeout en caso de error
-    estado.manejadores.delete(manejadorKey);
-    if (timeoutId) clearTimeout(timeoutId);
-    
-    logger.error(`Error en enviarMensajeConConfirmacion (${tipo} a ${destino}):`, error);
-    
-    // Problema #5: Manejar mejor el caso silencioso
-    if (silencioso) {
-      return {
-        error: true,
-        mensaje: error.message,
-        timestamp: Date.now()
-      };
-    }
-    
-    // Problema #2: Eliminar código inalcanzable
-    throw error;
-  }
-}
-
-/**
- * Envía un mensaje crítico con expectativa de ACK/NACK y manejo de reintentos avanzado
- * Implementa un sistema más robusto con backoff exponencial, control de errores detallado y
- * opciones de configuración extensivas para una comunicación más confiable.
- * 
- * @param {string} destino - ID del iframe destino o 'padre'
- * @param {string} tipo - Tipo de mensaje (debe estar en formato CATEGORIA.ACCION)
- * @param {Object} datos - Datos del mensaje
- * @param {Object} [opciones] - Opciones de configuración para el envío
- * @param {number} [opciones.timeout=3000] - Tiempo máximo de espera para la respuesta en ms
- * @param {number} [opciones.reintentos=3] - Número máximo de reintentos
- * @param {boolean} [opciones.silencioso=false] - Si es true, no se mostrarán logs de error en los reintentos
- * @param {Function} [opciones.onRetry] - Función a llamar antes de cada reintento (intento, totalReintentos, error)
- * @param {Function} [opciones.onTimeout] - Función a llamar cuando ocurra un timeout
- * @param {number} [opciones.factorBackoff=2] - Factor para el backoff exponencial entre reintentos
- * @param {number} [opciones.maxRetrasoMs=10000] - Retraso máximo entre reintentos en ms
- * @param {boolean} [opciones.jitter=true] - Añadir variación aleatoria al tiempo de retraso para evitar tormentas de tráfico
- * @returns {Promise<Object>} - Promesa que se resuelve con los datos del ACK o se rechaza con NACK
- * @throws {Error} Si hay un error de comunicación o timeout
- */
-async function enviarMensajeConACK(destino, tipo, datos = {}, opciones = {}) {
-    // Validar si estamos inicializados
-    if (!verificarInicializado()) {
-        logger.warn('[Mensajeria] Intentando enviar mensaje con ACK sin inicializar');
-        try {
-            await inicializarMensajeria();
-        } catch (error) {
-            error.codigo = ERRORES_MENSAJERIA.NO_INICIALIZADO;
-            throw error;
-        }
-    }
-    
-    // Verificar formato del tipo de mensaje (CATEGORIA.ACCION)
-    const tipoRegex = /^[A-Z0-9_]+\.[A-Z0-9_]+$/;
-    if (!tipoRegex.test(tipo)) {
-        const error = new Error(`El tipo de mensaje '${tipo}' no cumple con el formato CATEGORIA.ACCION`);
-        error.codigo = ERRORES_MENSAJERIA.FORMATO_INVALIDO;
-        error.recuperable = false; // No tiene sentido reintentar un formato inválido
-        logger.error('[Mensajeria] Error en enviarMensajeConACK:', error.message, { tipo });
-        throw error;
-    }
-    
-    // Configuración por defecto con opciones avanzadas
-    const config = {
-        timeout: opciones.timeout || estado.reintentos.tiempoEspera || 3000,
-        reintentos: opciones.reintentos || estado.reintentos.maximos || 3,
-        silencioso: opciones.silencioso || false,
-        onRetry: opciones.onRetry || null,
-        onTimeout: opciones.onTimeout || null,
-        factorBackoff: opciones.factorBackoff || estado.reintentos.factor || 2,
-        maxRetrasoMs: opciones.maxRetrasoMs || 10000,
-        jitter: opciones.jitter !== undefined ? opciones.jitter : true,
-        // Nuevas opciones para el sistema mejorado
-        guardarEnPendientes: opciones.guardarEnPendientes !== undefined ? opciones.guardarEnPendientes : true,
-        reintentosPendientes: opciones.reintentosPendientes || 10,
-        intentoRecuperacion: opciones.intentoRecuperacion || false,
-        onSuccess: opciones.onSuccess || null,
-        onError: opciones.onError || null,
-        tipoPendiente: opciones.tipoPendiente || 'normal' // 'normal', 'urgente', 'bajo'
-    };
-    
-    if (!destino || !tipo) {
-        const error = new Error('Se requieren destino y tipo de mensaje');
-        error.codigo = ERRORES_MENSAJERIA.FORMATO_INVALIDO;
-        error.recuperable = false;
-        throw error;
-    }
-    
-    // Generar ID único para este mensaje con mayor entropía
-    const solicitudId = generarIdUnico(`ack-${tipo.split('.')[0].toLowerCase()}`);
-    
-    // Preparar datos del mensaje con formato estándar
-    const mensajeDatos = {
-        ...datos,
-        solicitudId,
-        requireConfirmation: true,  // Indicador explícito de que requiere confirmación
-        timestamp: Date.now()
-    };
-    
-    let ultimoError = null;
-    
-    // Implementar sistema de reintentos mejorado
-    for (let intento = 1; intento <= config.reintentos; intento++) {
-        try {
-            if (!config.silencioso || intento === 1) {
-                logger.debug(`[Mensajeria] Enviando mensaje crítico (${solicitudId}) [${intento}/${config.reintentos}]:`, { 
-                    tipo, 
-                    destino,
-                    timeout: config.timeout
-                });
-            }
-            
-            // Crear una promesa que maneja el envío y la espera de respuesta
-            const respuesta = await new Promise((resolve, reject) => {
-                // Configurar timeout con manejo mejorado
-                const timeoutId = setTimeout(() => {
-                    window.removeEventListener('message', manejadorRespuesta);
-                    const timeoutError = new Error(`Tiempo de espera agotado (${config.timeout}ms)`);
-                    timeoutError.codigo = 'TIMEOUT';
-                    timeoutError.detalles = { solicitudId, tipo, destino, intento, totalReintentos: config.reintentos };
-                    
-                    // Ejecutar callback de timeout si existe
-                    if (config.onTimeout && typeof config.onTimeout === 'function') {
-                        config.onTimeout(timeoutError);
-                    }
-                    
-                    reject(timeoutError);
-                }, config.timeout);
-                
-                // Función que maneja las respuestas con mejor detección
-                const manejadorRespuesta = (event) => {
-                    const msg = event.data;
-                    
-                    // Filtrar mensajes que no son objetos o son externos
-                    if (!msg || typeof msg !== 'object' || esMensajeExterno(msg)) {
-                        return;
-                    }
-                    
-                    // Verificar si es un ACK para este mensaje
-                    if (msg.tipo === TIPOS_MENSAJE.SISTEMA.ACK && 
-                        msg.datos?.solicitudId === solicitudId) {
-                        clearTimeout(timeoutId);
-                        window.removeEventListener('message', manejadorRespuesta);
-                        resolve(msg);
-                    } 
-                    // Verificar si es un NACK para este mensaje
-                    else if (msg.tipo === TIPOS_MENSAJE.SISTEMA.NACK && 
-                             msg.datos?.solicitudId === solicitudId) {
-                        clearTimeout(timeoutId);
-                        window.removeEventListener('message', manejadorRespuesta);
-                        const error = new Error(msg.datos.mensaje || 'Error en el servidor');
-                        error.codigo = msg.datos.codigo || 'NACK_RECIBIDO';
-                        error.detalles = msg.datos.detalles;
-                        error.recuperable = msg.datos.recuperable !== false; // Por defecto se considera recuperable
-                        reject(error);
-                    }
-                };
-                
-                // Registrar el manejador para escuchar respuestas
-                window.addEventListener('message', manejadorRespuesta, false);
-                
-                // Enviar el mensaje
-                try {
-                    _enviarMensaje(destino, tipo, mensajeDatos);
-                } catch (error) {
-                    clearTimeout(timeoutId);
-                    window.removeEventListener('message', manejadorRespuesta);
-                    reject(error);
-                }
-            });
-            
-            logger.debug(`[Mensajeria] ACK recibido para ${solicitudId}`, respuesta);
-            return respuesta.datos || {};
-            
-        } catch (error) {
-            ultimoError = error;
-            
-            // Si el error explícitamente indica que no es recuperable, no reintentar
-            if (error.recuperable === false) {
-                logger.error(`[Mensajeria] Error no recuperable, abortando reintentos:`, error);
-                break;
-            }
-            
-            // Si hay más reintentos pendientes
-            if (intento < config.reintentos) {
-                if (config.onRetry && typeof config.onRetry === 'function') {
-                    config.onRetry(intento, config.reintentos, error);
-                }
-                
-                if (!config.silencioso) {
-                    logger.warn(`[Mensajeria] Reintentando envío (${intento}/${config.reintentos}):`, error);
-                }
-                
-                // Calcular retraso con backoff exponencial
-                let retrasoMs = Math.min(config.maxRetrasoMs, 
-                                         estado.reintentos.tiempoEspera * Math.pow(config.factorBackoff, intento - 1));
-                
-                // Añadir jitter (variación aleatoria) para evitar tormentas de tráfico si está habilitado
-                if (config.jitter) {
-                    const jitterFactor = 0.5 + Math.random(); // Entre 0.5 y 1.5
-                    retrasoMs = Math.floor(retrasoMs * jitterFactor);
-                }
-                
-                // Esperar antes de reintentar
-                await new Promise(resolve => setTimeout(resolve, retrasoMs));
-            }
-        }
-    }
-    
-    // Si llegamos aquí, todos los reintentos han fallado
-    logger.error(`[Mensajeria] Todos los reintentos fallaron para mensaje ${tipo} a ${destino}:`, ultimoError);
-    
-    // Registrar métricas de fallo de mensajería si tenemos acceso al sistema de monitoreo
-    try {
-        if (typeof monitoring?.registrarMetrica === 'function') {
-            monitoring.registrarMetrica('mensajeria.fallos', 1, 'count');
-            monitoring.registrarMetrica(`mensajeria.fallos.${tipo.replace(/\./g, '_')}`, 1, 'count');
-        }
-        
-        if (typeof monitoring?.registrarEvento === 'function') {
-            monitoring.registrarEvento('mensajeria.fallo_comunicacion', {
-                tipo,
-                destino,
-                solicitudId: mensajeDatos.solicitudId,
-                reintentos: config.reintentos,
-                error: ultimoError?.message
-            }, 'error');
-        }
-    } catch (e) {
-        // Ignorar errores al registrar métricas
-    }
-    
-    // Si el modo silencioso está activado, devolver un objeto de error detallado
-    if (config.silencioso) {
-        return {
-            error: true,
-            mensaje: ultimoError?.message || 'Error desconocido',
-            codigo: ultimoError?.codigo || 'ERROR_DESCONOCIDO',
-            detalles: {
-                tipo,
-                destino,
-                solicitudId: mensajeDatos.solicitudId,
-                reintentos: config.reintentos
-            },
-            stack: ultimoError?.stack,
-            timestamp: Date.now()
-        };
-    }
-    
-    // En modo no silencioso, lanzar el error para que sea manejado por el llamador
-    throw ultimoError || new Error(`Error de comunicación al enviar mensaje ${tipo} a ${destino}`);
-}
-
-/**
- * Envía una confirmación de recepción de mensaje
- * @param {Object} mensajeOriginal - Mensaje original recibido
- * @param {Object} datos - Datos adicionales para la confirmación
- * @returns {Promise<Object>} - Resultado del envío
- */
-async function enviarConfirmacion(mensajeOriginal, datos = {}) {
-  try {
-    // Problema #9: Validar si estamos inicializados
-    if (!verificarInicializado()) {
-      logger.warn('[Mensajeria] Intentando enviar confirmación sin inicializar');
-      await inicializarMensajeria();
-    }
-    
-    if (!mensajeOriginal || !mensajeOriginal.origen) {
-      throw new Error('Mensaje original inválido');
-    }
-    
-    // Usar TIPOS_MENSAJE importado
-    return await _enviarMensaje(
-      mensajeOriginal.origen,
-      TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-      {
-        ...datos,
-        mensajeOriginalId: mensajeOriginal.datos?.mensajeId,
-        tipoOriginal: mensajeOriginal.tipo,
-        timestampOriginal: mensajeOriginal.timestamp,
-        timestampConfirmacion: Date.now()
-      }
-    );
-  } catch (error) {
-    // Problema #3: Estandarizar el nombre de la variable de error
-    logger.error('Error al enviar confirmación:', error);
-    throw error;
-  }
-}
-
-/**
- * Guarda un mensaje en la cola de pendientes para reintento posterior
- * @param {string} destino - El destino del mensaje
- * @param {string} tipo - El tipo de mensaje
- * @param {Object} datos - Los datos del mensaje
- * @param {Object} opciones - Opciones para el reintento
- * @returns {Object} - Información sobre el mensaje guardado
- */
-async function guardarMensajePendiente(destino, tipo, datos = {}, opciones = {}) {
-  try {
-    if (!destino || !tipo) {
-      logger.error('[Mensajeria] No se puede guardar mensaje pendiente: Faltan destino o tipo');
-      return false;
-    }
-    
-    // Comprobar si tenemos demasiados mensajes pendientes (máx 50 por defecto)
-    const maxPendientes = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.MAXIMO || 50;
-    if (estado.mensajesPendientes.length >= maxPendientes) {
-      const urgentes = estado.mensajesPendientes.filter(m => m.opciones.tipoPendiente === 'urgente').length;
-      const maxUrgentes = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.MAX_URGENTES || 10;
-      
-      // Si el mensaje es urgente y no hemos superado el límite de urgentes, eliminamos uno normal
-      if (opciones.tipoPendiente === 'urgente' && urgentes < maxUrgentes) {
-        // Eliminar el mensaje normal más antiguo
-        const indexAEliminar = estado.mensajesPendientes.findIndex(m => m.opciones.tipoPendiente !== 'urgente');
-        if (indexAEliminar >= 0) {
-          estado.mensajesPendientes.splice(indexAEliminar, 1);
-          logger.warn('[Mensajeria] Se eliminó un mensaje no urgente para dar espacio a uno urgente');
-        } else {
-          logger.error('[Mensajeria] Cola de mensajes pendientes llena, no se puede guardar mensaje urgente');
-          return false;
-        }
-      } else {
-        logger.error('[Mensajeria] Cola de mensajes pendientes llena, no se pudo guardar el mensaje');
-        return false;
-      }
-    }
-    
-    // Crear mensaje pendiente
-    const mensajePendiente = {
-      id: generarIdUnico('pendiente'),
-      destino,
-      tipo,
-      datos: { ...datos }, // Copia para evitar referencias
-      opciones: {
-        ...opciones,
-        intentoRecuperacion: true, // Marcar como intento de recuperación
-        silencioso: true,          // Los reintentos automáticos son silenciosos
-        timestamp: Date.now(),
-        intentos: 0,
-        maxIntentos: opciones.reintentos || 10
-      }
-    };
-    
-    // Guardar en cola
-    estado.mensajesPendientes.push(mensajePendiente);
-    
-    // Almacenar en localStorage para persistencia si está disponible
-    try {
-      if (typeof localStorage !== 'undefined') {
-        // Obtener mensajes existentes
-        let mensajesGuardados = [];
-        const mensajesJson = localStorage.getItem('mensajeria_pendientes');
-        if (mensajesJson) {
-          try {
-            mensajesGuardados = JSON.parse(mensajesJson) || [];
-          } catch (e) {
-            logger.error('[Mensajeria] Error al parsear mensajes pendientes del localStorage', e);
-          }
-        }
-        
-        // Añadir nuevo mensaje y guardar
-        mensajesGuardados.push({
-          id: mensajePendiente.id,
-          destino: mensajePendiente.destino,
-          tipo: mensajePendiente.tipo,
-          datos: mensajePendiente.datos,
-          opciones: {
-            tipoPendiente: mensajePendiente.opciones.tipoPendiente,
-            timestamp: mensajePendiente.opciones.timestamp,
-            maxIntentos: mensajePendiente.opciones.maxIntentos
-          }
-        });
-        
-        // Limitar tamaño para no exceder límites de localStorage
-        if (mensajesGuardados.length > 100) {
-          mensajesGuardados = mensajesGuardados.slice(-100);
-        }
-        
-        localStorage.setItem('mensajeria_pendientes', JSON.stringify(mensajesGuardados));
-      }
-    } catch (e) {
-      logger.error('[Mensajeria] Error al guardar mensaje pendiente en localStorage', e);
-    }
-    
-    logger.info(`[Mensajeria] Mensaje guardado en cola de pendientes (ID: ${mensajePendiente.id}): ${tipo} → ${destino}`);
-    
-    // Iniciar procesamiento de pendientes si no está en curso
-    programarProcesamiento();
-    
-    return {
-      id: mensajePendiente.id,
-      enCola: true,
-      timestamp: mensajePendiente.opciones.timestamp
-    };
-  } catch (e) {
-    logger.error('[Mensajeria] Error al guardar mensaje pendiente', e);
-    return false;
-  }
-}
-
-/**
- * Programa el procesamiento de mensajes pendientes
- * @param {number} retrasoMs - Retraso en milisegundos antes de procesar
- */
-function programarProcesamiento(retrasoMs) {
-  // Si ya hay un procesamiento programado o en curso, no hacer nada
-  if (estado.procesandoPendientes) {
-    return;
-  }
-  
-  // Determinar retraso (usar valor predeterminado si no se especifica)
-  const retraso = retrasoMs || configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.INTERVALO || 5000;
-  
-  // Programar procesamiento
-  setTimeout(procesarMensajesPendientes, retraso);
-}
-
-/**
- * Procesa los mensajes pendientes intentando reenviarlos
- */
-async function procesarMensajesPendientes() {
-  if (estado.procesandoPendientes || estado.mensajesPendientes.length === 0) {
-    return;
-  }
-  
-  estado.procesandoPendientes = true;
-  estado.ultimoProcesamiento = Date.now();
-  
-  try {
-    logger.debug(`[Mensajeria] Procesando cola de mensajes pendientes (${estado.mensajesPendientes.length} mensajes)`);
-    
-    // Ordenar por prioridad (urgente > normal > bajo)
-    const prioridades = { 'urgente': 0, 'normal': 1, 'bajo': 2 };
-    estado.mensajesPendientes.sort((a, b) => {
-      const prioridadA = prioridades[a.opciones.tipoPendiente] || 1;
-      const prioridadB = prioridades[b.opciones.tipoPendiente] || 1;
-      return prioridadA - prioridadB;
-    });
-    
-    // Tomar solo los primeros N mensajes para no bloquear demasiado tiempo
-    const lote = estado.mensajesPendientes.slice(0, configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.LOTE || 5);
-    
-    // Procesar cada mensaje
-    for (const mensaje of lote) {
-      try {
-        mensaje.opciones.intentos++;
-        
-        // Si se superó el número máximo de intentos, eliminar de la cola
-        if (mensaje.opciones.intentos > mensaje.opciones.maxIntentos) {
-          estado.mensajesPendientes = estado.mensajesPendientes.filter(m => m.id !== mensaje.id);
-          logger.warn(`[Mensajeria] Mensaje eliminado de la cola tras ${mensaje.opciones.intentos - 1} intentos: ${mensaje.tipo} → ${mensaje.destino}`);
-          continue;
-        }
-        
-        // Calcular backoff exponencial con jitter
-        const factor = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.FACTOR_BACKOFF || 1.5;
-        const baseRetraso = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.RETRASO_BASE || 1000;
-        const maxRetraso = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.MAX_RETRASO || 30000;
-        
-        const retraso = Math.min(baseRetraso * Math.pow(factor, mensaje.opciones.intentos - 1), maxRetraso);
-        const jitter = 0.5 + Math.random();
-        const retrasoFinal = Math.floor(retraso * jitter);
-        
-        logger.debug(`[Mensajeria] Reintento ${mensaje.opciones.intentos}/${mensaje.opciones.maxIntentos} para mensaje ${mensaje.tipo} → ${mensaje.destino} (espera: ${retrasoFinal}ms)`);
-        
-        // Intentar enviar el mensaje
-        try {
-          await enviarMensajeConACK(
-            mensaje.destino,
-            mensaje.tipo,
-            mensaje.datos,
-            mensaje.opciones
-          );
-          
-          // Si llegamos aquí, el mensaje se envió con éxito
-          logger.info(`[Mensajeria] Mensaje pendiente enviado con éxito en el intento ${mensaje.opciones.intentos}: ${mensaje.tipo} → ${mensaje.destino}`);
-          
-          // Eliminar de la cola
-          estado.mensajesPendientes = estado.mensajesPendientes.filter(m => m.id !== mensaje.id);
-        } catch (error) {
-          // Si el error no es recuperable, eliminar de la cola
-          if (error.recuperable === false) {
-            estado.mensajesPendientes = estado.mensajesPendientes.filter(m => m.id !== mensaje.id);
-            logger.warn(`[Mensajeria] Mensaje eliminado de la cola por error no recuperable: ${error.message}`);
-          } else {
-            logger.debug(`[Mensajeria] Reintento fallido (${mensaje.opciones.intentos}/${mensaje.opciones.maxIntentos}): ${error.message}`);
-          }
-        }
-        
-        // Pausa entre mensajes para evitar sobrecarga
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (e) {
-        logger.error(`[Mensajeria] Error al procesar mensaje pendiente:`, e);
-      }
-    }
-    
-    // Actualizar localStorage con los mensajes restantes
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const mensajesSimplificados = estado.mensajesPendientes.map(m => ({
-          id: m.id,
-          destino: m.destino,
-          tipo: m.tipo,
-          datos: m.datos,
-          opciones: {
-            tipoPendiente: m.opciones.tipoPendiente,
-            timestamp: m.opciones.timestamp,
-            intentos: m.opciones.intentos,
-            maxIntentos: m.opciones.maxIntentos
-          }
-        }));
-        
-        localStorage.setItem('mensajeria_pendientes', JSON.stringify(mensajesSimplificados));
-      }
-    } catch (e) {
-      logger.error('[Mensajeria] Error al actualizar mensajes pendientes en localStorage', e);
-    }
-  } finally {
-    estado.procesandoPendientes = false;
-    
-    // Programar siguiente procesamiento si aún hay mensajes
-    if (estado.mensajesPendientes.length > 0) {
-      const intervalo = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.INTERVALO || 5000;
-      setTimeout(procesarMensajesPendientes, intervalo);
-    }
-  }
-}
-
-/**
- * Carga los mensajes pendientes del almacenamiento local
- */
-function cargarMensajesPendientes() {
-  try {
-    if (typeof localStorage === 'undefined') {
-      return;
-    }
-    
-    const mensajesJson = localStorage.getItem('mensajeria_pendientes');
-    if (!mensajesJson) {
-      return;
-    }
-    
-    const mensajesGuardados = JSON.parse(mensajesJson);
-    if (!Array.isArray(mensajesGuardados) || mensajesGuardados.length === 0) {
-      return;
-    }
-    
-    // Filtrar mensajes muy antiguos (más de 24h por defecto)
-    const maxEdadMs = configGlobal?.MENSAJERIA?.COLA_PENDIENTES?.MAX_EDAD_MS || 24 * 60 * 60 * 1000;
-    const ahora = Date.now();
-    const mensajesValidos = mensajesGuardados.filter(m => {
-      return ahora - (m.opciones?.timestamp || 0) < maxEdadMs;
-    });
-    
-    // Restaurar a la cola en memoria
-    for (const mensaje of mensajesValidos) {
-      estado.mensajesPendientes.push({
-        id: mensaje.id || generarIdUnico('pendiente'),
-        destino: mensaje.destino,
-        tipo: mensaje.tipo,
-        datos: mensaje.datos || {},
-        opciones: {
-          tipoPendiente: mensaje.opciones?.tipoPendiente || 'normal',
-          timestamp: mensaje.opciones?.timestamp || Date.now(),
-          intentos: mensaje.opciones?.intentos || 0,
-          maxIntentos: mensaje.opciones?.maxIntentos || 10,
-          intentoRecuperacion: true,
-          silencioso: true
-        }
-      });
-    }
-    
-    if (mensajesValidos.length > 0) {
-      logger.info(`[Mensajeria] Se cargaron ${mensajesValidos.length} mensajes pendientes del almacenamiento local`);
-      
-      // Iniciar procesamiento después de un breve retraso
-      setTimeout(procesarMensajesPendientes, 5000);
-    }
-    
-    // Si hubo mensajes inválidos (antiguos), actualizar localStorage
-    if (mensajesValidos.length < mensajesGuardados.length) {
-      localStorage.setItem('mensajeria_pendientes', JSON.stringify(mensajesValidos));
-    }
-  } catch (e) {
-    logger.error('[Mensajeria] Error al cargar mensajes pendientes', e);
-  }
-}
-
-/**
- * Envía un mensaje de ACK (confirmación positiva) en respuesta a un mensaje recibido
- * @param {Object} mensajeOriginal - Mensaje original recibido
- * @param {Object} datos - Datos adicionales para la confirmación
- * @returns {Promise<Object>} - Resultado del envío
- */
-async function enviarACK(mensajeOriginal, datos = {}) {
-  try {
-    // Validar si estamos inicializados
-    if (!verificarInicializado()) {
-      logger.warn('[Mensajeria] Intentando enviar ACK sin inicializar');
-      await inicializarMensajeria();
-    }
-    
-    if (!mensajeOriginal || !mensajeOriginal.origen) {
-      throw new Error('Mensaje original inválido para ACK');
-    }
-    
-    // Enviar mensaje ACK
-    return await _enviarMensaje(
-      mensajeOriginal.origen,
-      TIPOS_MENSAJE.SISTEMA.ACK,
-      {
-        ...datos,
-        mensajeOriginalId: mensajeOriginal.datos?.mensajeId || mensajeOriginal.mensajeId,
-        tipoOriginal: mensajeOriginal.tipo,
-        timestampOriginal: mensajeOriginal.timestamp,
-        timestampACK: Date.now(),
-        estado: datos.estado || 'ok'
-      }
-    );
-  } catch (error) {
-    logger.error('Error al enviar ACK:', error);
-    throw error;
-  }
-}
-
-/**
- * Envía un mensaje de NACK (confirmación negativa) en respuesta a un mensaje recibido
- * @param {Object} mensajeOriginal - Mensaje original recibido
- * @param {Object} datos - Datos adicionales para la confirmación negativa
- * @returns {Promise<Object>} - Resultado del envío
- */
-async function enviarNACK(mensajeOriginal, datos = {}) {
-  try {
-    // Validar si estamos inicializados
-    if (!verificarInicializado()) {
-      logger.warn('[Mensajeria] Intentando enviar NACK sin inicializar');
-      await inicializarMensajeria();
-    }
-    
-    if (!mensajeOriginal || !mensajeOriginal.origen) {
-      throw new Error('Mensaje original inválido para NACK');
-    }
-    
-    // Enviar mensaje NACK
-    return await _enviarMensaje(
-      mensajeOriginal.origen,
-      TIPOS_MENSAJE.SISTEMA.NACK,
-      {
-        ...datos,
-        mensajeOriginalId: mensajeOriginal.datos?.mensajeId || mensajeOriginal.mensajeId,
-        tipoOriginal: mensajeOriginal.tipo,
-        timestampOriginal: mensajeOriginal.timestamp,
-        timestampNACK: Date.now(),
-        estado: datos.estado || 'error',
-        motivo: datos.motivo || 'No especificado'
-      }
-    );
-  } catch (error) {
-    logger.error('Error al enviar NACK:', error);
-    throw error;
-  }
-}
-
-/**
- * Envía una notificación de error como respuesta a un mensaje
- * @param {Object} mensajeOriginal - Mensaje original recibido
- * @param {Object} error - Información del error
- * @returns {Promise<Object>} - Resultado del envío
- */
-async function enviarError(mensajeOriginal, error = {}) {
-  try {
-    // Problema #9: Validar si estamos inicializados
-    if (!verificarInicializado()) {
-      logger.warn('[Mensajeria] Intentando enviar error sin inicializar');
-      await inicializarMensajeria();
-    }
-    
-    if (!mensajeOriginal || !mensajeOriginal.origen) {
-      throw new Error('Mensaje original inválido');
-    }
-    
-    return await _enviarMensaje(
-      mensajeOriginal.origen,
-      TIPOS_MENSAJE.SISTEMA.ERROR,
-      {
-        mensajeOriginalId: mensajeOriginal.datos?.mensajeId,
-        tipoOriginal: mensajeOriginal.tipo,
-        timestampOriginal: mensajeOriginal.timestamp,
-        timestampError: Date.now(),
-        error: {
-          mensaje: error.mensaje || error.message || 'Error desconocido',
-          codigo: error.codigo || 'ERROR_DESCONOCIDO',
-          detalles: error.detalles || error.stack || null
-        }
-      }
-    );
-  } catch (error) {
-    // Problema #3: Estandarizar el nombre de la variable de error
-    logger.error('Error al enviar notificación de error:', error);
-    throw error;
-  }
-}
-
-/**
- * Función para manejar mensajes de ping (diagnóstico de comunicación)
- * @param {Object} mensaje - Mensaje recibido
- * @returns {Object} Respuesta con timestamp
- */
-// Problema #1: Corregir declaración del comentario JSDoc
-function manejarPing(mensaje) {
-    logger.debug(`[Mensajeria] Ping recibido de ${mensaje.origen}`);
-    return {
-        exito: true,
-        mensaje: `Pong desde ${estado.iframeId}`,
-        timestamp: Date.now(),
-        origen: estado.iframeId,
-        destino: mensaje.origen,
-        timestampOriginal: mensaje.datos?.timestamp
-    };
-}
-
-// Problema #4: Registrar manejador de ping solo si la función existe
-if (typeof manejarPing === 'function') {
-    _registrarControlador('SISTEMA.PING', manejarPing);
-} else {
-    logger.warn('[Mensajeria] No se pudo registrar manejador de ping: función no definida');
-}
-
-// Inicializar el objeto controladores
-let controladores = {};
-
-// Verificar que TIPOS_MENSAJE esté definido antes de registrar controladores
-if (!TIPOS_MENSAJE || !TIPOS_MENSAJE.CONTROL || !TIPOS_MENSAJE.CONTROL.CAMBIAR_MODO) {
-    console.error('[Mensajeria] TIPOS_MENSAJE no está definido correctamente. No se registrarán controladores.');
-} else {
-    registrarControlador(TIPOS_MENSAJE.CONTROL.CAMBIAR_MODO, (mensaje) => {
-        try {
-            const { modo, origen } = mensaje.datos || {};
-            if (!modo) {
-                logger.warn('[Mensajeria] No se especificó un modo en el mensaje CAMBIAR_MODO');
-                return;
-            }
-
-            logger.info(`[Mensajeria] Cambiando modo a: ${modo}${origen ? ` (solicitado por: ${origen})` : ''}`);
-            
-            // Notificar al padre si es necesario
-            if (origen !== 'PADRE') {
-                enviarMensaje('padre', TIPOS_MENSAJE.CONTROL.CAMBIAR_MODO, {
-                    modo: modo,
-                    origen: 'HIJO',
-                    timestamp: new Date().toISOString()
-                }).catch(error => {
-                    logger.error('[Mensajeria] Error al notificar cambio de modo:', error);
-                });
-            }
-        } catch (error) {
-            logger.error('[Mensajeria] Error en el manejador de CAMBIAR_MODO:', error);
-        }
-    });
-}
-
-// Función para cambiar el modo en el iframe hijo5-casa
-function cambiarModoEnHijo5Casa(modo) {
-    // Implementa la lógica específica para cambiar el modo en el iframe
-    console.log(`Cambiando el modo en hijo5-casa a: ${modo}`);
-    // Por ejemplo, actualizar el DOM o realizar alguna acción específica
-}
-
-// Exportar la API pública
-export async function inicializarMensajeria(config) {
-    return await _inicializarMensajeria(config);
-}
-
-export function registrarControlador(tipoMensaje, controlador) {
-    // Validar que se hayan proporcionado los parámetros necesarios
-    if (arguments.length < 2) {
-        const errorMsg = '❌ Error: Se requieren dos argumentos (tipoMensaje, controlador)';
-        console.error(errorMsg);
-        logger.error('[Mensajeria] ' + errorMsg);
-        return false;
-    }
-    
-    // Validar que el tipo de mensaje no sea undefined o null
-    if (tipoMensaje === undefined || tipoMensaje === null) {
-        const errorMsg = '❌ Error: El tipo de mensaje no puede ser undefined o null';
-        console.error(errorMsg);
-        logger.error('[Mensajeria] ' + errorMsg, { tipoMensaje, controlador });
-        return false;
-    }
-    
-    try {
-        // Validar que el tipo de mensaje sea una cadena no vacía
-        const validacion = validarFormatoTipoMensaje(tipoMensaje);
-        if (!validacion.valido) {
-            const errorMsg = `❌ Error al validar tipo de mensaje: ${validacion.error}`;
-            console.error(errorMsg, { tipoMensaje, controlador });
-            logger.error('[Mensajeria] ' + errorMsg, { tipoMensaje, controlador });
-            throw new Error(validacion.error);
-        }
-        
-        // Validar que el controlador sea una función
-        if (typeof controlador !== 'function') {
-            const errorMsg = '❌ Error: El controlador debe ser una función';
-            console.error(errorMsg, { tipoMensaje, controlador });
-            logger.error('[Mensajeria] ' + errorMsg, { tipoMensaje, controlador });
-            throw new Error('El controlador debe ser una función');
-        }
-        
-        // Asegurarse de que el tipo de mensaje esté en mayúsculas
-        const tipoNormalizado = tipoMensaje.trim().toUpperCase();
-        
-        // Verificar si el tipo de mensaje está en la lista de válidos
-        if (!TIPOS_MENSAJE_VALIDOS.includes(tipoNormalizado)) {
-            const warnMsg = `⚠️ Advertencia: El tipo de mensaje '${tipoNormalizado}' no está en la lista de tipos válidos`;
-            console.warn(warnMsg);
-            logger.warn('[Mensajeria] ' + warnMsg, { 
-                tipoMensaje, 
-                tipoNormalizado, 
-                tiposValidos: TIPOS_MENSAJE_VALIDOS 
-            });
-        }
-        
-        // Inicializar el array de controladores para este tipo de mensaje si no existe
-        if (!controladores[tipoNormalizado]) {
-            controladores[tipoNormalizado] = [];
-        }
-        
-        // Evitar duplicados
-        const existeControlador = controladores[tipoNormalizado].some(
-            c => c.toString() === controlador.toString()
-        );
-        
-        if (!existeControlador) {
-            controladores[tipoNormalizado].push(controlador);
-            const successMsg = `✅ Controlador registrado para tipoMensaje: ${tipoNormalizado}`;
-            console.log(successMsg);
-            logger.debug('[Mensajeria] ' + successMsg, { tipoMensaje, tipoNormalizado });
-        } else {
-            const infoMsg = `ℹ️ Controlador ya registrado para tipoMensaje: ${tipoNormalizado}`;
-            console.log(infoMsg);
-            logger.debug('[Mensajeria] ' + infoMsg, { tipoMensaje, tipoNormalizado });
-        }
-        
-        return true;
-    } catch (error) {
-        const errorMsg = `❌ Error al registrar controlador para '${tipoMensaje}': ${error.message}`;
-        console.error(errorMsg, error);
-        logger.error('[Mensajeria] ' + errorMsg, { 
-            tipoMensaje, 
-            error: error.message, 
-            stack: error.stack 
-        });
-        return false;
-    }
-}
-
-export async function enviarMensaje(destino, tipo, datos = {}) {
-    return await _enviarMensaje(destino, tipo, datos);
-}
-
-// Evitamos re-exportar TIPOS_MENSAJE para prevenir dependencias circulares
-// Los módulos que necesiten TIPOS_MENSAJE deben importarlo directamente de constants.js
-
-export const TIPOS_MENSAJE_BASICOS = {
-    SISTEMA: {
-        CONFIRMACION: 'SISTEMA.CONFIRMACION',
-        ERROR: 'SISTEMA.ERROR',
-        PING: 'SISTEMA.PING',
-        PONG: 'SISTEMA.PONG',
-        SINCRONIZAR_ESTADO: 'SISTEMA.SINCRONIZAR_ESTADO'
-    }
-};
-
-// Exportar las funciones públicas
-export {
-    enviarMensajeConConfirmacion,
-    enviarMensajeConACK,
-    enviarConfirmacion,
-    enviarACK,
-    enviarNACK,
-    enviarError,
-    verificarInicializado,
-    limpiarMensajeria
-};
-
-/**
- * Log seguro para mensajes grandes o complejos.
- * Evita errores por objetos circulares y limita el tamaño del log.
- * @param {string} mensaje - Mensaje a mostrar en el log.
- * @param {*} objeto - Objeto a mostrar.
- */
-function logMensajeSeguro(mensaje, objeto) {
-    try {
-        // Si el objeto es pequeño y no tiene referencias circulares, mostrarlo normalmente
-        if (typeof objeto === 'object' && objeto !== null) {
-            // Intentar serializar para detectar referencias circulares
-            let json = '';
-            try {
-                json = JSON.stringify(objeto);
-            } catch (e) {
-                json = '[Objeto con referencias circulares]';
-            }
-            if (json.length < 2000) {
-                console.log(mensaje, objeto);
-            } else {
-                // Si es muy grande, mostrar solo un resumen
-                console.log(mensaje, '[Objeto grande]', json.slice(0, 1000) + '...');
-            }
-        } else {
-            // Para tipos primitivos
-            console.log(mensaje, objeto);
-        }
-    } catch (e) {
-        // Si todo falla, mostrar solo el mensaje
-        console.log(mensaje, '[No se pudo mostrar el objeto]');
-    }
-}
-
-/**
- * Inicia la sincronización periódica del estado con el padre
- * @param {number} [intervalo=5000] - Intervalo de sincronización en milisegundos
- */
-export function iniciarSincronizacionPeriodica(intervalo = 5000) {
-    // Verificar si la mensajería está inicializada
-    if (!verificarInicializado()) {
-        console.warn('[Mensajería] No se pudo iniciar sincronización: módulo no inicializado');
-        // Reintentar después de un segundo
-        setTimeout(() => iniciarSincronizacionPeriodica(intervalo), 1000);
+function manejarMensajeEntrante(event) {
+    // Validar el origen del mensaje para seguridad
+    const origenEsperado = window.location.origin;
+    if (event.origin !== origenEsperado) {
+        console.warn(`Mensaje rechazado de origen no confiable: ${event.origin}`);
         return;
     }
 
-    // Usar setInterval para sincronización periódica
-    const intervalId = setInterval(() => {
-        try {
-            // Solo intentar sincronizar si estamos conectados
-            if (verificarInicializado()) {
-                enviarMensaje('padre', TIPOS_MENSAJE.SISTEMA.SINCRONIZAR_ESTADO, {
-                    estadoActual: estado,
-                    timestamp: Date.now()
-                });
-                
-                if (config.debug) {
-                    console.debug('[Sincronización] Estado sincronizado con el padre');
-                }
-            }
-        } catch (error) {
-            console.error('[Sincronización] Error al sincronizar estado:', error);
-            // En caso de error, intentar reiniciar la sincronización
-            clearInterval(intervalId);
-            iniciarSincronizacionPeriodica(intervalo);
-        }
-    }, intervalo);
+    const mensaje = event.data;
 
-    // Devolver función para detener la sincronización
-    return () => clearInterval(intervalId);
+    // Filtrar mensajes que no son del sistema (ej: extensiones del navegador)
+    if (!mensaje || typeof mensaje !== 'object' || !mensaje.tipo || !mensaje.origen || !mensaje.destino) {
+        // Ignorar silenciosamente mensajes no relacionados con el sistema
+        return;
+    }
+    
+    console.log(`📥 [MENSAJERIA] Mensaje recibido - tipo: ${mensaje.tipo}, origen: ${mensaje.origen}, destino: ${mensaje.destino}`);
+
+    // Verificar que el mensaje está destinado a este componente
+    const idComponenteActual = estadoMensajeria.componenteId || estadoMensajeria.iframeId;
+    if (mensaje.destino !== idComponenteActual && mensaje.destino !== 'broadcast') {
+        // Ignorar mensajes no destinados a este componente (excepto broadcasts)
+        console.log(`🚫 [MENSAJERIA] Mensaje ignorado - destino: ${mensaje.destino}, actual: ${idComponenteActual}, tipo: ${mensaje.tipo}`);
+        return;
+    }
+    
+    console.log(`✅ [MENSAJERIA] Mensaje aceptado - destino: ${mensaje.destino}, tipo: ${mensaje.tipo}, origen: ${mensaje.origen}`);    if (!estadoMensajeria.manejadores.has(mensaje.tipo)) {
+        console.warn('Mensaje no reconocido o sin controlador registrado:', mensaje);
+        return;
+    }
+
+    const controlador = estadoMensajeria.manejadores.get(mensaje.tipo);
+    try {
+        controlador(mensaje);
+    } catch (error) {
+        console.error(`Error manejando mensaje de tipo ${mensaje.tipo}:`, error);
+    }
 }
 
-// Function to send events to child iframes
-export function enviarEventoAHijos(evento, datos) {
-    const iframes = document.querySelectorAll('iframe');
-    iframes.forEach((iframe) => {
-        if (iframe.contentWindow) {
-            iframe.contentWindow.postMessage({ evento, datos }, '*');
+// Registrar el listener global para mensajes entrantes
+window.addEventListener('message', manejarMensajeEntrante);
+
+/**
+ * Inicia el sistema de heartbeat para monitorear conectividad con hijos.
+ * @param {number} [intervalo] - Intervalo en milisegundos entre heartbeats (opcional, por defecto usa configuración)
+ */
+export function iniciarHeartbeat(intervalo) {
+    if (estadoMensajeria.rol !== 'padre') {
+        throw new Error('El sistema de heartbeat solo puede iniciarse en el componente padre');
+    }
+
+    if (estadoMensajeria.heartbeat.activo) {
+        console.warn('El sistema de heartbeat ya está activo');
+        return;
+    }
+
+    // Usar intervalo personalizado si se proporciona
+    if (intervalo && typeof intervalo === 'number' && intervalo > 0) {
+        estadoMensajeria.heartbeat.intervalo = intervalo;
+    }
+
+    estadoMensajeria.heartbeat.activo = true;
+    let heartbeatPausado = false;
+
+    const enviarHeartbeat = () => {
+        // Pausar heartbeat si la página está oculta
+        if (document.hidden || heartbeatPausado) {
+            return;
+        }
+
+        // Usar heartbeat.hijosConectados en vez de hijosConectados directamente
+        estadoMensajeria.heartbeat.hijosConectados.forEach(hijoId => {
+            enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT,
+                origen: 'padre',
+                destino: hijoId,
+                datos: { mensajeId: generarIdUnico() }
+            }).catch(error => console.error(`Error enviando heartbeat a ${hijoId}:`, error));
+        });
+    };
+
+    // Pausar/reanudar heartbeat según visibilidad
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            console.debug('[Heartbeat] Pausado (página oculta)');
+            heartbeatPausado = true;
+        } else {
+            console.debug('[Heartbeat] Reanudado (página visible)');
+            heartbeatPausado = false;
+            // Enviar heartbeat inmediatamente al reanudar
+            enviarHeartbeat();
         }
     });
+
+    estadoMensajeria.heartbeat.timer = setInterval(enviarHeartbeat, estadoMensajeria.heartbeat.intervalo);
+    enviarHeartbeat();
 }
 
 /**
- * Envía un mensaje con un timeout específico
- * @param {string} destino - ID del iframe destino
- * @param {string} tipo - Tipo de mensaje
- * @param {Object} datos - Datos del mensaje
- * @param {number} timeout - Tiempo de espera en ms (default: 5000)
- * @returns {Promise<Object>} - Promesa con el resultado
+ * Detiene el sistema de heartbeat
  */
-export function enviarMensajeConTimeout(destino, tipo, datos = {}, timeout = 5000) {
-    return new Promise((resolve, reject) => {
-        // Enviar el mensaje normalmente
-        enviarMensaje(destino, tipo, datos)
-            .then(resultado => {
-                // Resolvemos inmediatamente con el resultado
-                resolve(resultado);
-            })
-            .catch(error => {
-                // En caso de error, también lo propagamos
-                reject(error);
-            });
-
-        // Configurar timeout adicional
-        setTimeout(() => {
-            // Si la promesa no se ha resuelto después del timeout, la rechazamos
-            reject(new Error(`Timeout de ${timeout}ms superado para mensaje ${tipo} a ${destino}`));
-        }, timeout);
-    });
+export function detenerHeartbeat() {
+    if (estadoMensajeria.heartbeat.timer) {
+        clearInterval(estadoMensajeria.heartbeat.timer);
+        estadoMensajeria.heartbeat.timer = null;
+        estadoMensajeria.heartbeat.activo = false;
+    }
 }
 
-// NOTA: Todas las funciones se exportan únicamente a través del export default
-// para evitar duplicaciones de exportación
+// ================== CONTROLADORES DE COORDINACION =====================
 
-// Exportar la API pública
-export default {
-    // Funciones principales de mensajería
-    inicializarMensajeria,
-    enviarMensaje,
-    enviarMensajeConConfirmacion,
-    enviarConfirmacion,
-    enviarACK,
-    enviarNACK,
-    enviarError,
-    verificarInicializado,
-    limpiarMensajeria,
+/**
+ * Procesa respuesta de datos de un componente hijo
+ * @param {Object} mensaje - Mensaje de respuesta
+ */
+export async function procesarRespuestaDatosHijo(mensaje) {
+    const { idSolicitud, datos, exito, error } = mensaje.datos || {};
+
+    if (!idSolicitud || !estadoCoordinacion.solicitudesPendientes.has(idSolicitud)) {
+        logger.warn(`Respuesta inesperada o solicitud no encontrada: ${idSolicitud}`);
+        return;
+    }
+
+    const solicitud = estadoCoordinacion.solicitudesPendientes.get(idSolicitud);
+    clearTimeout(solicitud.timeout);
+    estadoCoordinacion.solicitudesPendientes.delete(idSolicitud);
+
+    try {
+        if (exito && datos) {
+            // Cachear los datos
+            const claveCache = `${solicitud.componente}_${solicitud.tipoDatos}`;
+            estadoCoordinacion.datosCache.set(claveCache, {
+                datos,
+                timestamp: Date.now()
+            });
+
+            logger.debug(`Datos cacheados para ${claveCache}`);
+            solicitud.resolve(datos);
+        } else {
+            solicitud.reject(new Error(error || 'Error en respuesta del componente'));
+        }
+    } catch (error) {
+        logger.error('Error procesando respuesta de datos:', error);
+        solicitud.reject(error);
+    }
+}
+
+/**
+ * Controlador para respuestas de datos de componentes hijo.
+ * Procesa las respuestas a solicitudes de información previamente realizadas,
+ * gestionando el cache y resolviendo las promesas pendientes.
+ */
+registrarControlador(TIPOS_MENSAJE.COORDINACION.RESPUESTA_DATOS_HIJO, procesarRespuestaDatosHijo);
+
+/**
+ * Obtiene el estado actual del sistema de coordinación
+ * @returns {Object} Estado de coordinación
+ */
+export function obtenerEstadoCoordinacion() {
+    return {
+        solicitudesPendientes: estadoCoordinacion.solicitudesPendientes.size,
+        datosCache: estadoCoordinacion.datosCache.size,
+        coordinacionesActivas: estadoCoordinacion.coordinacionesActivas.size,
+        tiempoEsperaMax: estadoCoordinacion.tiempoEsperaMax,
+        cacheTTL: estadoCoordinacion.cacheTTL
+    };
+}
+
+/**
+ * Controlador para consultar el estado del sistema de coordinación.
+ * Proporciona información sobre solicitudes pendientes, cache, coordinaciones activas
+ * y configuración del sistema.
+ */
+registrarControlador(TIPOS_MENSAJE.COORDINACION.ESTADO_COORDINACION, async (mensaje) => {
+    const estadoCoord = obtenerEstadoCoordinacion();
+    return {
+        estado: estadoCoord,
+        timestamp: new Date().toISOString()
+    };
+});
+
+/**
+ * Maneja las solicitudes de datos a componentes hijo.
+ * Este controlador coordina las peticiones de información a diferentes componentes,
+ * gestionando timeouts, reintentos y respuestas agregadas.
+ * 
+ * @param {Object} mensaje - Mensaje de solicitud de datos
+ * @param {string} mensaje.origen - Origen del mensaje (componente solicitante)
+ * @param {Object} mensaje.datos - Datos de la solicitud
+ * @param {string|Array<string>} mensaje.datos.hijo - ID del hijo o array de IDs de hijos a consultar
+ * @param {string} mensaje.datos.tipoInfo - Tipo de información solicitada ('estado', 'datos', 'configuracion', etc.)
+ * @param {Object} [mensaje.datos.parametros] - Parámetros adicionales para la solicitud
+ * @param {number} [mensaje.datos.timeout=5000] - Timeout en ms para la respuesta
+ * @param {boolean} [mensaje.datos.permitirParcial=false] - Si se permiten respuestas parciales en caso de múltiples hijos
+ * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
+ */
+registrarControlador(TIPOS_MENSAJE.COORDINACION.SOLICITAR_DATOS_HIJO, async (mensaje) => {
+    const logPrefix = `[COORDINACION.SOLICITAR_DATOS_HIJO][${mensaje?.origen || 'desconocido'}]`;
+    const timestamp = Date.now();
+    const mensajeId = mensaje?.mensajeId || generarIdUnico();
     
-    // Las siguientes funciones también están exportadas directamente con export function
-    registrarControlador,
-    enviarMensajeConTimeout,
-    enviarEventoAHijos,
+    try {
+        // 1. Validación del mensaje
+        if (!mensaje?.origen) {
+            const errorMsg = 'Mensaje sin origen, ignorando solicitud de datos hijo';
+            logger.warn(`${logPrefix} ${errorMsg}`);
+            return;
+        }
+
+        if (!mensaje?.datos?.hijo) {
+            const errorMsg = 'Hijo no especificado en la solicitud';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+            throw new Error(errorMsg);
+        }
+
+        const { 
+            hijo, 
+            tipoInfo = 'estado', 
+            parametros = {}, 
+            timeout = 5000,
+            permitirParcial = false
+        } = mensaje.datos;
+
+        logger.info(`${logPrefix} Solicitando datos tipo '${tipoInfo}' a hijo(s)`, { 
+            mensajeId,
+            hijo: Array.isArray(hijo) ? hijo.join(', ') : hijo,
+            tipoInfo,
+            timeout
+        });
+
+        // 2. Normalizar hijos a array
+        const hijos = Array.isArray(hijo) ? hijo : [hijo];
+        
+        // 3. Validar que los hijos existen y están activos
+        const hijosValidos = hijos.filter(hijoId => {
+            const iframe = document.getElementById(hijoId);
+            if (!iframe) {
+                logger.warn(`${logPrefix} Hijo '${hijoId}' no encontrado en el DOM`);
+                return false;
+            }
+            return true;
+        });
+
+        if (hijosValidos.length === 0) {
+            const errorMsg = 'Ninguno de los hijos especificados es válido';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId, hijos });
+            throw new Error(errorMsg);
+        }
+
+        // 4. Enviar solicitudes a cada hijo
+        const solicitudes = hijosValidos.map(async hijoId => {
+            const solicitudId = generarIdUnico();
+            
+            try {
+                logger.debug(`${logPrefix} Enviando solicitud a hijo '${hijoId}'`, { 
+                    solicitudId, 
+                    tipoInfo 
+                });
+
+                // Enviar solicitud con timeout
+                const respuesta = await Promise.race([
+                    enviarMensajeConConfirmacion({
+                        destino: hijoId,
+                        tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_DATOS,
+                        origen: 'coordinador',
+                        mensajeId: solicitudId,
+                        datos: {
+                            tipoInfo,
+                            parametros,
+                            solicitudOriginalId: mensajeId,
+                            timeout
+                        }
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error(`Timeout esperando respuesta de ${hijoId}`)), timeout)
+                    )
+                ]);
+
+                return {
+                    hijoId,
+                    exito: true,
+                    datos: respuesta,
+                    timestamp: Date.now()
+                };
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error al solicitar datos a hijo '${hijoId}': ${error.message}`, error);
+                
+                return {
+                    hijoId,
+                    exito: false,
+                    error: error.message,
+                    timestamp: Date.now()
+                };
+            }
+        });
+
+        // 5. Esperar respuestas
+        const respuestas = await Promise.all(solicitudes);
+
+        // 6. Analizar resultados
+        const exitosas = respuestas.filter(r => r.exito);
+        const fallidas = respuestas.filter(r => !r.exito);
+
+        if (exitosas.length === 0 && !permitirParcial) {
+            const errorMsg = 'Todas las solicitudes a hijos fallaron';
+            logger.error(`${logPrefix} ${errorMsg}`, { 
+                mensajeId, 
+                respuestas 
+            });
+            throw new Error(errorMsg);
+        }
+
+        // 7. Preparar respuesta agregada
+        const respuestaAgregada = {
+            exitosas: exitosas.map(r => ({
+                hijoId: r.hijoId,
+                datos: r.datos,
+                timestamp: r.timestamp
+            })),
+            fallidas: fallidas.map(r => ({
+                hijoId: r.hijoId,
+                error: r.error,
+                timestamp: r.timestamp
+            })),
+            total: respuestas.length,
+            exitosos: exitosas.length,
+            fallidos: fallidas.length,
+            parcial: fallidas.length > 0,
+            tipoInfo
+        };
+
+        // 8. Actualizar caché de coordinación
+        exitosas.forEach(respuesta => {
+            const cacheKey = `${respuesta.hijoId}:${tipoInfo}`;
+            estadoCoordinacion.cacheRespuestas.set(cacheKey, {
+                datos: respuesta.datos,
+                timestamp: respuesta.timestamp,
+                ttl: estadoCoordinacion.cacheTTL
+            });
+        });
+
+        // 9. Enviar respuesta al solicitante
+        await enviarMensaje({
+            destino: mensaje.origen,
+            tipo: TIPOS_MENSAJE.COORDINACION.RESPUESTA_DATOS_HIJO,
+            origen: 'coordinador',
+            mensajeId: generarIdUnico(),
+            datos: {
+                mensajeOriginalId: mensajeId,
+                timestamp: Date.now(),
+                respuesta: respuestaAgregada
+            }
+        });
+
+        logger.info(`${logPrefix} Solicitud completada`, { 
+            mensajeId,
+            exitosos: exitosas.length,
+            fallidos: fallidas.length
+        });
+
+        return respuestaAgregada;
+        
+    } catch (error) {
+        const errorNoManejado = `Error no manejado en SOLICITAR_DATOS_HIJO: ${error.message}`;
+        logger.error(`${logPrefix} ${errorNoManejado}`, error);
+        
+        try {
+            // Notificar error al origen
+            if (mensaje?.origen) {
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                    origen: 'coordinador',
+                    mensajeId: generarIdUnico(),
+                    datos: {
+                        error: errorNoManejado,
+                        mensajeOriginalId: mensajeId,
+                        timestamp: Date.now(),
+                        tipo: 'ERROR_SOLICITAR_DATOS_HIJO',
+                        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                    }
+                });
+            }
+        } catch (nestedError) {
+            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
+        }
+        
+        throw error;
+    }
+});
+
+/**
+ * Maneja la coordinación de acciones entre múltiples componentes.
+ * Este controlador orquesta acciones sincronizadas entre diferentes componentes,
+ * asegurando que se ejecuten en el orden correcto y manejando dependencias.
+ * 
+ * @param {Object} mensaje - Mensaje de coordinación de acción
+ * @param {string} mensaje.origen - Origen del mensaje
+ * @param {Object} mensaje.datos - Datos de la acción a coordinar
+ * @param {string} mensaje.datos.accion - Tipo de acción a coordinar
+ * @param {Array<Object>} mensaje.datos.participantes - Lista de componentes participantes
+ * @param {string} mensaje.datos.participantes[].componenteId - ID del componente
+ * @param {string} mensaje.datos.participantes[].rol - Rol en la coordinación ('iniciador', 'ejecutor', 'observador')
+ * @param {Object} [mensaje.datos.participantes[].parametros] - Parámetros específicos del participante
+ * @param {Array<string>} [mensaje.datos.dependencias] - IDs de componentes que deben estar listos primero
+ * @param {boolean} [mensaje.datos.transaccional=false] - Si la acción es transaccional (all-or-nothing)
+ * @param {number} [mensaje.datos.timeout=10000] - Timeout para la coordinación en ms
+ * @param {string} [mensaje.mensajeId] - ID único del mensaje
+ */
+registrarControlador(TIPOS_MENSAJE.COORDINACION.COORDINAR_ACCION, async (mensaje) => {
+    const logPrefix = `[COORDINACION.COORDINAR_ACCION][${mensaje?.origen || 'desconocido'}]`;
+    const timestamp = Date.now();
+    const mensajeId = mensaje?.mensajeId || generarIdUnico();
     
-    // Constantes exportadas también directamente
-    TIPOS_MENSAJE_BASICOS
-};
+    try {
+        // 1. Validación del mensaje
+        if (!mensaje?.origen) {
+            const errorMsg = 'Mensaje sin origen, ignorando coordinación';
+            logger.warn(`${logPrefix} ${errorMsg}`);
+            return;
+        }
+
+        if (!mensaje?.datos?.accion) {
+            const errorMsg = 'Acción no especificada';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+            throw new Error(errorMsg);
+        }
+
+        if (!mensaje?.datos?.participantes || !Array.isArray(mensaje.datos.participantes)) {
+            const errorMsg = 'Participantes no especificados o inválidos';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+            throw new Error(errorMsg);
+        }
+
+        const { 
+            accion, 
+            participantes, 
+            dependencias = [], 
+            transaccional = false,
+            timeout = 10000
+        } = mensaje.datos;
+
+        logger.info(`${logPrefix} Coordinando acción '${accion}' con ${participantes.length} participantes`, { 
+            mensajeId,
+            accion,
+            participantes: participantes.map(p => p.componenteId),
+            transaccional
+        });
+
+        // 2. Validar dependencias primero
+        if (dependencias.length > 0) {
+            logger.debug(`${logPrefix} Verificando ${dependencias.length} dependencias`, { dependencias });
+            
+            for (const depId of dependencias) {
+                const iframe = document.getElementById(depId);
+                if (!iframe) {
+                    throw new Error(`Dependencia '${depId}' no encontrada`);
+                }
+                
+                // Verificar que la dependencia está lista
+                try {
+                    await enviarMensajeConConfirmacion({
+                        destino: depId,
+                        tipo: TIPOS_MENSAJE.SISTEMA.PING,
+                        origen: 'coordinador',
+                        mensajeId: generarIdUnico()
+                    }, 2000);
+                } catch (error) {
+                    throw new Error(`Dependencia '${depId}' no responde: ${error.message}`);
+                }
+            }
+        }
+
+        // 3. Notificar a participantes sobre la acción coordinada
+        const notificaciones = participantes.map(async (participante) => {
+            const { componenteId, rol, parametros = {} } = participante;
+            
+            try {
+                logger.debug(`${logPrefix} Notificando a '${componenteId}' (rol: ${rol})`, { 
+                    componenteId, 
+                    rol 
+                });
+
+                const respuesta = await Promise.race([
+                    enviarMensajeConConfirmacion({
+                        destino: componenteId,
+                        tipo: TIPOS_MENSAJE.CONTROL.EJECUTAR,
+                        origen: 'coordinador',
+                        mensajeId: generarIdUnico(),
+                        datos: {
+                            accion,
+                            rol,
+                            parametros,
+                            coordinacionId: mensajeId,
+                            timestamp
+                        }
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error(`Timeout en ${componenteId}`)), timeout)
+                    )
+                ]);
+
+                return {
+                    componenteId,
+                    exito: true,
+                    respuesta,
+                    timestamp: Date.now()
+                };
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error en participante '${componenteId}': ${error.message}`, error);
+                
+                return {
+                    componenteId,
+                    exito: false,
+                    error: error.message,
+                    timestamp: Date.now()
+                };
+            }
+        });
+
+        // 4. Esperar respuestas de todos los participantes
+        const resultados = await Promise.all(notificaciones);
+
+        // 5. Analizar resultados
+        const exitosos = resultados.filter(r => r.exito);
+        const fallidos = resultados.filter(r => !r.exito);
+
+        // 6. Manejar modo transaccional
+        if (transaccional && fallidos.length > 0) {
+            logger.error(`${logPrefix} Coordinación transaccional falló, revertiendo`, { 
+                mensajeId,
+                fallidos: fallidos.map(f => f.componenteId)
+            });
+
+            // Enviar rollback a participantes exitosos
+            await Promise.all(exitosos.map(resultado => 
+                enviarMensaje({
+                    destino: resultado.componenteId,
+                    tipo: TIPOS_MENSAJE.CONTROL.ROLLBACK,
+                    origen: 'coordinador',
+                    mensajeId: generarIdUnico(),
+                    datos: {
+                        coordinacionId: mensajeId,
+                        motivo: 'fallo_en_participante',
+                        fallos: fallidos
+                    }
+                })
+            ));
+
+            throw new Error(`Coordinación transaccional falló: ${fallidos.length} participantes fallaron`);
+        }
+
+        // 7. Preparar respuesta
+        const respuestaCoordinacion = {
+            accion,
+            total: resultados.length,
+            exitosos: exitosos.length,
+            fallidos: fallidos.length,
+            exitoso: fallidos.length === 0,
+            parcial: fallidos.length > 0 && exitosos.length > 0,
+            resultados: resultados.map(r => ({
+                componenteId: r.componenteId,
+                exito: r.exito,
+                error: r.error,
+                timestamp: r.timestamp
+            })),
+            timestamp: Date.now()
+        };
+
+        // 8. Notificar resultado al solicitante
+        await enviarMensaje({
+            destino: mensaje.origen,
+            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+            origen: 'coordinador',
+            mensajeId: generarIdUnico(),
+            datos: {
+                mensajeOriginalId: mensajeId,
+                estado: 'procesado',
+                coordinacion: respuestaCoordinacion
+            }
+        });
+
+        // 9. Notificar a observadores si los hay
+        const observadores = participantes.filter(p => p.rol === 'observador');
+        if (observadores.length > 0) {
+            await Promise.all(observadores.map(obs => 
+                enviarMensaje({
+                    destino: obs.componenteId,
+                    tipo: TIPOS_MENSAJE.COORDINACION.ESTADO_COORDINACION,
+                    origen: 'coordinador',
+                    mensajeId: generarIdUnico(),
+                    datos: {
+                        coordinacionId: mensajeId,
+                        estado: respuestaCoordinacion
+                    }
+                })
+            ));
+        }
+
+        logger.info(`${logPrefix} Coordinación completada`, { 
+            mensajeId,
+            accion,
+            exitoso: respuestaCoordinacion.exitoso
+        });
+
+        return respuestaCoordinacion;
+        
+    } catch (error) {
+        const errorNoManejado = `Error no manejado en COORDINAR_ACCION: ${error.message}`;
+        logger.error(`${logPrefix} ${errorNoManejado}`, error);
+        
+        try {
+            // Notificar error al origen
+            if (mensaje?.origen) {
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                    origen: 'coordinador',
+                    mensajeId: generarIdUnico(),
+                    datos: {
+                        error: errorNoManejado,
+                        mensajeOriginalId: mensajeId,
+                        timestamp: Date.now(),
+                        tipo: 'ERROR_COORDINAR_ACCION',
+                        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                    }
+                });
+            }
+        } catch (nestedError) {
+            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
+        }
+        
+        throw error;
+    }
+});
+
+/**
+ * Maneja la sincronización de estado entre componentes.
+ * Este controlador asegura que múltiples componentes mantengan estados consistentes,
+ * propagando cambios y resolviendo conflictos.
+ * 
+ * @param {Object} mensaje - Mensaje de sincronización
+ * @param {string} mensaje.origen - Origen del mensaje
+ * @param {Object} mensaje.datos - Datos de sincronización
+ * @param {Array<string>} mensaje.datos.componentes - IDs de componentes a sincronizar
+ * @param {string} mensaje.datos.estadoTipo - Tipo de estado a sincronizar
+ * @param {Object} [mensaje.datos.estadoReferencia] - Estado de referencia a propagar
+ * @param {string} [mensaje.datos.estrategia='propagacion'] - Estrategia: 'propagacion', 'consolidacion', 'resolucion'
+ * @param {boolean} [mensaje.datos.forzar=false] - Forzar sincronización ignorando conflictos
+ * @param {number} [mensaje.datos.timeout=8000] - Timeout para la sincronización
+ * @param {string} [mensaje.mensajeId] - ID único del mensaje
+ */
+registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (mensaje) => {
+    const logPrefix = `[COORDINACION.SINCRONIZAR_COMPONENTES][${mensaje?.origen || 'desconocido'}]`;
+    const timestamp = Date.now();
+    const mensajeId = mensaje?.mensajeId || generarIdUnico();
+    
+    try {
+        // 1. Validación del mensaje
+        if (!mensaje?.origen) {
+            const errorMsg = 'Mensaje sin origen, ignorando sincronización';
+            logger.warn(`${logPrefix} ${errorMsg}`);
+            return;
+        }
+
+        if (!mensaje?.datos?.componentes || !Array.isArray(mensaje.datos.componentes)) {
+            const errorMsg = 'Componentes no especificados o inválidos';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+            throw new Error(errorMsg);
+        }
+
+        if (!mensaje?.datos?.estadoTipo) {
+            const errorMsg = 'Tipo de estado no especificado';
+            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+            throw new Error(errorMsg);
+        }
+
+        const { 
+            componentes, 
+            estadoTipo, 
+            estadoReferencia = null, 
+            estrategia = 'propagacion',
+            forzar = false,
+            timeout = 8000
+        } = mensaje.datos;
+
+        logger.info(`${logPrefix} Sincronizando estado '${estadoTipo}' entre ${componentes.length} componentes`, { 
+            mensajeId,
+            componentes,
+            estrategia
+        });
+
+        // 2. Validar que los componentes existen
+        const componentesValidos = componentes.filter(compId => {
+            const iframe = document.getElementById(compId);
+            if (!iframe) {
+                logger.warn(`${logPrefix} Componente '${compId}' no encontrado`);
+                return false;
+            }
+            return true;
+        });
+
+        if (componentesValidos.length === 0) {
+            throw new Error('Ningún componente válido para sincronizar');
+        }
+
+        let resultadoSincronizacion;
+
+        // 3. Ejecutar según estrategia
+        switch (estrategia) {
+            case 'propagacion':
+                // Propagar estado de referencia a todos los componentes
+                if (!estadoReferencia) {
+                    throw new Error('Estado de referencia requerido para estrategia de propagación');
+                }
+
+                resultadoSincronizacion = await Promise.all(componentesValidos.map(async compId => {
+                    try {
+                        await Promise.race([
+                            enviarMensajeConConfirmacion({
+                                destino: compId,
+                                tipo: TIPOS_MENSAJE.SISTEMA.ESTADO,
+                                origen: 'coordinador',
+                                mensajeId: generarIdUnico(),
+                                datos: {
+                                    estadoTipo,
+                                    estado: estadoReferencia,
+                                    forzar,
+                                    sincronizacionId: mensajeId
+                                }
+                            }),
+                            new Promise((_, reject) => 
+                                setTimeout(() => reject(new Error(`Timeout en ${compId}`)), timeout)
+                            )
+                        ]);
+
+                        return { componenteId: compId, exito: true };
+                    } catch (error) {
+                        logger.error(`${logPrefix} Error sincronizando '${compId}': ${error.message}`);
+                        return { componenteId: compId, exito: false, error: error.message };
+                    }
+                }));
+                break;
+
+            case 'consolidacion':
+                // Obtener estados de todos y consolidar
+                const estadosActuales = await Promise.all(componentesValidos.map(async compId => {
+                    try {
+                        const respuesta = await Promise.race([
+                            enviarMensajeConConfirmacion({
+                                destino: compId,
+                                tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_DATOS,
+                                origen: 'coordinador',
+                                mensajeId: generarIdUnico(),
+                                datos: { tipoInfo: estadoTipo }
+                            }),
+                            new Promise((_, reject) => 
+                                setTimeout(() => reject(new Error(`Timeout en ${compId}`)), timeout)
+                            )
+                        ]);
+
+                        return { componenteId: compId, exito: true, estado: respuesta };
+                    } catch (error) {
+                        return { componenteId: compId, exito: false, error: error.message };
+                    }
+                }));
+
+                // Consolidar estados (estrategia simple: mayoría gana)
+                const estadosExitosos = estadosActuales.filter(e => e.exito);
+                if (estadosExitosos.length === 0) {
+                    throw new Error('No se pudo obtener ningún estado para consolidar');
+                }
+
+                // Por ahora, tomar el estado más reciente como referencia
+                const estadoConsolidado = estadosExitosos.reduce((prev, current) => {
+                    return (current.estado.timestamp > prev.estado.timestamp) ? current : prev;
+                }).estado;
+
+                // Propagar estado consolidado
+                resultadoSincronizacion = await Promise.all(componentesValidos.map(async compId => {
+                    try {
+                        await enviarMensaje({
+                            destino: compId,
+                            tipo: TIPOS_MENSAJE.SISTEMA.ESTADO,
+                            origen: 'coordinador',
+                            mensajeId: generarIdUnico(),
+                            datos: {
+                                estadoTipo,
+                                estado: estadoConsolidado,
+                                sincronizacionId: mensajeId
+                            }
+                        });
+
+                        return { componenteId: compId, exito: true };
+                    } catch (error) {
+                        return { componenteId: compId, exito: false, error: error.message };
+                    }
+                }));
+                break;
+
+            case 'resolucion':
+                // Resolver conflictos entre componentes
+                logger.info(`${logPrefix} Estrategia de resolución no implementada completamente, usando propagación`);
+                resultadoSincronizacion = [{ mensaje: 'Estrategia en desarrollo' }];
+                break;
+
+            default:
+                throw new Error(`Estrategia desconocida: ${estrategia}`);
+        }
+
+        // 4. Analizar resultados
+        const exitosos = resultadoSincronizacion.filter(r => r.exito);
+        const fallidos = resultadoSincronizacion.filter(r => !r.exito);
+
+        const respuesta = {
+            estadoTipo,
+            estrategia,
+            total: componentesValidos.length,
+            exitosos: exitosos.length,
+            fallidos: fallidos.length,
+            exitoso: fallidos.length === 0,
+            componentes: resultadoSincronizacion,
+            timestamp: Date.now()
+        };
+
+        // 5. Enviar confirmación
+        await enviarMensaje({
+            destino: mensaje.origen,
+            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+            origen: 'coordinador',
+            mensajeId: generarIdUnico(),
+            datos: {
+                mensajeOriginalId: mensajeId,
+                estado: 'procesado',
+                sincronizacion: respuesta
+            }
+        });
+
+        logger.info(`${logPrefix} Sincronización completada`, { 
+            mensajeId,
+            exitosos: exitosos.length,
+            fallidos: fallidos.length
+        });
+
+        return respuesta;
+        
+    } catch (error) {
+        const errorNoManejado = `Error no manejado en SINCRONIZAR_COMPONENTES: ${error.message}`;
+        logger.error(`${logPrefix} ${errorNoManejado}`, error);
+        
+        try {
+            // Notificar error al origen
+            if (mensaje?.origen) {
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                    origen: 'coordinador',
+                    mensajeId: generarIdUnico(),
+                    datos: {
+                        error: errorNoManejado,
+                        mensajeOriginalId: mensajeId,
+                        timestamp: Date.now(),
+                        tipo: 'ERROR_SINCRONIZAR_COMPONENTES',
+                        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                    }
+                });
+            }
+        } catch (nestedError) {
+            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
+        }
+        
+        throw error;
+    }
+});
+
+export { estadoMensajeria };
