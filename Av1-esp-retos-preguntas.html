@@ -1124,35 +1124,60 @@
          */
         registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
             const logPrefix = `[hijo4][CAMBIO_MODO]`;
+            const CONFIG_HIJO = { IFRAME_ID: 'hijo4' };
 
             try {
-                const { modo } = mensaje.datos;
-
-                // Validar modo
-                if (!modo || (modo !== 'casa' && modo !== 'aventura')) {
-                    throw new Error(`Modo inválido: ${modo}. Debe ser 'casa' o 'aventura'`);
+                // Paso 1: Validar carga secuencial - esperar permiso del padre
+                if (!mensaje.datos?.secuenciaCompleta) {
+                    logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, esperando permiso...`);
+                    // Enviar NACK y esperar mensaje de PERMISO_INICIALIZACION
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { error: 'Secuencia no completa', esperarPermiso: true }
+                    });
+                    return;
                 }
 
+                // Paso 2: Extraer datos con destructuring
+                const { modo } = mensaje.datos || {};
+
+                // Paso 3: Validar datos extraídos
+                if (!modo || !['casa', 'aventura'].includes(modo)) {
+                    logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { error: 'Modo inválido', modoRecibido: modo }
+                    });
+                    return;
+                }
+
+                // Paso 4: Loggear éxito y procesar
                 logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
 
                 // Aplicar lógica específica del componente
                 actualizarInterfazModo(modo);
 
-                // Enviar confirmación al padre
+                // Paso 5: Enviar confirmación
                 await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_RESPONSE,
-                    origen: 'hijo4',
-                    destino: 'padre',
-                    datos: {
-                        exito: true,
-                        modo: modo,
-                        timestamp: Date.now()
-                    }
-                }).catch(error => logger.error('[hijo4] Error enviando confirmación de cambio de modo:', error));
+                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { modo, exito: true, timestamp: Date.now() }
+                });
 
-                logger.info(`${logPrefix} Modo cambiado exitosamente a: ${modo}`);
             } catch (error) {
-                logger.error(`${logPrefix} Error:`, error);
+                logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
+                // Enviar NACK en caso de error
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { error: error.message, timestamp: Date.now() }
+                }).catch(nackError => logger.error(`${logPrefix} Error enviando NACK:`, nackError));
             }
         });
 
