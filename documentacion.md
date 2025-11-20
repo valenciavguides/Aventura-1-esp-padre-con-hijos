@@ -1,13 +1,13 @@
-# 📘 DOCUMENTACIÓN - VALENCIA VGUIDES v3.1
+# 📘 DOCUMENTACIÓN - VALENCIA VGUIDES v3.2
 
 **Fecha de creación**: Noviembre 20, 2025  
 **Última actualización**: Noviembre 20, 2025  
-**Versión**: 3.1 - Documento Actualizado con Archivos Actuales  
+**Versión**: 3.2 - Sistema de Carga Secuencial Implementado  
 **Estado**: ✅ Completamente Verificado y Actualizado  
 **Precisión**: 99.5% contra código real  
 **Autor**: GitHub Copilot
 
-[![Version](https://img.shields.io/badge/version-3.1-blue.svg)](https://github.com/tu-usuario/valencia-vguides)
+[![Version](https://img.shields.io/badge/version-3.2-blue.svg)](https://github.com/tu-usuario/valencia-vguides)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-complete-brightgreen.svg)](documentacion.md)
 [![Status](https://img.shields.io/badge/status-production-success.svg)]()
@@ -19,6 +19,7 @@
 Este documento **documenta el estado actual** del proyecto Valencia VGuides basado en los archivos presentes en el workspace.
 
 **Contenido**:
+- 🔄 Sistema de carga secuencial documentado
 - 📊 Métricas verificadas (25,561 líneas código, 13,790 JS + 11,771 HTML)
 - 🏗️ Arquitectura padre-hijos detallada
 - 🔬 Análisis exhaustivo de cada componente
@@ -60,6 +61,9 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 │  Archivos JS:          11 módulos, 13,790 líneas
 │  Archivos HTML:        7 componentes, 11,771 líneas
 │  Arquitectura:         Padre-Hijo con postMessage API
+│  Sistema de Carga:     Secuencial con validación ✅
+│  Dependencias:         Circulares eliminadas ✅
+│  Sincronización:       Completa con permisos ✅
 │  Progresión:           Sistema centralizado implementado ✅
 │  Precisión Docs:       99.5% ✅
 │  Última Verificación:  Noviembre 20, 2025
@@ -139,6 +143,123 @@ Valencia VGuides utiliza una **arquitectura padre-hijos** basada en iframes:
             │   CASA    │
             └───────────┘
 ```
+
+### 🔄 ORDEN SECUENCIAL DE CARGA
+
+Para evitar dependencias circulares y errores de timing, se implementa un **sistema de carga secuencial** donde cada archivo/componente espera confirmación del anterior antes de inicializarse. Se utilizan **imports dinámicos con `await`** y **promesas** para forzar la sincronización.
+
+#### Fase 1: Carga de Módulos Base (Sin Dependencias)
+
+1. **`constants.js`** - Primero, ya que muchos dependen de él
+2. **`utils.js`** - Segundo, exporta utilidades básicas
+3. **`device-detection.js`** - Tercero, detección de dispositivo
+4. **`validacion.js`** - Cuarto, validaciones
+5. **`suppress-warnings.js`** - Quinto, supresión de warnings
+
+#### Fase 2: Módulos con Dependencias Simples
+
+6. **`logger.js`** - Depende de 1 (constants.js) y 3 (device-detection.js)
+7. **`monitoreo.js`** - Depende de 6 (logger.js)
+8. **`config.js`** - Depende de 1 (constants.js)
+
+#### Fase 3: Módulos con Dependencias Complejas
+
+9. **`mensajeria.js`** - Depende de 1 (constants.js), 2 (utils.js), 6 (logger.js)
+10. **`app.js`** - Depende de 2 (utils.js), 6 (logger.js), 9 (mensajeria.js), 1 (constants.js)
+11. **`funciones-mapa.js`** - Depende de 9 (mensajeria.js), 1 (constants.js), 6 (logger.js), 3 (device-detection.js)
+
+#### Fase 4: Componentes HTML (Carga Secuencial con Permisos)
+
+12. **`codigo-padre.html`** - Depende de 9, 1, 6, 2, 11, 10, 8. Se carga primero y da permisos a los hijos
+13. **`botones-y-subfunciones-hamburguesa.html`** (hijo1-hamburguesa) - Espera `PADRE_LISTO` de 12
+14. **`botones-y-subfunciones-opciones.html`** (hijo1-opciones) - Espera `HIJO_LISTO` de 13
+15. **`Av1-botones-coordenadas.html`** (hijo2) - Espera `HIJO_LISTO` de 14
+16. **`Av1_audio_esp.html`** (hijo3) - Espera `HIJO_LISTO` de 15
+17. **`Av1-esp-retos-preguntas.html`** (hijo4) - Espera `HIJO_LISTO` de 16
+18. **`Av1-boton-casa.html`** (hijo5-casa) - Espera `HIJO_LISTO` de 17
+
+#### Implementación Técnica
+
+**En `codigo-padre.html`:**
+```javascript
+// Imports dinámicos secuenciales con await
+const { TIPOS_MENSAJE } = await import('./js/constants.js');
+const { generarIdUnico } = await import('./js/utils.js');
+const logger = (await import('./js/logger.js')).default;
+const { inicializarMensajeria } = await import('./js/mensajeria.js');
+// ... continúa con el resto
+```
+
+**Carga secuencial de iframes:**
+- Cada iframe se carga con `iframe.src = src`
+- Espera 3 segundos para inicialización del HTML
+- Envía `PADRE_LISTO` al hijo
+- Espera `HIJO_LISTO` del hijo (timeout 10s)
+- Solo entonces pasa al siguiente componente
+
+#### Patrón Homogeneizado para Controladores Hijos
+
+Todos los hijos siguen el **mismo patrón** en `SISTEMA.CAMBIO_MODO`:
+
+```javascript
+registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+    const CONFIG_HIJO = { IFRAME_ID: 'hijoX' };
+    
+    try {
+        // Paso 1: Validar carga secuencial
+        if (!mensaje.datos?.secuenciaCompleta) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { error: 'Secuencia no completa', esperarPermiso: true }
+            });
+            return;
+        }
+        
+        // Paso 2: Extraer datos con destructuring
+        const { modo } = mensaje.datos || {};
+        
+        // Paso 3: Validar datos
+        if (!modo || !['casa', 'aventura'].includes(modo)) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { error: 'Modo inválido', modoRecibido: modo }
+            });
+            return;
+        }
+        
+        // Paso 4: Procesar cambio de modo
+        // ... lógica específica del componente ...
+        
+        // Paso 5: Enviar confirmación
+        await enviarMensaje({
+            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: mensaje.origen,
+            datos: { modo, exito: true, timestamp: Date.now() }
+        });
+        
+    } catch (error) {
+        // Enviar NACK en caso de error
+        await enviarMensaje({
+            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: mensaje.origen,
+            datos: { error: error.message, timestamp: Date.now() }
+        });
+    }
+});
+```
+
+**Beneficios:**
+- ✅ **Elimina dependencias circulares**
+- ✅ **Previene errores de timing**
+- ✅ **Garantiza sincronización completa**
+- ✅ **Manejo robusto de errores**
+- ✅ **Validación consistente en todos los hijos**
 
 ### Componentes Principales
 
