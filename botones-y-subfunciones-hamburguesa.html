@@ -3,231 +3,877 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Botón Hamburguesa Centrado</title>
+  <title>Menú Hamburguesa</title>
+  <script type="module">
+    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
+
+    // ============================================================
+    // CONFIGURACIÓN DEL COMPONENTE
+    // ============================================================
+    const CONFIG_HIJO = {
+        IFRAME_ID: 'hijo1-hamburguesa',
+        COMPONENTE_ID: 'HAMBURGUESA',
+        DEBUG: true,
+        LOG_PREFIX: '[HIJO1-HAMBURGUESA]',
+        TIMEOUT_PARENT: 5000, // 5 segundos
+        VERSION: '2.0'
+    };
+
+    // ============================================================
+    // GESTIÓN DE ESTADO DEL MENÚ
+    // ============================================================
+    const estadoMenu = {
+        abierto: false,
+        inicializado: false,
+        ultimaInteraccion: null,
+        parentReady: false
+    };
+
+    // ============================================================
+    // FUNCIÓN DE INICIALIZACIÓN PRINCIPAL
+    // ============================================================
+    /**
+     * Inicializa el componente hijo1-hamburguesa
+     * @returns {Promise<void>}
+     */
+    async function init() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[init]`;
+        
+        try {
+            logger.info(`${logPrefix} Iniciando componente...`);
+
+            // 1. Esperar a que el padre esté listo (con timeout)
+            if (window.parent && window.parent !== window) {
+                logger.debug(`${logPrefix} Esperando a que el padre esté listo...`);
+                
+                let attempts = 0;
+                const maxAttempts = CONFIG_HIJO.TIMEOUT_PARENT / 100; // 50 intentos
+                
+                while (attempts < maxAttempts && (!window.parent.postMessage || typeof window.parent.postMessage !== 'function')) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+                
+                if (attempts >= maxAttempts) {
+                    logger.warn(`${logPrefix} Padre no listo después de ${CONFIG_HIJO.TIMEOUT_PARENT}ms`);
+                } else {
+                    estadoMenu.parentReady = true;
+                    logger.info(`${logPrefix} Padre listo después de ${attempts * 100}ms`);
+                }
+            }
+
+            // 2. Inicializar mensajería
+            await inicializarMensajeria({
+                iframeId: CONFIG_HIJO.IFRAME_ID,
+                debug: CONFIG_HIJO.DEBUG
+            });
+
+            logger.info(`${logPrefix} Mensajería inicializada correctamente`);
+
+            // 3. Registrar controladores
+            registrarControladores();
+
+            // 4. Inicializar lógica de menú
+            inicializarLogicaMenu();
+
+            // 5. Enviar HIJO_LISTO al padre
+            await enviarMensaje({
+                destino: 'padre',
+                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: {
+                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                    timestamp: Date.now(),
+                    version: '2.0',
+                    parentReady: estadoMenu.parentReady
+                }
+            });
+
+            estadoMenu.inicializado = true;
+            logger.info(`${logPrefix} Componente inicializado correctamente`);
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
+            
+            // Enviar HIJO_FALLIDO al padre
+            try {
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        error: error.message,
+                        stack: error.stack,
+                        timestamp: Date.now()
+                    }
+                });
+            } catch (notifyError) {
+                logger.error(`${logPrefix} Error notificando fallo:`, notifyError);
+            }
+        }
+    }
+
+    // ============================================================
+    // REGISTRAR CONTROLADORES
+    // ============================================================
+    /**
+     * Registra todos los controladores del componente
+     */
+    function registrarControladores() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[registrarControladores]`;
+
+        try {
+            logger.debug(`${logPrefix} Registrando controladores...`);
+
+            // ============================================================
+            // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        throw new Error('Mensaje sin origen válido');
+                    }
+
+                    logger.info(`${logPrefixCtrl} Recibido de ${mensaje.origen}`);
+
+                    // 2. Validar estructura del mensaje
+                    if (!mensaje.tipo || mensaje.tipo !== TIPOS_MENSAJE.SISTEMA.PADRE_LISTO) {
+                        logger.warn(`${logPrefixCtrl} Tipo de mensaje inesperado:`, mensaje.tipo);
+                    }
+
+                    logger.info(`${logPrefixCtrl} Padre listo confirmado`);
+
+                    // 3. Enviar HIJO_LISTO al padre para confirmar que estamos listos
+                    try {
+                        await enviarMensaje({
+                            destino: 'padre',
+                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                version: CONFIG_HIJO.VERSION,
+                                capacidades: ['menu', 'navegacion'],
+                                tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
+                                timestamp: Date.now()
+                            }
+                        });
+                        console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_LISTO enviado al padre`);
+                    } catch (error) {
+                        console.error(`❌ [${CONFIG_HIJO.IFRAME_ID}] Error enviando HIJO_LISTO:`, error);
+                    }
+
+                    return { 
+                        exito: true, 
+                        estado: 'confirmado',
+                        timestamp: Date.now()
+                    };
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error en controlador:`, error);
+                    
+                    // Notificar error al padre
+                    try {
+                        await enviarMensaje({
+                            destino: 'padre',
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { 
+                                error: error.message,
+                                controlador: 'PADRE_LISTO',
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (notifyError) {
+                        logger.error(`${logPrefixCtrl} Error notificando al padre:`, notifyError);
+                    }
+
+                    return { 
+                        exito: false, 
+                        error: error.message 
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_CONFIRMA_HIJO_LISTO]`;
+
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        throw new Error('Mensaje sin origen válido');
+                    }
+
+                    logger.info(`${logPrefixCtrl} Confirmación recibida del padre - controladores listos`);
+
+                    // Preparado para futuras solicitudes de datos adicionales del padre
+                    logger.debug(`${logPrefixCtrl} Componente listo para recibir datos adicionales si es necesario`);
+
+                    return {
+                        exito: true,
+                        estado: 'confirmado',
+                        timestamp: Date.now()
+                    };
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error en controlador:`, error);
+
+                    // Notificar error al padre
+                    try {
+                        await enviarMensaje({
+                            destino: 'padre',
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                error: error.message,
+                                controlador: 'PADRE_CONFIRMA_HIJO_LISTO',
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (notifyError) {
+                        logger.error(`${logPrefixCtrl} Error notificando al padre:`, notifyError);
+                    }
+
+                    return {
+                        exito: false,
+                        error: error.message
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR 2: UI.CLOSE_MENUS
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.UI.CLOSE_MENUS, (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[CLOSE_MENUS]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        throw new Error('Mensaje sin origen válido');
+                    }
+
+                    logger.debug(`${logPrefixCtrl} Recibido de ${mensaje.origen}`);
+
+                    // 2. Validación de datos
+                    const datos = mensaje.datos || {};
+                    const { except } = datos;
+
+                    if (except && typeof except !== 'string') {
+                        logger.warn(`${logPrefixCtrl} Parámetro 'except' no es string:`, except);
+                    }
+
+                    logger.debug(`${logPrefixCtrl} Parámetro except=${except}`);
+
+                    // 3. Cerrar menú si no está exceptuado
+                    if (except !== 'hamburguesa') {
+                        const resultado = ocultarTodos();
+                        
+                        if (resultado.exito) {
+                            logger.info(`${logPrefixCtrl} Menú cerrado exitosamente`);
+                        } else {
+                            logger.warn(`${logPrefixCtrl} Problemas al cerrar menú:`, resultado);
+                        }
+
+                        return { 
+                            exito: true, 
+                            menuCerrado: true,
+                            estadoAnterior: estadoMenu.abierto,
+                            timestamp: Date.now()
+                        };
+                    } else {
+                        logger.debug(`${logPrefixCtrl} Menú exceptuado, no se cierra`);
+                        
+                        return { 
+                            exito: true, 
+                            menuCerrado: false,
+                            razon: 'exceptuado',
+                            timestamp: Date.now()
+                        };
+                    }
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error en controlador:`, error);
+                    
+                    return { 
+                        exito: false, 
+                        error: error.message,
+                        timestamp: Date.now()
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR 3: SISTEMA.HEARTBEAT
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[HEARTBEAT]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        return { exito: false, error: 'Sin origen' };
+                    }
+
+                    // 2. Preparar datos de respuesta
+                    const datosRespuesta = {
+                        timestamp: Date.now(),
+                        componente: CONFIG_HIJO.COMPONENTE_ID,
+                        estado: estadoMenu.abierto ? 'abierto' : 'cerrado',
+                        inicializado: estadoMenu.inicializado,
+                        ultimaInteraccion: estadoMenu.ultimaInteraccion
+                    };
+
+                    // 3. Enviar respuesta
+                    enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: datosRespuesta
+                    });
+
+                    logger.debug(`${logPrefixCtrl} Respuesta enviada a ${mensaje.origen}`);
+
+                    return { 
+                        exito: true, 
+                        timestamp: datosRespuesta.timestamp 
+                    };
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error en controlador:`, error);
+                    
+                    return { 
+                        exito: false, 
+                        error: error.message 
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR 4: SISTEMA.ACK
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[ACK]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        return { exito: false, error: 'Sin origen' };
+                    }
+
+                    logger.debug(`${logPrefixCtrl} ACK recibido, respondiendo...`);
+
+                    // 2. Preparar datos de respuesta
+                    const datosRespuesta = {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        timestamp: Date.now(),
+                        estado: 'activo',
+                        menuAbierto: estadoMenu.abierto,
+                        inicializado: estadoMenu.inicializado
+                    };
+
+                    // 3. Enviar respuesta
+                    await enviarMensaje({
+                        destino: 'padre',
+                        tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: datosRespuesta
+                    });
+
+                    logger.debug(`${logPrefixCtrl} ACK respondido`);
+
+                    return { 
+                        exito: true, 
+                        timestamp: datosRespuesta.timestamp 
+                    };
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error respondiendo ACK:`, error);
+                    
+                    return { 
+                        exito: false, 
+                        error: error.message 
+                    };
+                }
+            });
+
+            logger.info(`${logPrefix} Controladores registrados correctamente`);
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error registrando controladores:`, error);
+            throw error;
+        }
+    }
+
+    // ============================================================
+    // INICIALIZACIÓN DE LÓGICA DEL MENÚ
+    // ============================================================
+    /**
+     * Inicializa la lógica del menú hamburguesa
+     */
+    function inicializarLogicaMenu() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[inicializarLogicaMenu]`;
+        
+        try {
+            logger.debug(`${logPrefix} Iniciando...`);
+
+            // 1. Ocultar todos los iconos al inicio
+            ocultarTodos();
+
+            // 2. Event handler del botón toggle principal
+            const menuToggle = document.getElementById('menu-toggle');
+            
+            if (!menuToggle) {
+                logger.error(`${logPrefix} Botón menu-toggle no encontrado`);
+                throw new Error('Botón menu-toggle no encontrado');
+            }
+
+            menuToggle.onclick = async (event) => {
+                const clickPrefix = `${logPrefix}[click-toggle]`;
+                
+                try {
+                    logger.info(`${clickPrefix} Click detectado`);
+                    
+                    if (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+
+                    const resultado = await toggleMenu();
+                    
+                    if (!resultado.exito) {
+                        logger.error(`${clickPrefix} Error en toggle:`, resultado);
+                    }
+
+                } catch (error) {
+                    logger.error(`${clickPrefix} Error manejando click:`, error);
+                    
+                    try {
+                        await enviarMensaje({
+                            destino: 'padre',
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                error: error.message,
+                                contexto: 'click-menu-toggle',
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (notifyError) {
+                        logger.error(`${clickPrefix} Error notificando error:`, notifyError);
+                    }
+                }
+            };
+
+            // 3. Event handlers de iconos individuales
+            const todosIconos = [...iconosArriba, ...iconosAbajo];
+            
+            todosIconos.forEach((icono) => {
+                try {
+                    const el = document.getElementById(icono.id);
+                    
+                    if (!el) {
+                        logger.warn(`${logPrefix} Elemento ${icono.id} no encontrado`);
+                        return;
+                    }
+
+                    el.onclick = async (event) => {
+                        const clickPrefix = `${logPrefix}[click-${icono.id}]`;
+                        
+                        try {
+                            logger.info(`${clickPrefix} Click detectado en ${icono.nombre}`);
+                            
+                            if (event) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                            }
+
+                            // 1. Cerrar el menú
+                            const resultadoCierre = ocultarTodos();
+                            
+                            if (!resultadoCierre.exito) {
+                                logger.warn(`${clickPrefix} Problemas cerrando menú:`, resultadoCierre);
+                            }
+
+                            // 2. Abrir URL si está definida
+                            if (icono.url) {
+                                logger.info(`${clickPrefix} Abriendo URL: ${icono.url}`);
+                                
+                                try {
+                                    window.open(icono.url, '_blank');
+                                    
+                                    // Notificar navegación al padre
+                                    await enviarMensaje({
+                                        destino: 'padre',
+                                        tipo: TIPOS_MENSAJE.UI.NAVEGACION_EXTERNA,
+                                        origen: CONFIG_HIJO.IFRAME_ID,
+                                        datos: {
+                                            url: icono.url,
+                                            icono: icono.id,
+                                            timestamp: Date.now()
+                                        }
+                                    });
+
+                                } catch (openError) {
+                                    logger.error(`${clickPrefix} Error abriendo URL:`, openError);
+                                    
+                                    // Notificar error al padre
+                                    await enviarMensaje({
+                                        destino: 'padre',
+                                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                                        origen: CONFIG_HIJO.IFRAME_ID,
+                                        datos: {
+                                            error: openError.message,
+                                            url: icono.url,
+                                            timestamp: Date.now()
+                                        }
+                                    });
+                                }
+                            } else {
+                                logger.info(`${clickPrefix} Sin URL definida para ${icono.nombre}`);
+                            }
+
+                        } catch (error) {
+                            logger.error(`${clickPrefix} Error manejando click:`, error);
+                        }
+                    };
+
+                    logger.debug(`${logPrefix} Handler de ${icono.nombre} registrado`);
+
+                } catch (error) {
+                    logger.error(`${logPrefix} Error registrando handler ${icono.id}:`, error);
+                }
+            });
+
+            logger.info(`${logPrefix} Lógica del menú inicializada correctamente`);
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico:`, error);
+            throw error;
+        }
+    }
+
+    // ============================================================
+    // CONFIGURACIÓN DE ICONOS Y CONSTANTES UI
+    // ============================================================
+    const LAYOUT_CONFIG = {
+        ALTURA_BOTON: 60,
+        ALTURA_ICONO: 48,
+        SEPARACION: 8,
+        DURACION_ANIMACION: 300 // ms
+    };
+
+    const iconosArriba = [
+        { id: 'icono-retos', url: 'retos_con_puzzles_Av1_es.html', nombre: 'Retos' },
+        { id: 'icono-gastronomia', url: 'Gastronomia.html', nombre: 'Gastronomía' }
+    ];
+    
+    const iconosAbajo = [
+        { id: 'icono-informacion', url: 'paginas_oficiales.html', nombre: 'Información' },
+        { id: 'icono-historia', url: 'enlaces_valencia_historica.html', nombre: 'Historia' }
+    ];
+
+    // ============================================================
+    // FUNCIONES DE GESTIÓN DEL MENÚ
+    // ============================================================
+
+    /**
+     * Oculta todos los iconos del menú hamburguesa
+     * @returns {Object} Resultado de la operación con estadísticas
+     */
+    function ocultarTodos() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[ocultarTodos]`;
+        
+        try {
+            logger.debug(`${logPrefix} Iniciando ocultación de iconos...`);
+
+            const todosIconos = [...iconosArriba, ...iconosAbajo];
+            let ocultados = 0;
+            let errores = 0;
+
+            todosIconos.forEach((icono, index) => {
+                try {
+                    // Validar que el elemento existe
+                    const el = document.getElementById(icono.id);
+                    
+                    if (!el) {
+                        logger.warn(`${logPrefix} Elemento no encontrado: ${icono.id}`);
+                        errores++;
+                        return;
+                    }
+
+                    // Ocultar con animación
+                    el.style.display = 'none';
+                    el.style.opacity = '0';
+                    
+                    ocultados++;
+
+                } catch (error) {
+                    logger.error(`${logPrefix} Error ocultando ${icono.id}:`, error);
+                    errores++;
+                }
+            });
+
+            // Actualizar estado global
+            estadoMenu.abierto = false;
+            estadoMenu.ultimaInteraccion = Date.now();
+
+            logger.info(`${logPrefix} Iconos ocultados: ${ocultados}/${todosIconos.length}, errores: ${errores}`);
+
+            return {
+                exito: errores === 0,
+                ocultados,
+                errores,
+                total: todosIconos.length,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico:`, error);
+            
+            return {
+                exito: false,
+                error: error.message,
+                timestamp: Date.now()
+            };
+        }
+    }
+
+    /**
+     * Muestra todos los iconos del menú con posicionamiento dinámico
+     * @returns {Object} Resultado de la operación con estadísticas
+     */
+    function mostrarIconos() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[mostrarIconos]`;
+        
+        try {
+            logger.debug(`${logPrefix} Iniciando visualización de iconos...`);
+
+            // 1. Validar dimensiones del contenedor
+            const iframeHeight = document.body.clientHeight;
+            
+            if (!iframeHeight || iframeHeight <= 0) {
+                logger.error(`${logPrefix} Altura de iframe inválida: ${iframeHeight}`);
+                throw new Error('Altura de iframe inválida');
+            }
+
+            const btnTop = iframeHeight / 2;
+            let mostrados = 0;
+            let errores = 0;
+
+            // 2. Mostrar iconos superiores
+            iconosArriba.forEach((icono, i) => {
+                try {
+                    const el = document.getElementById(icono.id);
+                    
+                    if (!el) {
+                        logger.warn(`${logPrefix} Elemento no encontrado: ${icono.id}`);
+                        errores++;
+                        return;
+                    }
+
+                    // Calcular posición hacia arriba desde el centro
+                    const posicionTop = btnTop - 
+                                       LAYOUT_CONFIG.ALTURA_BOTON / 2 - 
+                                       (i + 1) * (LAYOUT_CONFIG.ALTURA_ICONO + LAYOUT_CONFIG.SEPARACION);
+
+                    el.style.display = 'flex';
+                    el.style.opacity = '1';
+                    el.style.top = `${posicionTop}px`;
+                    
+                    mostrados++;
+                    logger.debug(`${logPrefix} ${icono.nombre} posicionado en ${posicionTop}px`);
+
+                } catch (error) {
+                    logger.error(`${logPrefix} Error mostrando ${icono.id}:`, error);
+                    errores++;
+                }
+            });
+
+            // 3. Mostrar iconos inferiores
+            iconosAbajo.forEach((icono, i) => {
+                try {
+                    const el = document.getElementById(icono.id);
+                    
+                    if (!el) {
+                        logger.warn(`${logPrefix} Elemento no encontrado: ${icono.id}`);
+                        errores++;
+                        return;
+                    }
+
+                    // Calcular posición hacia abajo desde el centro
+                    const posicionTop = btnTop + 
+                                       LAYOUT_CONFIG.ALTURA_BOTON / 2 + 
+                                       LAYOUT_CONFIG.SEPARACION + 
+                                       i * (LAYOUT_CONFIG.ALTURA_ICONO + LAYOUT_CONFIG.SEPARACION);
+
+                    el.style.display = 'flex';
+                    el.style.opacity = '1';
+                    el.style.top = `${posicionTop}px`;
+                    
+                    mostrados++;
+                    logger.debug(`${logPrefix} ${icono.nombre} posicionado en ${posicionTop}px`);
+
+                } catch (error) {
+                    logger.error(`${logPrefix} Error mostrando ${icono.id}:`, error);
+                    errores++;
+                }
+            });
+
+            // 4. Actualizar estado global
+            estadoMenu.abierto = true;
+            estadoMenu.ultimaInteraccion = Date.now();
+
+            const totalIconos = iconosArriba.length + iconosAbajo.length;
+            logger.info(`${logPrefix} Iconos mostrados: ${mostrados}/${totalIconos}, errores: ${errores}`);
+
+            return {
+                exito: errores === 0,
+                mostrados,
+                errores,
+                total: totalIconos,
+                dimensiones: { iframeHeight, btnTop },
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico:`, error);
+            
+            return {
+                exito: false,
+                error: error.message,
+                timestamp: Date.now()
+            };
+        }
+    }
+
+    /**
+     * Alterna el estado del menú (abrir/cerrar)
+     * @returns {Promise<Object>} Resultado de la operación
+     */
+    async function toggleMenu() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[toggleMenu]`;
+        
+        try {
+            logger.debug(`${logPrefix} Estado actual: ${estadoMenu.abierto ? 'abierto' : 'cerrado'}`);
+
+            // 1. Notificar al padre para cerrar otros menús
+            try {
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.UI.CLOSE_MENUS,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: { 
+                        except: 'hamburguesa',
+                        timestamp: Date.now()
+                    }
+                });
+
+                logger.debug(`${logPrefix} Notificación CLOSE_MENUS enviada al padre`);
+
+            } catch (mensajeError) {
+                logger.warn(`${logPrefix} Error notificando cierre de menús:`, mensajeError);
+                // Continuar aunque falle la notificación
+            }
+
+            // 2. Alternar estado
+            let resultado;
+            
+            if (estadoMenu.abierto) {
+                resultado = ocultarTodos();
+                logger.info(`${logPrefix} Menú cerrado`);
+            } else {
+                ocultarTodos(); // Asegurar estado limpio
+                resultado = mostrarIconos();
+                logger.info(`${logPrefix} Menú abierto`);
+            }
+
+            return {
+                exito: true,
+                accion: estadoMenu.abierto ? 'abierto' : 'cerrado',
+                detalles: resultado,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico:`, error);
+            
+            // Intentar revertir a estado cerrado seguro
+            try {
+                ocultarTodos();
+            } catch (revertError) {
+                logger.error(`${logPrefix} Error revirtiendo estado:`, revertError);
+            }
+
+            return {
+                exito: false,
+                error: error.message,
+                timestamp: Date.now()
+            };
+        }
+    }
+
+    // ============================================================
+    // REGISTRAR EVENT HANDLERS
+    // ============================================================
+
+
+
+    // ============================================================
+    // EJECUTAR INICIALIZACIÓN
+    // ============================================================
+    init();
+
+    // Implementar pagehide para limpiar recursos
+    window.addEventListener('pagehide', () => {
+        logger.info(`[hijo1-hamburguesa] Limpiando recursos en pagehide`);
+        // Limpiar referencias globales o listeners si es necesario
+    });
+  </script>
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
-      width: 100vw;
-      height: 100vh;
-      background: transparent;
-      position: relative;
-      overflow: hidden;
+      margin: 0; padding: 0; width: 100vw; height: 100vh; background: transparent;
+      position: relative; overflow: hidden;
     }
-    
     .boton-flotante {
       position: absolute;
-      left: 50%;
-      top: 50%;
+      left: 50%; top: 50%;
       transform: translate(-50%, -50%);
-      width: 60px;
-      height: 60px;
-      background: #007acc;
-      color: white;
-      border-radius: 50%;
-      font-size: 2rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      outline: none;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      cursor: pointer;
-      z-index: 1300;
+      width: 60px; height: 60px;
+      background: #007acc; color: white; border-radius: 50%;
+      font-size: 2rem; display: flex; align-items: center; justify-content: center;
+      border: none; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      cursor: pointer; z-index: 1300;
     }
-    
     .icono-flotante {
       position: absolute;
       left: 50%;
       transform: translateX(-50%);
-      width: 48px;
-      height: 48px;
-      background: #007acc;
-      color: white;
-      border-radius: 50%;
-      font-size: 1.5rem;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      outline: none;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      cursor: pointer;
-      z-index: 1300;
-      opacity: 0;
-      transition: opacity 0.3s;
+      width: 48px; height: 48px;
+      background: #007acc; color: white; border-radius: 50%;
+      font-size: 1.5rem; display: none; align-items: center; justify-content: center;
+      border: none; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      cursor: pointer; z-index: 1300; opacity: 0; transition: opacity 0.3s;
     }
   </style>
 </head>
 <body>
-  <button id="hamburguesa" class="boton-flotante">☰</button>
+  <!-- Botones flotantes (ahora directamente en el body) -->
+  <button id="menu-toggle" class="boton-flotante">☰</button>
   <button class="icono-flotante" id="icono-retos">🧩</button>
   <button class="icono-flotante" id="icono-gastronomia">🍽️</button>
   <button class="icono-flotante" id="icono-informacion">🌐</button>
   <button class="icono-flotante" id="icono-historia">🏛️</button>
-  <script type="module">
-    // Importar módulos necesarios
-    import { CONFIG } from './js/config.js';
-    import { TIPOS_MENSAJE } from './js/constants.js';
-    import { inicializarMensajeria, enviarMensaje, registrarControlador, enviarACK, enviarNACK } from './js/mensajeria.js';
-    
-    // Inicializar mensajería
-    const IFRAME_ID = 'menu-hamburguesa';
-    
-    // Inicializar el sistema de mensajería
-    await inicializarMensajeria({
-      ...CONFIG.MENSAJERIA,
-      iframeId: IFRAME_ID
-    });
-    
-    console.log(`[${IFRAME_ID}] Sistema de mensajería inicializado`);
-    
-    // Configuración
-    const SEPARACION = 8; // px entre iconos
-    const ALTURA_BOTON = 60;
-    const ALTURA_ICONO = 48;
-    // Dos iconos abajo, el resto arriba
-    const iconosArriba = [
-      { id: 'icono-retos', url: 'retos_con_puzzles_Av1_es.html' },
-      { id: 'icono-gastronomia', url: 'Gastronomia.html' }
-    ];
-    const iconosAbajo = [
-      { id: 'icono-informacion', url: 'paginas_oficiales.html' },
-      { id: 'icono-historia', url: 'enlaces_valencia_historica.html' }
-    ];
-    let abierto = false;
-
-    function ocultarTodos() {
-      [...iconosArriba, ...iconosAbajo].forEach(icono => {
-        const el = document.getElementById(icono.id);
-        el.style.display = 'none'; el.style.opacity = 0;
-      });
-      abierto = false;
-    }
-
-    function mostrarIconos() {
-      const iframeHeight = document.body.clientHeight;
-      const btnTop = iframeHeight / 2 - ALTURA_BOTON / 2;
-
-      // Iconos arriba (repartidos hacia arriba desde el centro)
-      iconosArriba.forEach((icono, i) => {
-        const el = document.getElementById(icono.id);
-        el.style.display = 'flex'; el.style.opacity = 1;
-        el.style.left = '50%';
-        el.style.transform = 'translateX(-50%)';
-        el.style.top = (btnTop - (iconosArriba.length - i) * (ALTURA_ICONO + SEPARACION)) + 'px';
-      });
-      // Iconos abajo (repartidos hacia abajo desde el centro)
-      iconosAbajo.forEach((icono, i) => {
-        const el = document.getElementById(icono.id);
-        el.style.display = 'flex'; el.style.opacity = 1;
-        el.style.left = '50%';
-        el.style.transform = 'translateX(-50%)';
-        el.style.top = (btnTop + ALTURA_BOTON + SEPARACION + i * (ALTURA_ICONO + SEPARACION)) + 'px';
-      });
-      abierto = true;
-    }
-
-    document.getElementById('hamburguesa').onclick = async () => {
-      try {
-        // Avisar al padre para cerrar otros menús usando el sistema de mensajería
-        await enviarMensaje('padre', 'CONTROL.MENU', {
-          accion: 'cerrar_otros',
-          except: 'hamburguesa',
-          origen: IFRAME_ID
-        });
-        
-        if (abierto) {
-          ocultarTodos();
-        } else {
-          ocultarTodos();
-          mostrarIconos();
-        }
-        
-        // Pausar audio usando el sistema de mensajería
-        await enviarMensaje('padre', 'AUDIO.CONTROL', {
-          accion: 'pausar',
-          origen: IFRAME_ID
-        });
-        
-        // Para compatibilidad con código antiguo
-        window.parent.postMessage({ type: 'closeOtherMenus', except: 'hamburguesa' }, '*');
-        window.parent.postMessage({ type: 'pauseAudioFromBoton' }, '*');
-      } catch (error) {
-        console.error(`[${IFRAME_ID}] Error al manejar click en botón hamburguesa:`, error);
-      }
-    };
-
-    // Configurar manejadores de mensajes usando el sistema centralizado
-    function inicializarManejadoresMensajes() {
-      // Manejar mensajes del sistema
-      registrarControlador('PING', async (mensaje) => {
-        console.log(`[${IFRAME_ID}] Recibido PING, respondiendo...`);
-        try {
-          await enviarACK(mensaje, {
-            timestamp: new Date().toISOString(),
-            componente: IFRAME_ID,
-            responseType: 'PONG'
-          });
-        } catch (error) {
-          console.error(`[${IFRAME_ID}] Error al responder PING:`, error);
-        }
-      });
-      
-      // Manejar mensajes para cerrar menús
-      registrarControlador('CONTROL.MENU', async (mensaje) => {
-        const { accion, menuId, except } = mensaje.datos || {};
-        
-        if (accion === 'cerrar_otros' && except !== 'hamburguesa') {
-          ocultarTodos();
-          await enviarACK(mensaje, { estado: 'menu_cerrado' });
-        } else if (accion === 'cerrar' && menuId !== 'hamburguesa') {
-          ocultarTodos();
-          await enviarACK(mensaje, { estado: 'menu_cerrado' });
-        } else if (accion === 'mostrar' && menuId === 'hamburguesa') {
-          mostrarIconos();
-          await enviarACK(mensaje, { estado: 'menu_mostrado' });
-        }
-      });
-      
-      // Compatibilidad con el sistema anterior de mensajes
-      window.addEventListener('message', (e) => {
-        // Si el padre pide cerrar todos menos este y este no es el except, ciérrate
-        if (e.data && e.data.type === 'closeOtherMenus' && e.data.except !== 'hamburguesa') {
-          ocultarTodos();
-        }
-        // También puedes escuchar por un mensaje específico si lo necesitas
-        if (e.data && e.data.type === 'closeMenu' && e.data.menu !== 'hamburguesa') {
-          ocultarTodos();
-        }
-      });
-    }
-    
-    // Inicializar los manejadores
-    inicializarManejadoresMensajes();
-
-    [...iconosArriba, ...iconosAbajo].forEach(icono => {
-      const el = document.getElementById(icono.id);
-      el.onclick = async () => {
-        try {
-          // Pausar audio usando el sistema de mensajería
-          await enviarMensaje('padre', 'AUDIO.CONTROL', {
-            accion: 'pausar',
-            origen: IFRAME_ID,
-            motivo: `Click en ${icono.id}`
-          });
-          
-          // Para compatibilidad con código antiguo
-          window.parent.postMessage({ type: 'pauseAudioFromBoton' }, '*');
-          
-          if (icono.url) window.open(icono.url, '_blank');
-        } catch (error) {
-          console.error(`[${IFRAME_ID}] Error al manejar click en icono ${icono.id}:`, error);
-        }
-      };
-    });
-
-    ocultarTodos();
-  </script>
 </body>
 </html>
