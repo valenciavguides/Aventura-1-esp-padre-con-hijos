@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retos y Preguntas</title>
+    <title>Retos y Preguntas hijo4</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -34,509 +34,1273 @@
             transition: background-color 0.3s, transform 0.1s;
         }
         .btn:active { transform: scale(0.95); }
-        .btn-completado { background-color: #27ae60; }
-        .btn-ocultar { background-color: #7f8c8d; }
+        .btn-habilitado {
+            background: linear-gradient(to right, #28a745, #218838); /* Green gradient - consistent with Hijo2 */
+        }
+        .btn-deshabilitado {
+            background: linear-gradient(to right, #dc3545, #c82333); /* Red gradient - consistent with Hijo2 */
+            opacity: 0.6;
+        }
+
+        /* Estilos para modo casa - botones siempre habilitados */
+        body.modo-casa .btn {
+            background: linear-gradient(to right, #28a745, #218838) !important;
+            opacity: 1 !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+
+        body.modo-casa .btn-deshabilitado {
+            background: linear-gradient(to right, #28a745, #218838) !important;
+            opacity: 1 !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
     </style>
     
     <!-- Import CONFIG and other required modules -->
     <script type="module">
-        // Import required modules
-        import { CONFIG } from './js/config.js';
-        import { TIPOS_MENSAJE } from './js/constants.js';
-        import { inicializarMensajeria, enviarMensaje, registrarControlador, enviarACK, enviarNACK } from './js/mensajeria.js';
-        import logger from './js/logger.js';
+    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
+
+    const CONFIG_HIJO = {
+        IFRAME_ID: 'hijo4',
+        COMPONENTE_ID: 'RETOS',
+        DEBUG: true
+    };
+
+    // Estado del componente
+    const estado = {
+        retoActualId: null,
+        inicializado: false,
+        modoActual: 'aventura' // Valor por defecto
+    };
+
+    // Función para actualizar la interfaz según el modo
+    function actualizarInterfazModo(modo) {
+        console.log(`[RETOS] Actualizando interfaz para modo: ${modo}`);
+        const body = document.body;
         
-        // Make CONFIG available globally for legacy code
-        window.CONFIG = CONFIG;
+        // Actualizar estado local
+        estado.modoActual = modo;
         
-        // Funciones de inicialización globales
-        function inicializarInterfaz() {
-            console.log('Interfaz inicializada');
+        // Actualizar clases CSS
+        body.classList.remove('modo-casa', 'modo-aventura');
+        body.classList.add(`modo-${modo}`);
+        
+        // Ajustes específicos según el modo
+        const retoContainer = document.getElementById('reto-container');
+        if (retoContainer) {
+            retoContainer.dataset.modo = modo;
             
-            // Inicializar elementos de la interfaz
-            const btnOcultar = document.getElementById('btn-ocultar');
-            if (btnOcultar) {
-                btnOcultar.addEventListener('click', () => {
-                    enviarMensaje('padre', TIPOS_MENSAJE.RETO.OCULTAR, {});
+            // Ajustar estilos según el modo
+            if (modo === 'casa') {
+                retoContainer.style.borderColor = '#3498db'; // Azul para modo casa
+            } else {
+                retoContainer.style.borderColor = '#e67e22'; // Naranja para modo aventura
+            }
+        }
+        
+        // Si hay un reto abierto, actualizar su visualización
+        if (estado.retoActualId) {
+            // Aquí iría la lógica para actualizar la visualización del reto actual
+            // según el modo, si es necesario
+            console.log(`[RETOS] Se está mostrando el reto ${estado.retoActualId} en modo ${modo}`);
+        }
+    }
+
+    // Array de retos - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear retos/puzzles. Cualquier cambio debe coordinarse con el padre.
+    const retosAventura1Es = [
+        {
+            reto: 1,
+            id: "R-1",
+            tipo: "opcion",
+            pregunta: "1. ¿Cuántas Aventuras pueden hacerse con Valencia be Guides?",
+            opciones: ["4", "5", "6", "7"],
+            correctas: ["7"],
+            multiple: false
+        },
+        {
+            reto: 2,
+            id: "R-2",
+            tipo: "opcion",
+            pregunta: "2. ¿Sabía decirme cómo se llaman estas Torres?",
+            opciones: ["Torres de Quart", "Torres de Serranos", "Torre del Miguelete", "Torre de Santa catalina"],
+            correctas: ["Torres de Serranos"],
+            multiple: false
+        },
+        {
+            reto: 3,
+            id: "R-3",
+            tipo: "opcion",
+            pregunta: "3. ¿En la cumbre de las torres ondea la bandera de Valencia: sus colores se componen de rojo, amarillo y… ?",
+            opciones: ["Violeta", "Verde", "Azul"],
+            correctas: ["Azul"],
+            multiple: false
+        },
+        {
+            reto: 4,
+            id: "R-4",
+            tipo: "texto",
+            pregunta: "4. ¿Sabría decirme el nombre de la calle?",
+            correctas: ["Calle Muro de Santa Ana"]
+        },
+        {
+            reto: 5,
+            id: "R-5",
+            tipo: "opcion",
+            pregunta: "5. ¿Qué porta San Lorenzo en la mano?",
+            opciones: ["Una Paloma", "Una cuchara", "Una parrilla"],
+            correctas: ["Una parrilla"],
+            multiple: false
+        },
+        {
+            reto: 6,
+            id: "R-6",
+            tipo: "opcion",
+            pregunta: "6. ¿Con qué mano sujeta Neptuno la cornucopia?",
+            opciones: ["Izquierda", "Derecha"],
+            correctas: ["Derecha"],
+            multiple: false
+        },
+        {
+            reto: 7,
+            id: "R-7",
+            tipo: "texto",
+            pregunta: "7. ¿Cuántas figuras rodean la fuente?",
+            correctas: ["8"]
+        },
+        {
+            reto: 8,
+            id: "PZ-8",
+            tipo: "puzzle",
+            pregunta: "8. Plaza de la Virgen",
+            src: "P8_puzzle_plaza_virgen.html"
+        },
+        {
+            reto: 9,
+            id: "R-9",
+            tipo: "opcion",
+            pregunta: "9. ¿Qué figura esculpida puede verse en el marco del cuadro?",
+            opciones: ["Un Dragón", "Un Murciélago", "Una Corona"],
+            correctas: ["Una Corona"],
+            multiple: false
+        },
+        {
+            reto: 10,
+            id: "R-10",
+            tipo: "opcion-multiple",
+            pregunta: "10. ¿Qué puede verse dentro?",
+            opciones: ["Un Altar", "Una bandera", "Una espada"],
+            correctas: ["Un Altar", "Una bandera"],
+            multiple: true
+        },
+        {
+            reto: 11,
+            id: "R-11",
+            tipo: "texto",
+            pregunta: "11. Sobre ésta hay una placa conmemorativa. ¿En qué año fue expuesta dicha placa?",
+            correctas: ["1952"]
+        },
+        {
+            reto: 12,
+            id: "R-12",
+            tipo: "texto",
+            pregunta: "12. ¿En qué año se edificó esta finca? ¡Pista! Mire en la parte superior de la fachada.",
+            correctas: ["1906"]
+        },
+        {
+            reto: 13,
+            id: "R-13",
+            tipo: "opcion",
+            pregunta: "13. ¿Qué puede verse dentro?",
+            opciones: ["Una Plaza de Toros", "Unos baños romanos", "Una estación de metro"],
+            correctas: ["Unos baños romanos"],
+            multiple: false
+        },
+        {
+            reto: 14,
+            id: "R-14",
+            tipo: "opcion",
+            pregunta: "14. ¿Sabría determinar qué geometría tiene?",
+            opciones: ["hexagonal", "Octogonal", "Cuadrangular"],
+            correctas: ["hexagonal"],
+            multiple: false
+        },
+        {
+            reto: 15,
+            id: "R-15",
+            tipo: "texto",
+            pregunta: "15. ¿Cuántos Arcos componen la puerta?",
+            correctas: ["6"]
+        },
+        {
+            reto: 16,
+            id: "R-16",
+            tipo: "opcion",
+            pregunta: "16. ¿Recuerda qué animal corona el escudo municipal?",
+            opciones: ["Un Dragón", "Un Murciélago", "Un Caballo"],
+            correctas: ["Un Murciélago"],
+            multiple: false
+        },
+        {
+            reto: 17,
+            id: "R-17",
+            tipo: "opcion",
+            pregunta: "17. ¡Preste atención a la fachada de la primera torre! ¿Qué Fruta Cítrica natural de Valencia decora la fachada?",
+            opciones: ["Limones", "Pomelos", "Naranjas"],
+            correctas: ["Naranjas"],
+            multiple: false
+        },
+        {
+            reto: 18,
+            id: "PZ-18",
+            tipo: "puzzle",
+            pregunta: "18. Plaza de Toros y Estación del Norte",
+            src: "P18_puzzle_plaza_de_Toros_y_estacion_norte.html"
+        },
+        {
+            reto: 19,
+            id: "R-19",
+            tipo: "texto",
+            pregunta: "19. ¿Sabría decirme qué comercio alberga dicho edificio?",
+            correctas: ["?"]
+        },
+        {
+            reto: 20,
+            id: "R-20",
+            tipo: "opcion-multiple",
+            pregunta: "20. Sobre la entrada principal, en un arco de medio punto, figuras alegóricas representan a los cinco continentes. ¿Qué porta la figura central en sus manos?",
+            opciones: ["Una Corona", "Una Espada", "Una Antorcha"],
+            correctas: ["Una Antorcha", "Una Espada"],
+            multiple: true
+        },
+        {
+            reto: 21,
+            id: "R-21",
+            tipo: "opcion",
+            pregunta: "21. ¿Qué porta la figura en la mano?",
+            opciones: ["Una balanza", "Un libro", "Una pluma"],
+            correctas: ["Una balanza"],
+            multiple: false
+        },
+        {
+            reto: 22,
+            id: "R-22",
+            tipo: "texto",
+            pregunta: "22. ¿Cuantas plantas tiene el edificio?",
+            correctas: ["10"]
+        },
+        {
+            reto: 23,
+            id: "R-23",
+            tipo: "opcion",
+            pregunta: "23. Busque la vidriera con los colores de la Señera valenciana en la fachada del edificio. ¿Sabría determinar qué forma tiene?",
+            opciones: ["Cuadrangular", "Redonda", "Triangular"],
+            correctas: ["Redonda"],
+            multiple: false
+        },
+        {
+            reto: 24,
+            id: "R-24",
+            tipo: "opcion-multiple",
+            pregunta: "24. ¿Qué sostiene la virgen en sus manos?",
+            opciones: ["Un Rosario", "Un niño", "Una corona"],
+            correctas: ["Un Rosario", "Un niño"],
+            multiple: true
+        },
+        {
+            reto: 25,
+            id: "R-25",
+            tipo: "opcion",
+            pregunta: "25. ¿Qué le entrega el ángel al niño?",
+            opciones: ["Una paloma", "Un orbe", "Alimentos"],
+            correctas: ["Un orbe"],
+            multiple: false
+        },
+        {
+            reto: 26,
+            id: "PZ-26",
+            tipo: "puzzle",
+            pregunta: "26. Lonja de la Seda",
+            src: "P26_puzzle_lonja.html"
+        },
+        {
+            reto: 27,
+            id: "R-27",
+            tipo: "opcion-multiple",
+            pregunta: "27. El barquero que rema a contracorriente.",
+            opciones: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
+            correctas: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
+            multiple: true
+        },
+        {
+            reto: 28,
+            id: "R-28",
+            tipo: "opcion-multiple",
+            pregunta: "28. Un árbol muerto: símbolo del Pecado, se ve entre las dos hojas de la puerta y cumple la función de parteluz.",
+            opciones: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
+            correctas: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
+            multiple: true
+        }
+    ];
+
+    /**
+     * Muestra un reto en la interfaz
+     * @param {string} retoId - ID del reto a mostrar
+     */
+    async function mostrarReto(retoId) {
+        const reto = retosAventura1Es.find(r => r.id === retoId);
+        if (!reto) {
+            logger.error(`[hijo4] Reto no encontrado: ${retoId}`);
+            return;
+        }
+
+        logger.info(`[hijo4] Mostrando reto: ${retoId}`, { tipo: reto.tipo });
+        estado.retoActualId = retoId;
+
+        const tituloEl = document.getElementById('reto-titulo');
+        const bodyEl = document.getElementById('reto-body');
+
+        // Actualizar título
+        if (tituloEl) {
+            tituloEl.textContent = reto.pregunta;
+        }
+
+        // Generar contenido del reto
+        if (bodyEl) {
+            if (reto.tipo === 'puzzle') {
+                // Tipo puzzle: mostrar iframe
+                bodyEl.innerHTML = `
+                    <div class="puzzle-container">
+                        <iframe 
+                            src="${reto.src}" 
+                            width="100%" 
+                            height="400px" 
+                            frameborder="0"
+                            allow="fullscreen"
+                            loading="lazy"
+                        ></iframe>
+                    </div>
+                `;
+            } else if (reto.tipo === 'opcion' || reto.tipo === 'opcion-multiple') {
+                // Tipo opción: mostrar botones
+                const multiple = reto.tipo === 'opcion-multiple';
+                const html = `
+                    <div class="opciones-container">
+                        ${multiple ? '<p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Selecciona todas las opciones correctas:</p>' : ''}
+                        ${reto.opciones.map((op, idx) => `
+                            <button 
+                                class="btn opcion" 
+                                data-opcion="${op}"
+                                data-index="${idx}"
+                                style="display: block; width: 100%; margin: 8px 0; text-align: left; padding: 12px;"
+                            >
+                                ${multiple ? '☐' : '○'} ${op}
+                            </button>
+                        `).join('')}
+                    </div>
+                `;
+                bodyEl.innerHTML = html;
+
+                // Configurar event listeners para opciones
+                const botonesOpcion = bodyEl.querySelectorAll('.opcion');
+                botonesOpcion.forEach(btn => {
+                    btn.addEventListener('click', () => manejarSeleccionOpcion(btn, multiple, reto));
+                });
+            } else if (reto.tipo === 'texto') {
+                // Tipo texto: mostrar input
+                bodyEl.innerHTML = `
+                    <div class="texto-container">
+                        <input 
+                            type="text" 
+                            id="respuesta-texto" 
+                            placeholder="Escribe tu respuesta aquí..."
+                            style="width: 100%; padding: 12px; font-size: 1em; border: 2px solid #e67e22; border-radius: 5px; margin-bottom: 15px;"
+                        >
+                        <button 
+                            class="btn btn-enviar" 
+                            id="btn-enviar"
+                            style="background-color: #27ae60; width: 100%;"
+                        >
+                            Enviar Respuesta
+                        </button>
+                    </div>
+                `;
+
+                // Configurar event listener para el botón enviar
+                const btnEnviar = document.getElementById('btn-enviar');
+                const inputTexto = document.getElementById('respuesta-texto');
+                
+                if (btnEnviar && inputTexto) {
+                    btnEnviar.addEventListener('click', () => manejarRespuestaTexto(inputTexto, reto));
+                    
+                    // Permitir enviar con Enter
+                    inputTexto.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            manejarRespuestaTexto(inputTexto, reto);
+                        }
+                    });
+                }
+            } else {
+                // Tipo desconocido
+                bodyEl.innerHTML = `<p style="color: #999;">Tipo de reto no soportado: ${reto.tipo}</p>`;
+                logger.warn(`[hijo4] Tipo de reto desconocido: ${reto.tipo}`);
+            }
+        }
+
+        // Mostrar el contenedor
+        const container = document.getElementById('reto-container');
+        if (container) {
+            container.style.display = 'flex';
+        }
+
+        // Enviar confirmación al padre de que el reto ha sido mostrado
+        await enviarMensaje({
+            tipo: TIPOS_MENSAJE.RETO.MOSTRADO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: 'padre',
+            datos: {
+                retoId: retoId,
+                tipo: reto.tipo
+            }
+        });
+
+        logger.success(`[hijo4] Reto mostrado correctamente: ${retoId}`);
+    }
+
+    /**
+     * Maneja la selección de una opción en un reto de tipo opción
+     * @param {HTMLElement} boton - Botón clickeado
+     * @param {boolean} multiple - Si es selección múltiple
+     * @param {Object} reto - Objeto del reto actual
+     */
+    function manejarSeleccionOpcion(boton, multiple, reto) {
+        const opcionSeleccionada = boton.dataset.opcion;
+        
+        if (!multiple) {
+            // Opción única: desmarcar otros botones
+            const todosLosBotones = document.querySelectorAll('.opcion');
+            todosLosBotones.forEach(btn => {
+                btn.style.backgroundColor = '';
+                btn.textContent = btn.textContent.replace('● ', '○ ');
+            });
+            
+            // Marcar botón actual
+            boton.style.backgroundColor = '#3498db';
+            boton.style.color = 'white';
+            boton.textContent = boton.textContent.replace('○ ', '● ');
+            
+            // Verificar respuesta
+            const correcto = reto.correctas.includes(opcionSeleccionada);
+            logger.info(`[hijo4] Opción seleccionada: ${opcionSeleccionada}, Correcta: ${correcto}`);
+            
+            // Notificar al padre inmediatamente
+            setTimeout(async () => {
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        retoId: reto.id,
+                        respuesta: opcionSeleccionada,
+                        correcto,
+                        timestamp: Date.now()
+                    }
+                });
+                
+                // Ocultar después de 1.5 segundos
+                setTimeout(() => ocultarReto(), 1500);
+            }, 500);
+        } else {
+            // Opción múltiple: toggle selección
+            const seleccionado = boton.style.backgroundColor === 'rgb(52, 152, 219)'; // #3498db
+            
+            if (seleccionado) {
+                // Desmarcar
+                boton.style.backgroundColor = '';
+                boton.style.color = '';
+                boton.textContent = boton.textContent.replace('☑ ', '☐ ');
+            } else {
+                // Marcar
+                boton.style.backgroundColor = '#3498db';
+                boton.style.color = 'white';
+                boton.textContent = boton.textContent.replace('☐ ', '☑ ');
+            }
+            
+            logger.info(`[hijo4] Opción multiple toggle: ${opcionSeleccionada}`);
+        }
+    }
+
+    /**
+     * Maneja la respuesta de texto ingresada por el usuario
+     * @param {HTMLInputElement} input - Input de texto
+     * @param {Object} reto - Objeto del reto actual
+     */
+    async function manejarRespuestaTexto(input, reto) {
+        const respuestaUsuario = input.value.trim();
+        
+        if (!respuestaUsuario) {
+            logger.warn(`[hijo4] Respuesta vacía`);
+            input.style.borderColor = '#e74c3c';
+            return;
+        }
+        
+        // Verificar respuesta (comparación case-insensitive)
+        const correcto = reto.correctas.some(resp => 
+            resp.toLowerCase() === respuestaUsuario.toLowerCase()
+        );
+        
+        logger.info(`[hijo4] Respuesta texto: "${respuestaUsuario}", Correcta: ${correcto}`);
+        
+        // Cambiar color del input según resultado
+        input.style.borderColor = correcto ? '#27ae60' : '#e74c3c';
+        input.disabled = true;
+        
+        // Notificar al padre
+        await enviarMensaje({
+            destino: 'padre',
+            tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            datos: {
+                retoId: reto.id,
+                respuesta: respuestaUsuario,
+                correcto,
+                timestamp: Date.now()
+            }
+        });
+        
+        // Ocultar después de 2 segundos
+        setTimeout(() => ocultarReto(), 2000);
+    }
+
+    // Función para ocultar reto
+    function ocultarReto() {
+        const container = document.getElementById('reto-container');
+        if (container) container.style.display = 'none';
+        estado.retoActualId = null;
+    }
+
+    try {
+        await inicializarMensajeria({
+            iframeId: CONFIG_HIJO.IFRAME_ID,
+            debug: CONFIG_HIJO.DEBUG
+        });
+
+        // ==================== CONTROLADORES DE MENSAJERÍA ====================
+
+        // ============================================================
+        // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+        // ============================================================
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo4][PADRE_LISTO]`;
+
+            try {
+                if (!mensaje || !mensaje.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+
+                // ✅ PROCESAR MODO INICIAL DEL PADRE
+                if (mensaje.datos && mensaje.datos.modo) {
+                    const modoInicial = mensaje.datos.modo;
+                    logger.info(`${logPrefix} Procesando modo inicial del padre: ${modoInicial}`);
+
+                    // Aplicar lógica específica del componente
+                    actualizarInterfazModo(modoInicial);
+                }
+
+                // Enviar HIJO_LISTO al padre para confirmar que estamos listos
+                try {
+                    await enviarMensaje({
+                        destino: 'padre',
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: 'hijo4',
+                        datos: {
+                            version: '1.0.0',
+                            capacidades: ['retos', 'preguntas', 'validacion'],
+                            tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
+                            timestamp: Date.now()
+                        }
+                    });
+                    console.log(`✅ [hijo4] HIJO_LISTO enviado al padre`);
+                } catch (error) {
+                    console.error(`❌ [hijo4] Error enviando HIJO_LISTO:`, error);
+                }
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
+            }
+        });
+
+        /**
+         * Controlador: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
+         * Descripción: Recibe confirmación del padre de que los controladores están listos
+         * Origen esperado: padre
+         * Respuesta: Ninguna (preparado para futuras solicitudes de datos)
+         */
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo4][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                if (!mensaje?.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
+
+                // Preparado para futuras solicitudes de datos adicionales del padre
+                logger.debug(`${logPrefix} Componente listo para recibir datos adicionales si es necesario`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación del padre:`, error);
+            }
+        });
+
+        /**
+         * Controlador: RETO.MOSTRAR
+         * Descripción: Muestra un reto en la interfaz por su ID
+         */
+        registrarControlador(TIPOS_MENSAJE.RETO.MOSTRAR, (mensaje) => {
+            try {
+                const { retoId } = mensaje.datos;
+                logger.info(`[hijo4] RETO.MOSTRAR recibido para reto: ${retoId}`);
+                mostrarReto(retoId);
+            } catch (error) {
+                logger.error(`[hijo4] Error en RETO.MOSTRAR:`, error);
+            }
+        });
+
+        /**
+         * Controlador: RETO.OCULTAR
+         * Descripción: Oculta el reto actual
+         */
+        registrarControlador(TIPOS_MENSAJE.RETO.OCULTAR, (mensaje) => {
+            try {
+                logger.info(`[hijo4] RETO.OCULTAR recibido`);
+                ocultarReto();
+            } catch (error) {
+                logger.error(`[hijo4] Error en RETO.OCULTAR:`, error);
+            }
+        });
+
+        /**
+         * Controlador: DATOS.SOLICITAR_RETO
+         * Descripción: Busca y devuelve un reto específico por ID
+         * Respuesta: DATOS.RESPUESTA_RETO
+         *
+         * @example
+         * // Solicitud básica
+         * enviarMensaje({
+         *   destino: 'hijo4',
+         *   tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETO,
+         *   datos: { retoId: 'R-5' }
+         * });
+         *
+         * // Solicitud con opciones avanzadas
+         * enviarMensaje({
+         *   destino: 'hijo4',
+         *   tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETO,
+         *   datos: {
+         *     retoId: 'R-5',
+         *     incluirEstadisticas: true,
+         *     incluirMetadata: true
+         *   }
+         * });
+         */
+        registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_RETO, async (mensaje) => {
+            const logPrefix = `[hijo4][SOLICITAR_RETO][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                // Validación del mensaje
+                if (!mensaje?.origen) {
+                    logger.warn(`${logPrefix} Mensaje sin origen, ignorando`);
+                    return;
+                }
+                
+                const { 
+                    paradaId,
+                    tipoConsulta,
+                    incluirEstadisticas = false,
+                    incluirMetadata = true,
+                    incluirRespuestas = false // Seguridad: no enviar respuestas por defecto
+                } = mensaje.datos || {};
+                
+                // Validar datos requeridos según patrón homogéneo
+                if (!paradaId) {
+                    logger.error(`${logPrefix} paradaId requerido faltante`);
+                    return;
+                }
+                if (!tipoConsulta) {
+                    logger.error(`${logPrefix} tipoConsulta requerido faltante`);
+                    return;
+                }
+                if (tipoConsulta !== 'RETOS') {
+                    logger.error(`${logPrefix} tipoConsulta inválido: ${tipoConsulta}, esperado: RETOS`);
+                    return;
+                }
+                
+                logger.debug(`${logPrefix} Buscando reto para parada ${paradaId}`);
+                
+                // Buscar el reto en el array por paradaId
+                const retoEncontrado = retosAventura1Es.find(r => r.paradaId === paradaId);
+                
+                if (!retoEncontrado) {
+                    logger.warn(`${logPrefix} Reto para parada ${paradaId} NO encontrado`);
+                    
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            reto: null,
+                            paradaId,
+                            encontrado: false,
+                            exito: true, // Exito = operación correcta, no reto encontrado
+                            mensajeOriginal: mensaje.id
+                        }
+                    });
+                    return;
+                }
+
+                // Construir respuesta básica (sin respuestas correctas por seguridad)
+                const respuesta = {
+                    id: retoEncontrado.id,
+                    pregunta: retoEncontrado.pregunta,
+                    tipo: retoEncontrado.tipo,
+                    reto: retoEncontrado.reto // Número de orden
+                };
+
+                // Agregar metadata opcional
+                if (incluirMetadata) {
+                    if (retoEncontrado.opciones) {
+                        respuesta.opciones = [...retoEncontrado.opciones];
+                    }
+                    
+                    if (retoEncontrado.src) {
+                        respuesta.src = retoEncontrado.src;
+                    }
+                    
+                    if (retoEncontrado.multiple !== undefined) {
+                        respuesta.multiple = retoEncontrado.multiple;
+                    }
+                }
+                
+                // SEGURIDAD: Solo incluir respuestas correctas si se solicita explícitamente
+                // Esto previene que otros componentes obtengan las respuestas sin autorización
+                if (incluirRespuestas && retoEncontrado.correctas) {
+                    respuesta.correctas = [...retoEncontrado.correctas];
+                    logger.debug(`${logPrefix} Respuestas correctas incluidas (solicitud autorizada)`);
+                }
+
+                // Agregar estadísticas opcionales
+                if (incluirEstadisticas) {
+                    respuesta.estadisticas = {
+                        tieneOpciones: !!retoEncontrado.opciones && retoEncontrado.opciones.length > 0,
+                        numOpciones: retoEncontrado.opciones ? retoEncontrado.opciones.length : 0,
+                        esMultiple: !!retoEncontrado.multiple,
+                        esPuzzle: retoEncontrado.tipo === 'puzzle',
+                        esTexto: retoEncontrado.tipo === 'texto',
+                        esOpcion: retoEncontrado.tipo === 'opcion',
+                        esOpcionMultiple: retoEncontrado.tipo === 'opcion-multiple',
+                        tieneRespuestas: !!retoEncontrado.correctas && retoEncontrado.correctas.length > 0,
+                        numRespuestas: retoEncontrado.correctas ? retoEncontrado.correctas.length : 0,
+                        tieneSrc: !!retoEncontrado.src
+                    };
+                }
+
+                // Enviar RESPONSE con resultado enriquecido
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        reto: respuesta,
+                        paradaId,
+                        encontrado: true,
+                        exito: true,
+                        mensajeOriginal: mensaje.id
+                    }
+                });
+
+                logger.info(`${logPrefix} Reto para parada ${paradaId} encontrado: ${retoEncontrado.pregunta}`, {
+                    tipo: retoEncontrado.tipo,
+                    metadataIncluida: incluirMetadata,
+                    respuestasIncluidas: incluirRespuestas,
+                    estadisticasIncluidas: incluirEstadisticas
+                });
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+                
+                // Enviar RESPONSE con error
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        reto: null,
+                        retoId: mensaje?.datos?.retoId || mensaje?.datos?.id,
+                        encontrado: false,
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id
+                    }
                 });
             }
-        }
-        
-        // Configuración de mensajería
-        const CONFIG_MENSAJERIA = {
-            ...CONFIG.MENSAJERIA,
-            iframeId: CONFIG.HIJOS.RETOS.id || 'hijo4-retos'
-        };
-        
-        // Configurar logger
-        try {
-            // Log successful initialization
-            logger.info(`Inicializando ${CONFIG_MENSAJERIA.iframeId}`, { 
-                debug: CONFIG.DEBUG,
-                logLevel: CONFIG.LOG_LEVEL 
-            });
-        } catch (error) {
-            // Fallback to console if logger fails
-            console.error('Error al configurar el logger:', error);
-            window.logger = {
-                debug: console.debug.bind(console, '[DEBUG]'),
-                info: console.info.bind(console, '[INFO]'),
-                warn: console.warn.bind(console, '[WARN]'),
-                error: console.error.bind(console, '[ERROR]')
-            };
-        }
-        
-        // Estado del componente
-        const estado = {
-            retoActualId: null,
-            inicializado: false,
-            modoActual: 'aventura' // Valor por defecto
-        };
+        });
 
-        // Función para actualizar la interfaz según el modo
-        function actualizarInterfazModo(modo) {
-            console.log(`[RETOS] Actualizando interfaz para modo: ${modo}`);
-            const body = document.body;
+        /**
+         * Controlador: DATOS.SOLICITAR_RETOS
+         * Descripción: Busca y devuelve múltiples retos con filtros opcionales
+         * Respuesta: DATOS.RESPUESTA_RETOS
+         * 
+         * @example
+         * // Solicitud básica (todos los retos)
+         * enviarMensaje({
+         *   destino: 'hijo4',
+         *   tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETOS,
+         *   datos: {}
+         * });
+         * 
+         * // Solicitud con filtros avanzados
+         * enviarMensaje({
+         *   destino: 'hijo4',
+         *   tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETOS,
+         *   datos: {
+         *     tipo: 'opcion',           // Filtrar por tipo
+         *     filtro: 'torre',          // Buscar en texto
+         *     limite: 10,               // Limitar resultados
+         *     ordenPor: 'id',           // Ordenar por campo
+         *     orden: 'asc',             // Dirección
+         *     incluirEstadisticas: true // Incluir stats
+         *   }
+         * });
+         */
+        registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_RETOS, async (mensaje) => {
+            const logPrefix = `[hijo4][SOLICITAR_RETOS][${mensaje?.origen || 'desconocido'}]`;
             
-            // Actualizar estado local
-            estado.modoActual = modo;
-            
-            // Actualizar clases CSS
-            body.classList.remove('modo-casa', 'modo-aventura');
-            body.classList.add(`modo-${modo}`);
-            
-            // Ajustes específicos según el modo
-            const retoContainer = document.getElementById('reto-container');
-            if (retoContainer) {
-                retoContainer.dataset.modo = modo;
+            try {
+                // Validación del mensaje
+                if (!mensaje?.origen) {
+                    logger.warn(`${logPrefix} Mensaje sin origen, ignorando`);
+                    return;
+                }
                 
-                // Ajustar estilos según el modo
-                if (modo === 'casa') {
-                    retoContainer.style.borderColor = '#3498db'; // Azul para modo casa
-                } else {
-                    retoContainer.style.borderColor = '#e67e22'; // Naranja para modo aventura
+                const { 
+                    tipo = null,
+                    filtro = null,
+                    ordenPor = 'reto',
+                    orden = 'asc',
+                    limite = null,
+                    incluirEstadisticas = false,
+                    incluirRespuestas = false, // Seguridad: no enviar respuestas por defecto
+                    soloPuzzles = false,
+                    soloPreguntas = false,
+                    soloMultiples = false
+                } = mensaje.datos || {};
+
+                logger.debug(`${logPrefix} Buscando retos`, { 
+                    tipo, 
+                    filtro, 
+                    limite,
+                    ordenPor,
+                    orden,
+                    soloPuzzles,
+                    soloPreguntas
+                });
+
+                let retosFiltrados = [...retosAventura1Es];
+
+                // Aplicar filtro por tipo específico
+                if (tipo) {
+                    const tipoLower = tipo.toLowerCase();
+                    retosFiltrados = retosFiltrados.filter(r => 
+                        (r.tipo || '').toLowerCase() === tipoLower
+                    );
+                    logger.debug(`${logPrefix} Filtrado por tipo '${tipo}': ${retosFiltrados.length} retos`);
                 }
+
+                // Aplicar filtros de categoría
+                if (soloPuzzles) {
+                    retosFiltrados = retosFiltrados.filter(r => r.tipo === 'puzzle');
+                    logger.debug(`${logPrefix} Filtrado solo puzzles: ${retosFiltrados.length} retos`);
+                }
+                
+                if (soloPreguntas) {
+                    retosFiltrados = retosFiltrados.filter(r => r.tipo !== 'puzzle');
+                    logger.debug(`${logPrefix} Filtrado solo preguntas: ${retosFiltrados.length} retos`);
+                }
+                
+                if (soloMultiples) {
+                    retosFiltrados = retosFiltrados.filter(r => r.multiple === true);
+                    logger.debug(`${logPrefix} Filtrado solo multiples: ${retosFiltrados.length} retos`);
+                }
+
+                // Aplicar filtro de texto (búsqueda)
+                if (filtro && filtro.trim() !== '') {
+                    const terminoBusqueda = filtro.toLowerCase().trim();
+                    retosFiltrados = retosFiltrados.filter(r => {
+                        const pregunta = (r.pregunta || '').toLowerCase();
+                        const id = (r.id || '').toLowerCase();
+                        return pregunta.includes(terminoBusqueda) || id.includes(terminoBusqueda);
+                    });
+                    logger.debug(`${logPrefix} Filtrado por texto '${filtro}': ${retosFiltrados.length} retos`);
+                }
+
+                // Validar ordenPor
+                const ordenamientosValidos = ['reto', 'id', 'tipo', 'pregunta'];
+                const ordenPorValidado = ordenamientosValidos.includes(ordenPor) ? ordenPor : 'reto';
+                
+                // Validar orden
+                const ordenValidado = ['asc', 'desc'].includes(orden) ? orden : 'asc';
+                
+                if (ordenPorValidado !== ordenPor) {
+                    logger.warn(`${logPrefix} Ordenamiento inválido '${ordenPor}', usando 'reto'`);
+                }
+                
+                if (ordenValidado !== orden) {
+                    logger.warn(`${logPrefix} Orden inválido '${orden}', usando 'asc'`);
+                }
+
+                // Ordenar
+                retosFiltrados.sort((a, b) => {
+                    let valorA, valorB;
+                    
+                    switch (ordenPorValidado) {
+                        case 'reto':
+                            valorA = a.reto || 0;
+                            valorB = b.reto || 0;
+                            break;
+                        case 'id':
+                            valorA = a.id || '';
+                            valorB = b.id || '';
+                            break;
+                        case 'tipo':
+                            valorA = a.tipo || '';
+                            valorB = b.tipo || '';
+                            break;
+                        case 'pregunta':
+                            valorA = (a.pregunta || '').toLowerCase();
+                            valorB = (b.pregunta || '').toLowerCase();
+                            break;
+                        default:
+                            valorA = a.reto || 0;
+                            valorB = b.reto || 0;
+                    }
+
+                    let resultado;
+                    if (typeof valorA === 'string') {
+                        resultado = valorA.localeCompare(valorB);
+                    } else {
+                        resultado = valorA > valorB ? 1 : valorA < valorB ? -1 : 0;
+                    }
+
+                    return ordenValidado === 'desc' ? -resultado : resultado;
+                });
+
+                // Guardar total antes de limitar
+                const totalSinLimite = retosFiltrados.length;
+
+                // Validar y aplicar límite
+                const limiteValidado = (limite && limite > 0 && limite <= 1000) ? limite : null;
+                
+                if (limite && limiteValidado !== limite) {
+                    logger.warn(`${logPrefix} Límite inválido ${limite}, usando sin límite o máximo 1000`);
+                }
+                
+                if (limiteValidado) {
+                    retosFiltrados = retosFiltrados.slice(0, limiteValidado);
+                    logger.debug(`${logPrefix} Aplicado límite de ${limiteValidado} retos`);
+                }
+
+                // Construir respuesta (sin respuestas correctas por seguridad)
+                const retosRespuesta = retosFiltrados.map(r => {
+                    const retoResp = {
+                        id: r.id,
+                        pregunta: r.pregunta,
+                        tipo: r.tipo,
+                        reto: r.reto,
+                        opciones: r.opciones || [],
+                        multiple: r.multiple || false,
+                        src: r.src || null
+                    };
+                    
+                    // SEGURIDAD: Solo incluir respuestas correctas si se solicita explícitamente
+                    if (incluirRespuestas && r.correctas) {
+                        retoResp.correctas = [...r.correctas];
+                    }
+                    
+                    return retoResp;
+                });
+
+                // Construir respuesta completa
+                const respuesta = {
+                    retos: retosRespuesta,
+                    total: totalSinLimite,
+                    devueltos: retosFiltrados.length,
+                    filtrosAplicados: {
+                        tipo: tipo || null,
+                        filtro: filtro || null,
+                        ordenPor: ordenPorValidado,
+                        orden: ordenValidado,
+                        limite: limiteValidado,
+                        soloPuzzles,
+                        soloPreguntas,
+                        soloMultiples
+                    }
+                };
+
+                // Agregar estadísticas opcionales
+                if (incluirEstadisticas) {
+                    respuesta.estadisticas = {
+                        totalRetos: retosAventura1Es.length,
+                        totalEncontrados: totalSinLimite,
+                        devueltos: retosFiltrados.length,
+                        porTipo: {
+                            opcion: retosFiltrados.filter(r => r.tipo === 'opcion').length,
+                            opcionMultiple: retosFiltrados.filter(r => r.tipo === 'opcion-multiple').length,
+                            texto: retosFiltrados.filter(r => r.tipo === 'texto').length,
+                            puzzle: retosFiltrados.filter(r => r.tipo === 'puzzle').length
+                        },
+                        conOpciones: retosFiltrados.filter(r => r.opciones && r.opciones.length > 0).length,
+                        multiples: retosFiltrados.filter(r => r.multiple).length,
+                        conRespuestas: retosFiltrados.filter(r => r.correctas && r.correctas.length > 0).length,
+                        conSrc: retosFiltrados.filter(r => r.src).length
+                    };
+                }
+
+                // Enviar RESPONSE con resultado enriquecido
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETOS,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        ...respuesta,
+                        encontrado: totalSinLimite > 0,
+                        exito: true,
+                        mensajeOriginal: mensaje.id
+                    }
+                });
+
+                logger.info(`${logPrefix} Retos enviados: ${respuesta.devueltos} de ${totalSinLimite}`, {
+                    tipo: tipo || 'todos',
+                    filtro: filtro || 'sin filtro',
+                    ordenPor: ordenPorValidado,
+                    orden: ordenValidado,
+                    limite: limiteValidado || 'sin límite',
+                    estadisticasIncluidas: incluirEstadisticas,
+                    respuestasIncluidas: incluirRespuestas
+                });
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+                
+                // Enviar RESPONSE con error
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETOS,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        retos: [],
+                        total: 0,
+                        devueltos: 0,
+                        encontrado: false,
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id
+                    }
+                });
             }
+        });
+
+        /**
+         * Controlador: SISTEMA.CAMBIO_MODO
+         * Descripción: Actualiza la interfaz según el modo (casa/aventura)
+         */
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+            const logPrefix = `[hijo4][CAMBIO_MODO]`;
+
+            try {
+                const { modo } = mensaje.datos;
+
+                // Validar modo
+                if (!modo || (modo !== 'casa' && modo !== 'aventura')) {
+                    throw new Error(`Modo inválido: ${modo}. Debe ser 'casa' o 'aventura'`);
+                }
+
+                logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+
+                // Aplicar lógica específica del componente
+                actualizarInterfazModo(modo);
+
+                // Enviar confirmación al padre
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_RESPONSE,
+                    origen: 'hijo4',
+                    destino: 'padre',
+                    datos: {
+                        exito: true,
+                        modo: modo,
+                        timestamp: Date.now()
+                    }
+                }).catch(error => logger.error('[hijo4] Error enviando confirmación de cambio de modo:', error));
+
+                logger.info(`${logPrefix} Modo cambiado exitosamente a: ${modo}`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+            }
+        });
+
+        /**
+         * Controlador: SISTEMA.HEARTBEAT
+         * Descripción: Responde a heartbeat del padre para verificar conectividad
+         */
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+            enviarMensaje({
+                destino: mensaje.origen,
+                tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: { timestamp: Date.now() }
+            });
+            logger.debug(`[hijo4] HEARTBEAT recibido, respuesta enviada.`);
+        });
+
+        // Controlador para ACK del sistema
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+            const logPrefix = `[hijo4][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
             
-            // Si hay un reto abierto, actualizar su visualización
-            if (estado.retoActualId) {
-                // Aquí iría la lógica para actualizar la visualización del reto actual
-                // según el modo, si es necesario
-                console.log(`[RETOS] Se está mostrando el reto ${estado.retoActualId} en modo ${modo}`);
+            try {
+                logger.debug(`${logPrefix} ACK recibido, respondiendo...`);
+                
+                // Responder al ACK
+                await enviarMensaje({
+                    destino: 'padre',
+                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        timestamp: Date.now(),
+                        estado: 'activo'
+                    }
+                });
+                
+                logger.debug(`${logPrefix} ACK respondido`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error respondiendo ACK:`, error);
             }
+        });
+
+        // ==================== INICIALIZACIÓN ====================
+
+        await enviarMensaje({
+            destino: 'padre',
+            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            datos: { componenteId: CONFIG_HIJO.COMPONENTE_ID }
+        });
+
+        // Configurar event listeners para botones del DOM
+        configurarEventListenersBotones();
+
+        estado.inicializado = true;
+        logger.info(`[hijo4] Inicialización completada exitosamente`);
+    } catch (error) {
+        logger.error(`[hijo4] Error durante la inicialización:`, error);
+        try {
+            await enviarMensaje({
+                destino: 'padre',
+                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: { error: error.message }
+            });
+        } catch (notifyError) {
+            logger.error(`[hijo4] Error notificando fallo:`, notifyError);
+        }
+    }
+
+    // ==================== FUNCIONES AUXILIARES ====================
+
+    /**
+     * Configura los event listeners para los botones de la interfaz
+     */
+    function configurarEventListenersBotones() {
+        const btnCompletado = document.getElementById('btn-completado');
+        const btnOcultar = document.getElementById('btn-ocultar');
+
+        if (btnCompletado) {
+            btnCompletado.addEventListener('click', async () => {
+                try {
+                    logger.info(`[hijo4] Botón 'Completado' clickeado`);
+                    
+                    // Obtener el reto actual
+                    const retoActual = retosAventura1Es.find(r => r.id === estado.retoActualId);
+                    
+                    // Enviar notificación de reto completado
+                    await enviarMensaje({
+                        destino: 'padre',
+                        tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            retoId: estado.retoActualId,
+                            correcto: true,
+                            timestamp: Date.now(),
+                            tipo: retoActual?.tipo || 'desconocido'
+                        }
+                    });
+                    
+                    // Ocultar el reto
+                    ocultarReto();
+                    
+                    logger.success(`[hijo4] Reto completado notificado`);
+                } catch (error) {
+                    logger.error(`[hijo4] Error al completar reto:`, error);
+                }
+            });
         }
 
-       // Cada objeto representa un reto. El campo 'tipo' puede ser 'opcion', 'opcion-multiple', 'texto' o 'puzzle'.
-// El campo 'correctas' contiene la(s) respuesta(s) correcta(s).
-const retosAventura1Es = [
-  {
-    reto: 1,
-    id: "R-1",
-    tipo: "opcion",
-    pregunta: "1. ¿Cuántas Aventuras pueden hacerse con Valencia be Guides?",
-    opciones: ["4", "5", "6", "7"],
-    correctas: ["7"],
-    multiple: false
-  },
-  {
-    reto: 2,
-    id: "R-2",
-    tipo: "opcion",
-    pregunta: "2. ¿Sabría decirme cómo se llaman estas Torres?",
-    opciones: ["Torres de Quart", "Torres de Serranos", "Torre del Miguelete", "Torre de Santa catalina"],
-    correctas: ["Torres de Serranos"],
-    multiple: false
-  },
-  {
-    reto: 3,
-    id: "R-3",
-    tipo: "opcion",
-    pregunta: "3. ¿En la cumbre de las torres ondea la bandera de Valencia: sus colores se componen de rojo, amarillo y… ?",
-    opciones: ["Violeta", "Verde", "Azul"],
-    correctas: ["Azul"],
-    multiple: false
-  },
-  {
-    reto: 4,
-    id: "R-4",
-    tipo: "texto",
-    pregunta: "4. ¿Sabría decirme el nombre de la calle?",
-    correctas: ["Calle Muro de Santa Ana"]
-  },
-  {
-    reto: 5,
-    id: "R-5",
-    tipo: "opcion",
-    pregunta: "5. ¿Qué porta San Lorenzo en la mano?",
-    opciones: ["Una Paloma", "Una cuchara", "Una parrilla"],
-    correctas: ["Una parrilla"],
-    multiple: false
-  },
-  {
-    reto: 6,
-    id: "R-6",
-    tipo: "opcion",
-    pregunta: "6. ¿Con qué mano sujeta Neptuno la cornucopia?",
-    opciones: ["Izquierda", "Derecha"],
-    correctas: ["Derecha"],
-    multiple: false
-  },
-  {
-    reto: 7,
-    id: "R-7",
-    tipo: "texto",
-    pregunta: "7. ¿Cuántas figuras rodean la fuente?",
-    correctas: ["8"]
-  },
-  {
-    reto: 8,
-    id: "PZ-8",
-    tipo: "puzzle",
-    pregunta: "8. Plaza de la Virgen",
-    src: "P8_puzzle_plaza_virgen.html"
-  },
-  {
-    reto: 9,
-    id: "R-9",
-    tipo: "opcion",
-    pregunta: "9. ¿Qué figura esculpida puede verse en el marco del cuadro?",
-    opciones: ["Un Dragón", "Un Murciélago", "Una Corona"],
-    correctas: ["Una Corona"],
-    multiple: false
-  },
-  {
-    reto: 10,
-    id: "R-10",
-    tipo: "opcion-multiple",
-    pregunta: "10. ¿Qué puede verse dentro?",
-    opciones: ["Un Altar", "Una bandera", "Una espada"],
-    correctas: ["Un Altar", "Una bandera"],
-    multiple: true
-  },
-  {
-    reto: 11,
-    id: "R-11",
-    tipo: "texto",
-    pregunta: "11. Sobre ésta hay una placa conmemorativa. ¿En qué año fue expuesta dicha placa?",
-    correctas: ["1952"]
-  },
-  {
-    reto: 12,
-    id: "R-12",
-    tipo: "texto",
-    pregunta: "12. ¿En qué año se edificó esta finca? ¡Pista! Mire en la parte superior de la fachada.",
-    correctas: ["1906"]
-  },
-  {
-    reto: 13,
-    id: "R-13",
-    tipo: "opcion",
-    pregunta: "13. ¿Qué puede verse dentro?",
-    opciones: ["Una Plaza de Toros", "Unos baños romanos", "Una estación de metro"],
-    correctas: ["Unos baños romanos"],
-    multiple: false
-  },
-  {
-    reto: 14,
-    id: "R-14",
-    tipo: "opcion",
-    pregunta: "14. ¿Sabría determinar qué geometría tiene?",
-    opciones: ["hexagonal", "Octogonal", "Cuadrangular"],
-    correctas: ["hexagonal"],
-    multiple: false
-  },
-  {
-    reto: 15,
-    id: "R-15",
-    tipo: "texto",
-    pregunta: "15. ¿Cuántos Arcos componen la puerta?",
-    correctas: ["6"]
-  },
-  {
-    reto: 16,
-    id: "R-16",
-    tipo: "opcion",
-    pregunta: "16. ¿Recuerda qué animal corona el escudo municipal?",
-    opciones: ["Un Dragón", "Un Murciélago", "Un Caballo"],
-    correctas: ["Un Murciélago"],
-    multiple: false
-  },
-  {
-    reto: 17,
-    id: "R-17",
-    tipo: "opcion",
-    pregunta: "17. ¡Preste atención a la fachada de la primera torre! ¿Qué Fruta Cítrica natural de Valencia decora la fachada?",
-    opciones: ["Limones", "Pomelos", "Naranjas"],
-    correctas: ["Naranjas"],
-    multiple: false
-  },
-  {
-    reto: 18,
-    id: "PZ-18",
-    tipo: "puzzle",
-    pregunta: "18. Plaza de Toros y Estación del Norte",
-    src: "P18_puzzle_plaza_de_Toros_y_estacion_norte.html"
-  },
-  {
-    reto: 19,
-    id: "R-19",
-    tipo: "texto",
-    pregunta: "19. ¿Sabría decirme qué comercio alberga dicho edificio?",
-    correctas: ["?"]
-  },
-  {
-    reto: 20,
-    id: "R-20",
-    tipo: "opcion-multiple",
-    pregunta: "20. Sobre la entrada principal, en un arco de medio punto, figuras alegóricas representan a los cinco continentes. ¿Qué porta la figura central en sus manos?",
-    opciones: ["Una Corona", "Una Espada", "Una Antorcha"],
-    correctas: ["Una Antorcha", "Una Espada"],
-    multiple: true
-  },
-  {
-    reto: 21,
-    id: "R-21",
-    tipo: "opcion",
-    pregunta: "21. ¿Qué porta la figura en la mano?",
-    opciones: ["Una balanza", "Un libro", "Una pluma"],
-    correctas: ["Una balanza"],
-    multiple: false
-  },
-  {
-    reto: 22,
-    id: "R-22",
-    tipo: "texto",
-    pregunta: "22. ¿Cuantas plantas tiene el edificio?",
-    correctas: ["10"]
-  },
-  {
-    reto: 23,
-    id: "R-23",
-    tipo: "opcion",
-    pregunta: "23. Busque la vidriera con los colores de la Señera valenciana en la fachada del edificio. ¿Sabría determinar qué forma tiene?",
-    opciones: ["Cuadrangular", "Redonda", "Triangular"],
-    correctas: ["Redonda"],
-    multiple: false
-  },
-  {
-    reto: 24,
-    id: "R-24",
-    tipo: "opcion-multiple",
-    pregunta: "24. ¿Qué sostiene la virgen en sus manos?",
-    opciones: ["Un Rosario", "Un niño", "Una corona"],
-    correctas: ["Un Rosario", "Un niño"],
-    multiple: true
-  },
-  {
-    reto: 25,
-    id: "R-25",
-    tipo: "opcion",
-    pregunta: "25. ¿Qué le entrega el ángel al niño?",
-    opciones: ["Una paloma", "Un orbe", "Alimentos"],
-    correctas: ["Un orbe"],
-    multiple: false
-  },
-  {
-    reto: 26,
-    id: "PZ-26",
-    tipo: "puzzle",
-    pregunta: "26. Lonja de la Seda",
-    src: "P26_puzzle_lonja.html"
-  },
-  {
-    reto: 27,
-    id: "R-27",
-    tipo: "opcion-multiple",
-    pregunta: "27. El barquero que rema a contracorriente.",
-    opciones: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
-    correctas: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
-    multiple: true
-  },
-  {
-    reto: 28,
-    id: "R-28",
-    tipo: "opcion-multiple",
-    pregunta: "28. Un árbol muerto: símbolo del Pecado, se ve entre las dos hojas de la puerta y cumple la función de parteluz.",
-    opciones: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
-    correctas: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
-    multiple: true
-  }
-];
-
-// Asignar el primer reto como activo al cargar
-window.addEventListener('load', () => {
-    const primerReto = retosAventura1Es[0];
-    if (primerReto) {
-        enviarMensaje('padre', TIPOS_MENSAJE.RETO.ACTIVAR, { retoId: primerReto.id });
-    }
-});
-
-// =================================================================================
-// MENSAJERÍA - RECEPCIÓN DE MENSAJES
-// =================================================================================
-
-try {
-    // Registrar manejadores de mensajes
-    inicializarManejadoresMensajes();
-} catch (error) {
-    console.error('❌ [RETOS] Error al inicializar manejadores de mensajes:', error);
-    throw error;
-}
-
-// =================================================================================
-// MENSAJERÍA - ENVÍO DE MENSAJES
-// =================================================================================
-// Usamos las funciones enviarACK y enviarNACK importadas desde el módulo de mensajería central
-// para una implementación consistente del sistema ACK/NACK en todos los componentes
-// =================================================================================
-
-// =================================================================================
-// CONTROLADORES DE MENSAJERÍA
-// =================================================================================
-
-/**
- * Inicializa los manejadores de mensajes para la comunicación entre iframes.
- */
-function inicializarManejadoresMensajes() {
-    try {
-        // PING - PONG
-        registrarControlador('PING', async (mensaje) => {
-            const { origen } = mensaje;
-            const { solicitudId } = mensaje.datos || {};
-            console.log(`🔔 [${CONFIG.IFRAME_ID}] PING recibido, respondiendo PONG`);
-            
-            if (solicitudId) {
+        if (btnOcultar) {
+            btnOcultar.addEventListener('click', async () => {
                 try {
-                    await enviarACK(mensaje, {
-                        timestamp: new Date().toISOString(),
-                        componente: 'retos-preguntas',
-                        responseType: 'PONG'
+                    logger.info(`[hijo4] Botón 'Ocultar' clickeado`);
+                    
+                    // Notificar al padre que se oculta el reto
+                    await enviarMensaje({
+                        destino: 'padre',
+                        tipo: TIPOS_MENSAJE.RETO.OCULTAR,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            retoId: estado.retoActualId,
+                            razon: 'usuario_oculto',
+                            timestamp: Date.now()
+                        }
                     });
+                    
+                    // Ocultar el reto
+                    ocultarReto();
+                    
+                    logger.success(`[hijo4] Reto ocultado`);
                 } catch (error) {
-                    console.error(`❌ [${CONFIG.IFRAME_ID}] Error al responder PING:`, error);
-                    throw error;
+                    logger.error(`[hijo4] Error al ocultar reto:`, error);
                 }
-            }
-            
-            return { 
-                timestamp: new Date().toISOString(),
-                componente: 'retos-preguntas',
-                origen
-            };
-        });
+            });
+        }
 
-        // UI.MODAL - Manejar modales de la interfaz
-        registrarControlador('UI.MODAL', async (mensaje) => {
-            const { accion, tipo, titulo, contenido, opciones, solicitudId } = mensaje.datos || {};
-            console.log(`🎨 [${CONFIG.IFRAME_ID}] Solicitud de modal: ${accion} - ${tipo || 'sin tipo'}`);
-            
-            // Función para enviar respuesta con ACK si es necesario
-            const enviarRespuesta = async (resultado) => {
-                if (solicitudId) {
-                    try {
-                        await enviarACK(mensaje, {
-                            ...resultado,
-                            responseType: 'UI.MODAL.RESPUESTA'
-                        });
-                    } catch (error) {
-                        console.error(`❌ [${CONFIG.IFRAME_ID}] Error al enviar ACK de UI.MODAL:`, error);
-                        throw error;
-                    }
-                }
-                return resultado;
-            };
-            
-            // Función para manejar errores
-            const manejarError = async (error) => {
-                console.error(`❌ [${CONFIG.IFRAME_ID}] Error en UI.MODAL:`, error);
-                if (solicitudId) {
-                    try {
-                        await enviarNACK(mensaje.origen, 'ERROR_UI_MODAL', {
-                            mensaje: error.message,
-                            solicitudId,
-                            origen: CONFIG.IFRAME_ID,
-                            detalles: error.stack
-                        });
-                    } catch (nackError) {
-                        console.error(`❌ [${CONFIG.IFRAME_ID}] Error al enviar NACK:`, nackError);
-                    }
-                }
-                throw error;
-            };
-            
-            // Implementar lógica para mostrar/ocultar modales
-            switch(accion) {
-                case 'mostrar':
-                    // Mostrar el contenedor de retos
-                    const container = document.getElementById('reto-container');
-                    if (container) {
-                        container.style.display = 'flex';
-                        // Actualizar contenido si se proporciona
-                        if (titulo) document.getElementById('reto-titulo').textContent = titulo;
-                        if (contenido) document.getElementById('reto-body').innerHTML = contenido;
-                    }
-                    return { 
-                        estado: 'ok', 
-                        accion: 'modal_mostrado',
-                        tipo,
-                        timestamp: new Date().toISOString()
-                    };
-                    
-                case 'ocultar':
-                    // Ocultar el contenedor de retos
-                    const retoContainer = document.getElementById('reto-container');
-                    if (retoContainer) {
-                        retoContainer.style.display = 'none';
-                    }
-                    return { 
-                        estado: 'ok', 
-                        accion: 'modal_ocultado',
-                        timestamp: new Date().toISOString()
-                    };
-                    
-                default:
-                    return {
-                        estado: 'error',
-                        mensaje: `Acción de modal no soportada: ${accion}`
-                    };
-            }
-        });
-
-        console.log('✅ [RETOS] Manejadores de mensajes registrados');
-    } catch (error) {
-        console.error('❌ [RETOS] Error al inicializar manejadores de mensajes:', error);
-        throw error;
+        logger.info(`[hijo4] Event listeners configurados correctamente`);
     }
-} // <-- Cierre de la función inicializarManejadoresMensajes
 
-// =================================================================================
-// INICIALIZACIÓN
-// =================================================================================
-
-// Registrar controlador para solicitud de reto/puzzle
-registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA, (mensaje) => {
-    const { reto_id, puzzle_id } = mensaje.datos || {};
-    let reto = null;
-    
-    if (reto_id) {
-        reto = retos.find(r => r.id === reto_id);
-    } else if (puzzle_id) {
-        reto = retos.find(r => r.id === puzzle_id);
-    }
-    if (reto) {
-        enviarMensaje(mensaje.origen, TIPOS_MENSAJE.DATOS.RESPUESTA_PARADA, { reto });
-    } else {
-        enviarMensaje(mensaje.origen, TIPOS_MENSAJE.DATOS.ERROR, { mensaje: 'Reto no encontrado' });
-    }
-});
-
+    // Implementar pagehide para limpiar recursos
+    window.addEventListener('pagehide', () => {
+        logger.info(`[hijo4] Limpiando recursos en pagehide`);
+        estado.inicializado = false;
+    });
     </script>
-    
-    <!-- For non-module scripts that need CONFIG -->
-    <script>
-        // This script will have access to CONFIG via window.CONFIG after the module script runs
-        // ... existing script code ...
-    </script>
+
 </head>
 <body>
     <div id="reto-container" class="reto-container">
@@ -551,19 +1315,5 @@ registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA, (mensaje) => {
             <button id="btn-ocultar" class="btn btn-ocultar">Ocultar</button>
         </div>
     </div>
-
-    <script>
-    // Define the variable if missing
-    const retosAventura1Esretos_con_puzzles_Av1_es = [
-        // Add the required data here
-    ];
-</script>
-
-<script>
-    window.addEventListener('message', (event) => {
-        console.log('Message received in Av1-esp-retos-preguntas:', event.data);
-        // Add consistent logic to handle the event data
-    });
-</script>
 </body>
 </html>
