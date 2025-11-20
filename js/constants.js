@@ -1,14 +1,6 @@
 /**
  * Constantes utilizadas en toda la aplicación
  * @module Constants
- * @version 3.0.0
- * @description
- * Este módulo contiene todas las constantes utilizadas en la aplicación Valencia Tour,
- * incluyendo los tipos de mensajes estandarizados para la comunicación entre componentes,
- * niveles de log, modos de aplicación y códigos de error.
- * 
- * Los tipos de mensajes siguen el formato estandarizado CATEGORIA.ACCION y están agrupados
- * por categoría para mejor organización y mantenimiento.
  */
 
 /**
@@ -33,171 +25,227 @@ export const MODOS = {
 /**
  * Tipos de mensajes para la comunicación entre iframes
  * Organizados por categorías para mejor mantenimiento
- * 
- * Todos los tipos de mensajes siguen el formato CATEGORIA.ACCION
- * donde CATEGORIA define el ámbito o subsistema y ACCION define la operación específica
- * 
- * Ejemplos:
- * - SISTEMA.INICIALIZACION: Mensaje de inicialización del sistema
- * - NAVEGACION.CAMBIO_PARADA: Mensaje para cambiar a una parada específica
- * - AUDIO.REPRODUCIR: Mensaje para reproducir un audio
  */
 export const TIPOS_MENSAJE = {
     SISTEMA: {
         INICIALIZACION: 'SISTEMA.INICIALIZACION',
+        INICIALIZACION_COMPLETADA: 'SISTEMA.INICIALIZACION_COMPLETADA',
         ESTADO: 'SISTEMA.ESTADO',
         CAMBIO_MODO: 'SISTEMA.CAMBIO_MODO',
-        COMPONENTE_LISTO: 'SISTEMA.COMPONENTE_LISTO',
-        APLICACION_INICIALIZADA: 'SISTEMA.APLICACION_INICIALIZADA',
-        COMPONENTE_INICIALIZADO: 'SISTEMA.COMPONENTE_INICIALIZADO', // Nuevo tipo detectado en uso
-        INICIALIZACION_FINALIZADA: 'SISTEMA.INICIALIZACION_FINALIZADA', // Nuevo tipo detectado en uso
-        SINCRONIZAR_ESTADO: 'SISTEMA.SINCRONIZAR_ESTADO', // Nuevo tipo detectado en uso
-        PING: 'SISTEMA.PING', // Para verificar conectividad entre componentes
-        PONG: 'SISTEMA.PONG', // Respuesta a un ping
-        ACK: 'SISTEMA.ACK', // Confirmación positiva
-        NACK: 'SISTEMA.NACK', // Confirmación negativa
-        CONFIRMACION: 'SISTEMA.CONFIRMACION', // Tipo general de confirmación
+        COMPONENTE_INICIALIZADO: 'SISTEMA.COMPONENTE_INICIALIZADO',
+        INICIALIZACION_FINALIZADA: 'SISTEMA.INICIALIZACION_FINALIZADA',
+        PADRE_LISTO: 'SISTEMA.PADRE_LISTO',
+        HIJO_LISTO: 'SISTEMA.HIJO_LISTO',
+        PADRE_CONFIRMA_HIJO_LISTO: 'SISTEMA.PADRE_CONFIRMA_HIJO_LISTO',
+        HIJO_FALLIDO: 'SISTEMA.HIJO_FALLIDO',
+        HEARTBEAT: 'SISTEMA.HEARTBEAT',
+        HEARTBEAT_RESPONSE: 'SISTEMA.HEARTBEAT_RESPONSE',
+        PING: 'SISTEMA.PING',
+        ACK: 'SISTEMA.ACK',
+        NACK: 'SISTEMA.NACK',
         ERROR: 'SISTEMA.ERROR',
-        DIAGNOSTICO: 'SISTEMA.DIAGNOSTICO' // Información de diagnóstico
+        CONFIRMACION: 'SISTEMA.CONFIRMACION',
+        NOTIFICACION: 'SISTEMA.NOTIFICACION',
+        APLICACION_INICIALIZADA: 'SISTEMA.APLICACION_INICIALIZADA',
+        REINTENTAR: 'SISTEMA.REINTENTAR',
+        RESPUESTA_ESTADO: 'SISTEMA.RESPUESTA_ESTADO',
+        ADVERTENCIA: 'SISTEMA.ADVERTENCIA'
     },
     NAVEGACION: {
         CAMBIO_PARADA: 'NAVEGACION.CAMBIO_PARADA',
         ESTABLECER_DESTINO: 'NAVEGACION.ESTABLECER_DESTINO',
         ACTUALIZAR_POSICION: 'NAVEGACION.ACTUALIZAR_POSICION',
-        PARADAS: 'NAVEGACION.PARADAS', // Lista completa de paradas
-        SIGUIENTE_PARADA: 'NAVEGACION.SIGUIENTE_PARADA', // Avanzar a siguiente parada
-        PARADA_ANTERIOR: 'NAVEGACION.PARADA_ANTERIOR', // Volver a parada anterior
-        CENTRAR_EN_UBICACION: 'NAVEGACION.CENTRAR_EN_UBICACION', // Centrar mapa en la ubicación actual
-        MOSTRAR_MAPA_COMPLETO: 'NAVEGACION.MOSTRAR_MAPA_COMPLETO', // Mostrar vista completa del mapa
-        MOSTRAR_MAPA_JPG: 'NAVEGACION.MOSTRAR_MAPA_JPG', // Mostrar imagen JPG del mapa
-        ESTADO_MAPA: 'NAVEGACION.ESTADO_MAPA' // Informar sobre estado del mapa
+        MOSTRAR_RUTA: 'NAVEGACION.MOSTRAR_RUTA',
+        ACTUALIZAR_ESTADO: 'NAVEGACION.ACTUALIZAR_ESTADO',
+        INICIAR: 'NAVEGACION.INICIAR',
+        INICIADA: 'NAVEGACION.INICIADA',
+        CANCELADA: 'NAVEGACION.CANCELADA',
+        DESTINO_ESTABLECIDO: 'NAVEGACION.DESTINO_ESTABLECIDO',
+        LLEGADA_DETECTADA: 'NAVEGACION.LLEGADA_DETECTADA',
+        ERROR: 'NAVEGACION.ERROR',
+        SOLICITAR_DESTINO: 'NAVEGACION.SOLICITAR_DESTINO',
+        ESTADO: 'NAVEGACION.ESTADO',
+        ESTADO_MAPA: 'NAVEGACION.ESTADO_MAPA',
+        ESTADO_MAPA_ACTUALIZADO: 'NAVEGACION.ESTADO_MAPA_ACTUALIZADO',
+        CENTRAR_EN_UBICACION: 'NAVEGACION.CENTRAR_EN_UBICACION',
+        VALIDAR_RANGO_PARADA: 'NAVEGACION.VALIDAR_RANGO_PARADA',
+        ENVIAR_PARADA_COMPLETADA: 'NAVEGACION.ENVIAR_PARADA_COMPLETADA',
+        DIBUJAR_POLYLINE: 'NAVEGACION.DIBUJAR_POLYLINE',
+        // GPS - Nuevos tipos para control GPS real
+        GPS: {
+            ACTIVAR: 'NAVEGACION.GPS.ACTIVAR',
+            DESACTIVAR: 'NAVEGACION.GPS.DESACTIVAR',
+            ESTADO: 'NAVEGACION.GPS.ESTADO',
+            ESTADO_ACTUALIZADO: 'NAVEGACION.GPS.ESTADO_ACTUALIZADO',
+            UBICACION_ACTUALIZADA: 'NAVEGACION.GPS.UBICACION_ACTUALIZADA',
+            ERROR: 'NAVEGACION.GPS.ERROR',
+            PERMISOS_DENEGADOS: 'NAVEGACION.GPS.PERMISOS_DENEGADOS',
+            PERMITIDO: 'NAVEGACION.GPS.PERMITIDO',
+            RESTRINGIDO: 'NAVEGACION.GPS.RESTRINGIDO'
+        },
+        PARADA_COMPLETADA: 'NAVEGACION.PARADA_COMPLETADA',
+        // Datos de paradas para funciones-mapa
+        SOLICITAR_DATOS_PARADAS: 'NAVEGACION.SOLICITAR_DATOS_PARADAS',
+        RESPUESTA_DATOS_PARADAS: 'NAVEGACION.RESPUESTA_DATOS_PARADAS',
+        // Consultas para cambio de parada
+        SOLICITAR_COORDENADAS: 'NAVEGACION.SOLICITAR_COORDENADAS',
+        RESPUESTA_COORDENADAS: 'NAVEGACION.RESPUESTA_COORDENADAS',
+        CAMBIO_PARADA_CONFIRMADO: 'NAVEGACION.CAMBIO_PARADA_CONFIRMADO'
     },
     DATOS: {
         SOLICITAR_PARADAS: 'DATOS.SOLICITAR_PARADAS',
         RESPUESTA_PARADAS: 'DATOS.RESPUESTA_PARADAS',
-        ENVIAR_PARADAS: 'DATOS.ENVIAR_PARADAS',
+        SOLICITAR_PARADA: 'DATOS.SOLICITAR_PARADA',
+        RESPUESTA_PARADA: 'DATOS.RESPUESTA_PARADA',
         COORDENADAS_PARADAS: 'DATOS.COORDENADAS_PARADAS',
-        PUNTOS: 'DATOS.PUNTOS',
-        PUNTOS_RUTA: 'DATOS.PUNTOS_RUTA',
-        PARADAS_ACTUALIZADAS: 'DATOS.PARADAS_ACTUALIZADAS', // Paradas actualizadas correctamente
-        ERROR_ACTUALIZACION_PARADAS: 'DATOS.ERROR_ACTUALIZACION_PARADAS', // Error al actualizar paradas
-        RESPUESTA_PARADA: 'DATOS.RESPUESTA_PARADA', // Respuesta a solicitud de parada específica
-        ERROR: 'DATOS.ERROR' // Error general de datos
+        COORDENADAS_PARADAS_REQUEST: 'DATOS.COORDENADAS_PARADAS_REQUEST',
+        COORDENADAS_PARADAS_RESPONSE: 'DATOS.COORDENADAS_PARADAS_RESPONSE',
+        SOLICITAR_DATOS: 'DATOS.SOLICITAR_DATOS',
+        ACTUALIZACION_PARADA: 'DATOS.ACTUALIZACION_PARADA',
+        // Retos - Agregados para hijo4
+        SOLICITAR_RETO: 'DATOS.SOLICITAR_RETO',
+        RESPUESTA_RETO: 'DATOS.RESPUESTA_RETO',
+        SOLICITAR_RETOS: 'DATOS.SOLICITAR_RETOS',
+        RESPUESTA_RETOS: 'DATOS.RESPUESTA_RETOS'
     },
     AUDIO: {
-        REPRODUCIR: 'AUDIO.REPRODUCIR', // Iniciar reproducción
-        CONTROL: 'AUDIO.CONTROL', // Comando general de control de audio
-        PAUSAR: 'AUDIO.PAUSAR', // Pausar reproducción
-        DETENER: 'AUDIO.DETENER', // Detener reproducción
-        FIN_REPRODUCCION: 'AUDIO.FIN_REPRODUCCION', // Audio ha terminado
-        ERROR: 'AUDIO.ERROR' // Error en reproducción
+        REPRODUCIR_REQUEST: 'AUDIO.REPRODUCIR_REQUEST',
+        REPRODUCIR_RESPONSE: 'AUDIO.REPRODUCIR_RESPONSE',
+        PAUSA_REQUEST: 'AUDIO.PAUSA_REQUEST',
+        PAUSA_RESPONSE: 'AUDIO.PAUSA_RESPONSE',
+        CONTROL_REQUEST: 'AUDIO.CONTROL_REQUEST',
+        CONTROL_RESPONSE: 'AUDIO.CONTROL_RESPONSE',
+        FIN_REPRODUCCION: 'AUDIO.FIN_REPRODUCCION',
+        ERROR: 'AUDIO.ERROR',
+        ESTADO_ACTUALIZADO: 'AUDIO.ESTADO_ACTUALIZADO',
+        SOLICITAR_AUDIO: 'AUDIO.SOLICITAR_AUDIO',
+        RESPUESTA_AUDIO: 'AUDIO.RESPUESTA_AUDIO'
     },
     CONTROL: {
-        MENU: 'CONTROL.MENU', // Control de menús
-        CAMBIAR_MODO: 'CONTROL.CAMBIAR_MODO', // Cambio de modo
-        CERRAR_TODOS: 'CONTROL.CERRAR_TODOS' // Cerrar todos los componentes
+        HABILITAR: 'CONTROL.HABILITAR',
+        DESHABILITAR: 'CONTROL.DESHABILITAR',
+        CAMBIAR_MODO: 'CONTROL.CAMBIAR_MODO',
+        ESTADO: 'CONTROL.ESTADO',
+        EJECUTAR: 'CONTROL.EJECUTAR',
+        ROLLBACK: 'CONTROL.ROLLBACK'
     },
     RETO: {
-        MOSTRAR: 'RETO.MOSTRAR', // Mostrar un reto
-        OCULTAR: 'RETO.OCULTAR', // Ocultar un reto
-        COMPLETADO: 'RETO.COMPLETADO', // Reto completado
-        FALLIDO: 'RETO.FALLIDO', // Reto fallido
-        RESPUESTA: 'RETO.RESPUESTA', // Respuesta a un reto
-        ACTIVAR: 'RETO.ACTIVAR' // Activar un reto específico
+        MOSTRAR: 'RETO.MOSTRAR',
+        MOSTRADO: 'RETO.MOSTRADO',
+        OCULTAR: 'RETO.OCULTAR',
+        COMPLETADO: 'RETO.COMPLETADO',
+        SOLICITAR_RETO: 'RETO.SOLICITAR_RETO'
     },
     UI: {
-        MODAL: 'UI.MODAL', // Mostrar/ocultar ventana modal
-        NOTIFICACION: 'UI.NOTIFICACION', // Mostrar notificación
-        ACTUALIZAR_VISTA: 'UI.ACTUALIZAR_VISTA', // Actualizar vista de un componente
-        ACTUALIZACION: 'UI.ACTUALIZACION' // Actualización general de UI
+        NOTIFICACION: 'UI.NOTIFICACION',
+        MODAL: 'UI.MODAL',
+        ALERTA: 'UI.ALERTA',
+        ACCION_USUARIO: 'UI.ACCION_USUARIO',
+        CLOSE_MENUS: 'UI.CLOSE_MENUS',
+        ACTUALIZACION: 'UI.ACTUALIZACION',
+        MENUS_ESTADO_ACTUALIZADO: 'UI.MENUS_ESTADO_ACTUALIZADO'
     },
     MONITOREO: {
         EVENTO: 'MONITOREO.EVENTO',
         METRICA: 'MONITOREO.METRICA',
-        LOG: 'MONITOREO.LOG'
+        APLICACION_INICIALIZADA: 'MONITOREO.APLICACION_INICIALIZADA',
+        LOGGER_INICIALIZADO: 'MONITOREO.LOGGER_INICIALIZADO'
     },
-    // Nuevos tipos detectados en uso pero no definidos previamente
-    USUARIO: {
-        ACCION: 'USUARIO.ACCION',
-        PREFERENCIAS: 'USUARIO.PREFERENCIAS',
-        AUTENTICACION: 'USUARIO.AUTENTICACION'
+    COORDINACION: {
+        SOLICITAR_DATOS_HIJO: 'COORDINACION.SOLICITAR_DATOS_HIJO',
+        RESPUESTA_DATOS_HIJO: 'COORDINACION.RESPUESTA_DATOS_HIJO',
+        COORDINAR_ACCION: 'COORDINACION.COORDINAR_ACCION',
+        ESTADO_COORDINACION: 'COORDINACION.ESTADO_COORDINACION',
+        SINCRONIZAR_COMPONENTES: 'COORDINACION.SINCRONIZAR_COMPONENTES'
     },
-    // Añadir categoría MEDIOS que se usa en el código pero no estaba definida
-    MEDIOS: {
-        EVENTO: 'MEDIOS.EVENTO',
-        MOSTRAR: 'MEDIOS.MOSTRAR',
-        OCULTAR: 'MEDIOS.OCULTAR'
+    MAPA: {
+        INVALIDAR_TAMAÑO: 'MAPA.INVALIDAR_TAMAÑO',
+        SET_VIEW: 'MAPA.SET_VIEW',
+        GET_CENTER: 'MAPA.GET_CENTER',
+        ADD_MARKER: 'MAPA.ADD_MARKER',
+        REMOVE_MARKER: 'MAPA.REMOVE_MARKER',
+        CLEAR_LAYERS: 'MAPA.CLEAR_LAYERS'
     }
 };
 
 /**
- * Lista de tipos de mensajes críticos que siempre deben usar el sistema ACK/NACK
- */
-export const MENSAJES_CRITICOS = [
-    // Mensajes del sistema
-    'SISTEMA.INICIALIZACION',
-    'SISTEMA.COMPONENTE_LISTO',
-    'SISTEMA.PING',
-    'SISTEMA.CAMBIO_MODO',
-    
-    // Mensajes de navegación
-    'NAVEGACION.CAMBIO_PARADA',
-    'NAVEGACION.ESTABLECER_DESTINO',
-    
-    // Mensajes de datos
-    'DATOS.SOLICITAR_PARADAS',
-    'DATOS.ENVIAR_PARADAS',
-    
-    // Mensajes de audio
-    'AUDIO.CONTROL',
-    'AUDIO.REPRODUCIR',
-    'AUDIO.ERROR',
-    
-    // Mensajes de retos
-    'RETO.MOSTRAR',
-    'RETO.COMPLETADO',
-    'RETO.RESPUESTA',
-    
-    // Mensajes de UI
-    'UI.MODAL',
-    'UI.NOTIFICACION',
-    
-    // Mensajes de control
-    'CONTROL.MENU',
-    'CONTROL.CAMBIAR_MODO',
-    
-    // Mensajes de usuario
-    'USUARIO.ACCION',
-    'USUARIO.PREFERENCIAS',
-    'USUARIO.AUTENTICACION',
-    
-    // Mensajes de medios
-    'MEDIOS.EVENTO',
-    'MEDIOS.MOSTRAR',
-    'MEDIOS.OCULTAR'
-];
-
-/**
  * Códigos de error estandarizados
+ * Organizados por categorías con rangos numéricos específicos
  */
 export const ERRORES = {
-    // Errores de validación (100-199)
+    // Errores de validación (1000-1099)
     VALIDACION: {
         DATOS_INVALIDOS: {
-            codigo: 100,
-            mensaje: 'Los datos proporcionados no son válidos'
+            codigo: 1000,
+            mensaje: 'Los datos proporcionados no son válidos',
+            nivel: 'error'
         },
         PARAMETROS_FALTANTES: {
-            codigo: 101,
-            mensaje: 'Faltan parámetros requeridos'
+            codigo: 1001,
+            mensaje: 'Faltan parámetros requeridos',
+            nivel: 'error'
         },
         TIPO_MENSAJE_INVALIDO: {
-            codigo: 102,
-            mensaje: 'Tipo de mensaje no válido'
+            codigo: 1002,
+            mensaje: 'Tipo de mensaje no válido',
+            nivel: 'warning'
+        },
+        MENSAJE_INVALIDO: {
+            codigo: 1003,
+            mensaje: 'El formato del mensaje no es válido',
+            nivel: 'error'
+        },
+        DESTINO_INVALIDO: {
+            codigo: 1004,
+            mensaje: 'El destino especificado no es válido',
+            nivel: 'error'
+        },
+        IMPORTACION_FALLIDA: {
+            codigo: 1005,
+            mensaje: 'Fallo en la importación de módulo',
+            nivel: 'error'
         }
     },
     
-    // Errores de autenticación/autorización (200-299)
+    // Errores de inicialización (1100-1199)
+    INICIALIZACION: {
+        MENSAJERIA: {
+            codigo: 1100,
+            mensaje: 'Error al inicializar el sistema de mensajería',
+            nivel: 'error'
+        },
+        MAPA: {
+            codigo: 1101,
+            mensaje: 'Error al inicializar el mapa',
+            nivel: 'error'
+        },
+        COMPONENTE: {
+            codigo: 1102,
+            mensaje: 'Error al inicializar el componente',
+            nivel: 'error'
+        }
+    },
+    
+    // Errores de red/comunicación (1200-1299)
+    COMUNICACION: {
+        TIEMPO_ESPERA: {
+            codigo: 1200,
+            mensaje: 'Tiempo de espera agotado',
+            nivel: 'error'
+        },
+        DESTINO_NO_DISPONIBLE: {
+            codigo: 1201,
+            mensaje: 'El destino no está disponible',
+            nivel: 'warning'
+        },
+        MENSAJE_NO_ENTREGADO: {
+            codigo: 1202,
+            mensaje: 'No se pudo entregar el mensaje',
+            nivel: 'error'
+        }
+    },
+    
+    // Errores de autenticación/autorización (1300-1399)
     AUTENTICACION: {
         NO_AUTORIZADO: {
             codigo: 201,
@@ -246,40 +294,6 @@ export const ESTADOS = {
 /**
  * Códigos de error
  */
-/**
- * Niveles de severidad para eventos de monitoreo
- */
-export const NIVELES_SEVERIDAD = {
-    DEBUG: 'debug',
-    INFO: 'info',
-    WARN: 'warn',
-    ERROR: 'error',
-    CRITICO: 'critico'
-};
-
-/**
- * Tipos de métricas de rendimiento
- */
-export const TIPOS_METRICAS = {
-    TIEMPO_RESPUESTA: 'tiempo_respuesta',
-    USO_MEMORIA: 'uso_memoria',
-    TIEMPO_CARGA: 'tiempo_carga',
-    ERRORES: 'errores',
-    MENSAJES: 'mensajes'
-};
-
-/**
- * Categorías de eventos de monitoreo
- */
-export const CATEGORIAS_EVENTOS = {
-    SISTEMA: 'sistema',
-    RED: 'red',
-    RENDIMIENTO: 'rendimiento',
-    ERROR: 'error',
-    SEGURIDAD: 'seguridad',
-    NEGOCIO: 'negocio'
-};
-
 export const CODIGOS_ERROR = {
     // Errores existentes
     INICIALIZACION: 'ERROR_INICIALIZACION',
@@ -303,21 +317,201 @@ export const CODIGOS_ERROR = {
 };
 
 /**
- * Configuración de throttling para diferentes tipos de mensajes
+ * Destinos para mensajería
  */
-export const THROTTLE_CONFIG = {
-    // Navegación GPS: 10 segundos por defecto
-    'NAVEGACION.ACTUALIZAR_POSICION': 10000,
-    // Cambio de parada: evitar cambios rápidos accidentales
-    'NAVEGACION.CAMBIO_PARADA': 1000,
-    // Eventos del sistema: permitir más frecuencia
-    'SISTEMA.ESTADO': 500
+export const DESTINOS = {
+    PADRE: 'padre',
+    TODOS: 'todos'
 };
+
+/**
+ * Clases CSS para los diferentes modos
+ */
+export const CSS_CLASES = {
+    MODO_CASA: 'modo-casa',
+    MODO_AVENTURA: 'modo-aventura',
+    HIJO3_CONTAINER: 'hijo3-container'
+};
+
+/**
+ * Configuraciones de mensajería centralizadas para evitar dependencias circulares
+ */
+export const CONFIG_MENSAJERIA = {
+    // Estado global de la mensajería
+    ESTADO_INICIAL: {
+        inicializado: false,
+        manejadores: new Map(),
+        mensajesPendientes: new Map(),
+        tiempoEspera: 10000,
+        maxReintentos: 3,
+        mensajesProcesados: new Set(),
+        estadisticas: {
+            mensajesEnviados: 0,
+            mensajesRecibidos: 0,
+            errores: 0,
+            totalTiempoRespuesta: 0,
+            tiempoPromedioRespuesta: 0,
+            ultimoError: null
+        },
+        instancias: new Map(),
+        rol: 'hijo',
+        estado: 'inactivo',
+        timeouts: {},
+        colaMensajes: [],
+        procesandoCola: false,
+        listenerRegistrado: false
+    },
+    
+    // Sistema de heartbeat
+    HEARTBEAT: {
+        activo: false,
+        intervalo: 5000, // 5 segundos
+        timer: null,
+        hijosConectados: new Set(),
+        ultimoHeartbeat: new Map(),
+        timeoutsHeartbeat: new Map(),
+        reintentosMaximos: 3
+    },
+    
+    // Limpieza automática con TTL sincronizado (30s)
+    LIMPIEZA: {
+        ttlMensajesProcesados: 30000, // 30s
+        ttlPromesasPendientes: 30000, // 30s
+        ttlHistorial: 30000, // 30s
+        intervaloLimpieza: 30000, // 30s
+        timerLimpieza: null
+    }
+};
+
+/**
+ * Tipos de mensaje válidos pregenerados para validación eficiente
+ * Dividido en partes para evitar problemas de parsing con arrays largos
+ */
+const TIPOS_SISTEMA = [
+    'SISTEMA.INICIALIZACION',
+    'SISTEMA.INICIALIZACION_COMPLETADA',
+    'SISTEMA.ESTADO',
+    'SISTEMA.CAMBIO_MODO',
+    'SISTEMA.COMPONENTE_INICIALIZADO',
+    'SISTEMA.INICIALIZACION_FINALIZADA',
+    'SISTEMA.PADRE_LISTO',
+    'SISTEMA.HIJO_LISTO',
+    'SISTEMA.HEARTBEAT',
+    'SISTEMA.HEARTBEAT_RESPONSE',
+    'SISTEMA.ACK',
+    'SISTEMA.NACK',
+    'SISTEMA.ERROR',
+    'SISTEMA.CONFIRMACION',
+    'SISTEMA.APLICACION_INICIALIZADA'
+];
+
+const TIPOS_NAVEGACION = [
+    'NAVEGACION.CAMBIO_PARADA',
+    'NAVEGACION.ESTABLECER_DESTINO',
+    'NAVEGACION.ACTUALIZAR_POSICION',
+    'NAVEGACION.MOSTRAR_RUTA',
+    'NAVEGACION.ACTUALIZAR_ESTADO',
+    'NAVEGACION.INICIAR',
+    'NAVEGACION.INICIADA',
+    'NAVEGACION.CANCELADA',
+    'NAVEGACION.DESTINO_ESTABLECIDO',
+    'NAVEGACION.LLEGADA_DETECTADA',
+    'NAVEGACION.ERROR',
+    'NAVEGACION.SOLICITAR_DESTINO',
+    'NAVEGACION.ESTADO',
+    'NAVEGACION.VALIDAR_RANGO_PARADA',
+    'NAVEGACION.ENVIAR_PARADA_COMPLETADA',
+    'NAVEGACION.DIBUJAR_POLYLINE'
+];
+
+const TIPOS_DATOS = [
+    'DATOS.SOLICITAR_PARADAS',
+    'DATOS.RESPUESTA_PARADAS',
+    'DATOS.SOLICITAR_PARADA',
+    'DATOS.RESPUESTA_PARADA',
+    'DATOS.COORDENADAS_PARADAS',
+    'DATOS.COORDENADAS_PARADAS_REQUEST',
+    'DATOS.COORDENADAS_PARADAS_RESPONSE',
+    'DATOS.SOLICITAR_DATOS',
+    // Retos - hijo4
+    'DATOS.SOLICITAR_RETO',
+    'DATOS.RESPUESTA_RETO',
+    'DATOS.SOLICITAR_RETOS',
+    'DATOS.RESPUESTA_RETOS'
+];
+
+const TIPOS_AUDIO = [
+    'AUDIO.REPRODUCIR',
+    'AUDIO.PAUSA',
+    'AUDIO.FIN_REPRODUCCION',
+    'AUDIO.ERROR'
+];
+
+const TIPOS_CONTROL = [
+    'CONTROL.HABILITAR',
+    'CONTROL.DESHABILITAR',
+    'CONTROL.CAMBIAR_MODO',
+    'CONTROL.ESTADO'
+];
+
+const TIPOS_RETO = [
+    'RETO.MOSTRAR',
+    'RETO.OCULTAR',
+    'RETO.COMPLETADO'
+];
+
+const TIPOS_UI = [
+    'UI.NOTIFICACION',
+    'UI.MODAL',
+    'UI.ALERTA',
+    'UI.ACCION_USUARIO',
+    'UI.CLOSE_MENUS',
+    'UI.ACTUALIZACION'
+];
+
+const TIPOS_MONITOREO = [
+    'MONITOREO.EVENTO',
+    'MONITOREO.METRICA',
+    'MONITOREO.APLICACION_INICIALIZADA',
+    'MONITOREO.LOGGER_INICIALIZADO'
+];
+
+const TIPOS_COORDINACION = [
+    'COORDINACION.SOLICITAR_DATOS_HIJO',
+    'COORDINACION.RESPUESTA_DATOS_HIJO',
+    'COORDINACION.COORDINAR_ACCION',
+    'COORDINACION.ESTADO_COORDINACION',
+    'COORDINACION.SINCRONIZAR_COMPONENTES'
+];
+
+const TIPOS_MAPA = [
+    'MAPA.INVALIDAR_TAMAÑO',
+    'MAPA.SET_VIEW',
+    'MAPA.GET_CENTER',
+    'MAPA.ADD_MARKER',
+    'MAPA.REMOVE_MARKER',
+    'MAPA.CLEAR_LAYERS'
+];
+
+export const TIPOS_MENSAJE_VALIDOS = [
+    ...TIPOS_SISTEMA,
+    ...TIPOS_NAVEGACION,
+    ...TIPOS_DATOS,
+    ...TIPOS_AUDIO,
+    ...TIPOS_CONTROL,
+    ...TIPOS_RETO,
+    ...TIPOS_UI,
+    ...TIPOS_MONITOREO,
+    ...TIPOS_COORDINACION,
+    ...TIPOS_MAPA
+];
 
 export default {
     LOG_LEVELS,
     MODOS,
     TIPOS_MENSAJE,
     ESTADOS,
-    CODIGOS_ERROR
+    CODIGOS_ERROR,
+    DESTINOS,
+    CSS_CLASES
 };
