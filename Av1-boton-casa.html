@@ -1449,7 +1449,12 @@
             destino: 'padre',
             tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
             origen: CONFIG_HIJO.IFRAME_ID,
-            datos: { componenteId: CONFIG_HIJO.COMPONENTE_ID }
+            datos: {
+                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                version: '1.0.0',
+                capacidades: ['modo-selector', 'gps', 'paradas-list'],
+                timestamp: Date.now()
+            }
         });
 
         // ============================================
