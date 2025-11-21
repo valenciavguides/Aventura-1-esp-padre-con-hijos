@@ -1961,9 +1961,39 @@
             try {
                 logger.info(`${logPrefix} Solicitud de reto recibida de ${mensaje.origen}`);
 
-                // Validar que hay un reto disponible
-                if (!estado.retoActual.id || !estado.retoActual.disponible) {
-                    logger.warn(`${logPrefix} No hay reto disponible para solicitar`);
+                const { contexto = 'manual', audioId, paradaId } = mensaje.datos || {};
+
+                // Intentar usar el reto actual si existe
+                let retoIdToUsar = estado.retoActual.id;
+
+                // Si no hay reto en estado, intentar mapear desde audioId o paradaId
+                if (!retoIdToUsar || !estado.retoActual.disponible) {
+                    if (audioId || paradaId) {
+                        try {
+                            const match = AVENTURA_PARADAS.find(p => {
+                                const matchesAudio = audioId && (p.audio_id === audioId || p.audio_id === `audio-${audioId}`);
+                                const matchesParada = paradaId && (p.parada_id === paradaId || p.padreid === paradaId || p.padreid === `padre-${paradaId}`);
+                                return !!(matchesAudio || matchesParada);
+                            });
+
+                            if (match && match.reto_id) {
+                                estado.retoActual.id = match.reto_id;
+                                estado.retoActual.disponible = true;
+                                estado.retoActual.completado = false;
+                                retoIdToUsar = match.reto_id;
+                                logger.info(`${logPrefix} Mapeado reto desde audio/parada: ${retoIdToUsar}`);
+                            } else {
+                                logger.debug(`${logPrefix} No se pudo mapear reto desde audioId/paradaId`);
+                            }
+                        } catch (mapError) {
+                            logger.warn(`${logPrefix} Error mapeando reto desde audio/parada:`, mapError);
+                        }
+                    }
+                }
+
+                // Validar que hay un reto disponible tras el mapeo
+                if (!retoIdToUsar || !estado.retoActual.disponible) {
+                    logger.warn(`${logPrefix} No hay reto disponible para solicitar (después de intentar mapear)`);
                     await enviarMensaje({
                         tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                         origen: CONFIG_PADRE_LOCAL.ID,
@@ -1975,16 +2005,17 @@
                     });
                     return;
                 }
-                
-                // Reenviar solicitud a hijo4 con el reto actual
+
+                // Reenviar solicitud a hijo4 con el reto determinado
                 await enviarMensaje({
                     tipo: TIPOS_MENSAJE.RETO.MOSTRAR,
                     origen: CONFIG_PADRE_LOCAL.ID,
                     destino: 'hijo4',
                     datos: {
-                        retoId: estado.retoActual.id,
+                        retoId: retoIdToUsar,
                         contexto,
-                        audioId
+                        audioId,
+                        paradaId
                     }
                 });
 
@@ -3493,13 +3524,85 @@
                 });
             }
             
-            // Register message handler for backdrop clicks
+            // Register message handler for backdrop clicks and simple UI actions from iframes
             registrarControladorIframe(TIPOS_MENSAJE_IFRAME.UI.ACCION_USUARIO, (mensaje) => {
-                if (mensaje.datos && mensaje.datos.accion === 'backdrop_click') {
-                    window.ocultarHijo4();
-                    return { exito: true, accion: 'hijo4_ocultado' };
+                try {
+                    const accion = mensaje?.datos?.accion;
+                    if (!accion) return { exito: false, error: 'Acción no especificada' };
+
+                    // Backdrop click — ocultar retos
+                    if (accion === 'backdrop_click') {
+                        window.ocultarHijo4();
+                        return { exito: true, accion: 'hijo4_ocultado' };
+                    }
+
+                    // Mostrar imagen solicitada por hijo2
+                    if (accion === 'mostrar-imagen') {
+                        const paradaId = mensaje.datos?.paradaActual;
+                        const parada = AVENTURA_PARADAS && AVENTURA_PARADAS.find(p => p.parada_id === paradaId || p.padreid === paradaId || p.padreid === `padre-${paradaId}`);
+                        if (!parada) {
+                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada no encontrada para mostrar imagen: ${paradaId}`);
+                            return { exito: false, error: 'parada_no_encontrada' };
+                        }
+                        if (!parada.imagen) {
+                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada ${paradaId} no tiene imagen`);
+                            return { exito: false, error: 'sin_imagen' };
+                        }
+
+                        // Enviar modal a componente UI (hijo1) para mostrar imagen
+                        enviarMensaje({
+                            destino: 'hijo1',
+                            tipo: TIPOS_MENSAJE.UI.MODAL,
+                            origen: CONFIG_PADRE_LOCAL.ID,
+                            datos: {
+                                accion: 'mostrar',
+                                tipo: 'informacion',
+                                titulo: parada.nombre || parada.title || `Imagen ${paradaId}`,
+                                contenido: `<div class="media-container" style="text-align:center"><img src="${parada.imagen}" style="max-width:100%;height:auto"/></div>`,
+                                acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                datos: { origen: mensaje.origen, paradaId }
+                            }
+                        });
+
+                        return { exito: true };
+                    }
+
+                    // Reproducir video solicitado por hijo2
+                    if (accion === 'reproducir-video') {
+                        const paradaId = mensaje.datos?.paradaActual;
+                        const parada = AVENTURA_PARADAS && AVENTURA_PARADAS.find(p => p.parada_id === paradaId || p.padreid === paradaId || p.padreid === `padre-${paradaId}`);
+                        if (!parada) {
+                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada no encontrada para reproducir video: ${paradaId}`);
+                            return { exito: false, error: 'parada_no_encontrada' };
+                        }
+                        if (!parada.video) {
+                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada ${paradaId} no tiene video`);
+                            return { exito: false, error: 'sin_video' };
+                        }
+
+                        // Enviar modal con video a hijo1
+                        enviarMensaje({
+                            destino: 'hijo1',
+                            tipo: TIPOS_MENSAJE.UI.MODAL,
+                            origen: CONFIG_PADRE_LOCAL.ID,
+                            datos: {
+                                accion: 'mostrar',
+                                tipo: 'informacion',
+                                titulo: parada.nombre || parada.title || `Video ${paradaId}`,
+                                contenido: `<div class="media-container" style="text-align:center"><video controls style="max-width:100%;height:auto" src="${parada.video}"></video></div>`,
+                                acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                datos: { origen: mensaje.origen, paradaId }
+                            }
+                        });
+
+                        return { exito: true };
+                    }
+
+                    return { exito: false, error: 'Acción no reconocida' };
+                } catch (err) {
+                    console.error('[PADRE][UI.ACCION_USUARIO] Error procesando acción iframe:', err);
+                    return { exito: false, error: err && err.message ? err.message : 'error_desconocido' };
                 }
-                return { exito: false, error: 'Acción no reconocida' };
             });
         });
     </script>
