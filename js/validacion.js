@@ -7,6 +7,7 @@
  */
 
 import logger from './logger.js';
+import { TIPOS_MENSAJE } from './constants.js';
 
 /**
  * Errores de validación estándar
