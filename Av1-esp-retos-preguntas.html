@@ -1172,12 +1172,16 @@
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
                 // Enviar NACK en caso de error
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: mensaje.origen,
-                    datos: { error: error.message, timestamp: Date.now() }
-                }).catch(nackError => logger.error(`${logPrefix} Error enviando NACK:`, nackError));
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { error: error.message, timestamp: Date.now() }
+                    });
+                } catch (nackError) {
+                    logger.error(`${logPrefix} Error enviando NACK:`, nackError);
+                }
             }
         });
 
