@@ -10,21 +10,10 @@
  * - Historial en memoria
  */
 
-// Detección de dispositivo móvil (global para el módulo)
-const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+import { LOG_LEVELS } from './constants.js';
 
-/**
- * Niveles de log disponibles
- * @readonly
- * @enum {number}
- */
-const LOG_LEVELS = {
-    DEBUG: 0,
-    INFO: 1,
-    WARN: 2,
-    ERROR: 3,
-    NONE: 4
-};
+// Detect mobile devices locally to avoid circular imports with device-detection.js
+const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 /**
  * Colores por defecto para la consola
@@ -179,7 +168,7 @@ class Logger {
         if (this.messaging.enviarMensaje) {
             this._sendToServer = (logEntry) => {
                 if (logEntry.level === 'error') {
-                    this.messaging.enviarMensaje('servidor', 'LOG_ERROR', logEntry)
+                    Promise.resolve(this.messaging.enviarMensaje('servidor', 'LOG_ERROR', logEntry))
                         .catch(err => console.error('Error al enviar log al servidor:', err));
                 }
             };
