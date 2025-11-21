@@ -743,20 +743,37 @@
         }
     }
 
-    function cargarYReproducirAudio(audioId) {
+    // Prepara el audio en el reproductor y opcionalmente lo reproduce.
+    // autoplay: boolean (por defecto false) — si es true intentará iniciar reproducción inmediatamente.
+    async function cargarYReproducirAudio(audioId, autoplay = false) {
         const files = (typeof audioFiles !== 'undefined' && Array.isArray(audioFiles)) ? audioFiles : (window.__vv_audioFiles || null);
         if (!files || !Array.isArray(files)) {
-            logger.error(`Audio array no disponible (audioFiles undefined). Imposible reproducir ${audioId}`);
-            return;
+            logger.error(`Audio array no disponible (audioFiles undefined). Imposible preparar ${audioId}`);
+            return { exito: false, error: 'audioFiles_missing' };
         }
         const audioData = files.find(audio => audio.id === audioId || audio.id === `audio-${audioId}`);
         if (!audioData) {
             logger.error(`Audio no encontrado: ${audioId}`);
-            return;
+            return { exito: false, error: 'audio_not_found' };
         }
+
+        // Preparar la fuente siempre (permite que el usuario pulse Play más tarde)
         audioPlayer.src = audioData.file;
         currentAudioId = audioId;
-        audioPlayer.play();
+
+        if (autoplay) {
+            try {
+                await audioPlayer.play();
+                return { exito: true, reproducido: true };
+            } catch (playError) {
+                // Es posible que el intento de autoplay sea bloqueado por la política del navegador.
+                logger.warn(`[hijo3] Intento de autoplay bloqueado o fallido para ${audioId}:`, playError && playError.message ? playError.message : playError);
+                return { exito: true, reproducido: false, autoplayBlocked: true };
+            }
+        }
+
+        // Si no se debe reproducir automáticamente, indicamos que la carga fue correcta
+        return { exito: true, reproducido: false };
     }
 
     // Elementos DOM
@@ -978,24 +995,24 @@
         registrarControlador(TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST, async (mensaje) => {
             try {
                 logger.debug(`[hijo3] REPRODUCIR_REQUEST recibido:`, mensaje.datos);
-                const { audioId } = mensaje.datos;
-                
+                const { audioId, autoplay = false } = mensaje.datos || {};
+
                 if (!audioId) {
                     throw new Error('audioId no proporcionado');
                 }
 
-                cargarYReproducirAudio(audioId);
-                
-                // Enviar RESPONSE confirmando
+                const resultado = await cargarYReproducirAudio(audioId, !!autoplay);
+
+                // Enviar RESPONSE confirmando (indicar si la reproducción realmente comenzó)
                 await enviarMensaje({
                     tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     destino: mensaje.origen,
-                    datos: { 
+                    datos: Object.assign({
                         audioId,
-                        exito: true,
-                        mensajeOriginal: mensaje.id 
-                    }
+                        exito: resultado.exito === true,
+                        mensajeOriginal: mensaje.id
+                    }, resultado ? { reproducido: !!resultado.reproducido, autoplayBlocked: !!resultado.autoplayBlocked } : {})
                 });
             } catch (error) {
                 logger.error(`[hijo3] Error procesando REPRODUCIR_REQUEST:`, error);
