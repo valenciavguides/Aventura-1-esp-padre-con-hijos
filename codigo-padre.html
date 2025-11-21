@@ -372,6 +372,81 @@
                 }
             });
 
+            // Also handle UI.ACCION_USUARIO sent via the normal messaging channel
+            registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
+                try {
+                    const accion = mensaje?.datos?.accion;
+                    if (!accion) return { exito: false, error: 'Acción no especificada' };
+
+                    // Reuse the iframe handler logic by sending the message through the iframe-handler path
+                    // (we implement identical behavior here for robustness)
+                    if (accion === 'mostrar-imagen' || accion === 'reproducir-video') {
+                        const paradaId = mensaje.datos?.paradaActual;
+                        if (!paradaId) return { exito: false, error: 'paradaId_no_especificado' };
+
+                        try {
+                            const respuestaParada = await enviarMensajeConConfirmacion({
+                                tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA,
+                                origen: CONFIG_PADRE_LOCAL.ID,
+                                destino: 'hijo2',
+                                datos: { paradaId, incluirMedia: true }
+                            });
+
+                            if (!respuestaParada || !respuestaParada.datos) {
+                                logger.warn(`[PADRE][UI.ACCION_USUARIO] Respuesta vacía de hijo2 para parada ${paradaId}`);
+                                return { exito: false, error: 'respuesta_vacia' };
+                            }
+
+                            if (accion === 'mostrar-imagen') {
+                                const { imagen } = respuestaParada.datos || {};
+                                if (!imagen) return { exito: false, error: 'sin_imagen' };
+                                await enviarMensaje({
+                                    destino: 'hijo1',
+                                    tipo: TIPOS_MENSAJE.UI.MODAL,
+                                    origen: CONFIG_PADRE_LOCAL.ID,
+                                    datos: {
+                                        accion: 'mostrar',
+                                        tipo: 'informacion',
+                                        titulo: respuestaParada.datos.nombre || `Imagen ${paradaId}`,
+                                        contenido: `<div class="media-container" style="text-align:center"><img src="${imagen}" style="max-width:100%;height:auto"/></div>`,
+                                        acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                        datos: { origen: mensaje.origen, paradaId }
+                                    }
+                                });
+                                return { exito: true };
+                            }
+
+                            if (accion === 'reproducir-video') {
+                                const { video } = respuestaParada.datos || {};
+                                if (!video) return { exito: false, error: 'sin_video' };
+                                await enviarMensaje({
+                                    destino: 'hijo1',
+                                    tipo: TIPOS_MENSAJE.UI.MODAL,
+                                    origen: CONFIG_PADRE_LOCAL.ID,
+                                    datos: {
+                                        accion: 'mostrar',
+                                        tipo: 'informacion',
+                                        titulo: respuestaParada.datos.nombre || `Video ${paradaId}`,
+                                        contenido: `<div class="media-container" style="text-align:center"><video controls style="max-width:100%;height:auto" src="${video}"></video></div>`,
+                                        acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                        datos: { origen: mensaje.origen, paradaId }
+                                    }
+                                });
+                                return { exito: true };
+                            }
+                        } catch (err) {
+                            logger.error(`[PADRE][UI.ACCION_USUARIO] Error solicitando parada a hijo2:`, err);
+                            return { exito: false, error: err && err.message ? err.message : 'error' };
+                        }
+                    }
+
+                    return { exito: false, error: 'Acción no reconocida' };
+                } catch (err) {
+                    logger.error('[PADRE][UI.ACCION_USUARIO] Error manejando acción:', err);
+                    return { exito: false, error: err && err.message ? err.message : 'error' };
+                }
+            });
+
             console.log(`✅ AVENTURA_PARADAS validado: ${paradasValidas} paradas, ${tramosValidos} tramos`);
         })();
     </script>
@@ -1926,7 +2001,7 @@
                     datos: {
                         audioId: audioId,
                         contexto: 'progresion_aventura',
-                        autoplay: true
+                        autoplay: false
                     }
                 });
                 
@@ -2732,13 +2807,13 @@
                                 origen: CONFIG_PADRE_LOCAL.ID,
                                 destino: 'hijo3',
                                 datos: {
-                                    audioId: audioIdParaRepro,
-                                    autoplay: true,
-                                    contexto: {
-                                        parada: paradaIdSolicitud,
-                                        tipo: parada.tipo
+                                        audioId: audioIdParaRepro,
+                                        autoplay: false,
+                                        contexto: {
+                                            parada: paradaIdSolicitud,
+                                            tipo: parada.tipo
+                                        }
                                     }
-                                }
                             })).catch(error => {
                                 logger.warn(`${logPrefix} [CASA] Error solicitando reproducción a hijo3:`, error);
                                 return null;
@@ -2755,13 +2830,13 @@
                             origen: CONFIG_PADRE_LOCAL.ID,
                             destino: 'hijo3',
                             datos: {
-                                audioId: parada.audio_id,
-                                autoplay: true,
-                                contexto: {
-                                    parada: parada.parada_id || parada.tramo_id,
-                                    tipo: parada.tipo
+                                    audioId: parada.audio_id,
+                                    autoplay: false,
+                                    contexto: {
+                                        parada: parada.parada_id || parada.tramo_id,
+                                        tipo: parada.tipo
+                                    }
                                 }
-                            }
                         })).catch(error => {
                             logger.warn(`${logPrefix} Error solicitando audio a hijo3:`, error);
                             return null;
@@ -2935,6 +3010,7 @@
                     destino: 'hijo3',
                     datos: {
                         audioId: estado.elementoActual.audio_id,
+                        autoplay: false,
                         contexto: 'llegada_parada',
                         coordenadas
                     }
@@ -3525,7 +3601,7 @@
             }
             
             // Register message handler for backdrop clicks and simple UI actions from iframes
-            registrarControladorIframe(TIPOS_MENSAJE_IFRAME.UI.ACCION_USUARIO, (mensaje) => {
+            registrarControladorIframe(TIPOS_MENSAJE_IFRAME.UI.ACCION_USUARIO, async (mensaje) => {
                 try {
                     const accion = mensaje?.datos?.accion;
                     if (!accion) return { exito: false, error: 'Acción no especificada' };
@@ -3536,35 +3612,50 @@
                         return { exito: true, accion: 'hijo4_ocultado' };
                     }
 
-                    // Mostrar imagen solicitada por hijo2
+                    // Mostrar imagen solicitada por hijo2: solicitar datos a hijo2 y luego mostrar modal
                     if (accion === 'mostrar-imagen') {
                         const paradaId = mensaje.datos?.paradaActual;
-                        const parada = AVENTURA_PARADAS && AVENTURA_PARADAS.find(p => p.parada_id === paradaId || p.padreid === paradaId || p.padreid === `padre-${paradaId}`);
-                        if (!parada) {
-                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada no encontrada para mostrar imagen: ${paradaId}`);
-                            return { exito: false, error: 'parada_no_encontrada' };
-                        }
-                        if (!parada.imagen) {
-                            logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada ${paradaId} no tiene imagen`);
-                            return { exito: false, error: 'sin_imagen' };
-                        }
+                        if (!paradaId) return { exito: false, error: 'paradaId_no_especificado' };
 
-                        // Enviar modal a componente UI (hijo1) para mostrar imagen
-                        enviarMensaje({
-                            destino: 'hijo1',
-                            tipo: TIPOS_MENSAJE.UI.MODAL,
-                            origen: CONFIG_PADRE_LOCAL.ID,
-                            datos: {
-                                accion: 'mostrar',
-                                tipo: 'informacion',
-                                titulo: parada.nombre || parada.title || `Imagen ${paradaId}`,
-                                contenido: `<div class="media-container" style="text-align:center"><img src="${parada.imagen}" style="max-width:100%;height:auto"/></div>`,
-                                acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
-                                datos: { origen: mensaje.origen, paradaId }
+                        try {
+                            const respuestaParada = await enviarMensajeConConfirmacion({
+                                tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA,
+                                origen: CONFIG_PADRE_LOCAL.ID,
+                                destino: 'hijo2',
+                                datos: { paradaId, incluirMedia: true }
+                            });
+
+                            if (!respuestaParada || !respuestaParada.datos) {
+                                logger.warn(`[PADRE][UI.ACCION_USUARIO] Respuesta vacía de hijo2 para parada ${paradaId}`);
+                                return { exito: false, error: 'respuesta_vacia' };
                             }
-                        });
 
-                        return { exito: true };
+                            const { imagen } = respuestaParada.datos || {};
+                            if (!imagen) {
+                                logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada ${paradaId} no tiene imagen en hijo2`);
+                                return { exito: false, error: 'sin_imagen' };
+                            }
+
+                            // Mostrar modal con la imagen
+                            await enviarMensaje({
+                                destino: 'hijo1',
+                                tipo: TIPOS_MENSAJE.UI.MODAL,
+                                origen: CONFIG_PADRE_LOCAL.ID,
+                                datos: {
+                                    accion: 'mostrar',
+                                    tipo: 'informacion',
+                                    titulo: respuestaParada.datos.nombre || `Imagen ${paradaId}`,
+                                    contenido: `<div class="media-container" style="text-align:center"><img src="${imagen}" style="max-width:100%;height:auto"/></div>`,
+                                    acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                    datos: { origen: mensaje.origen, paradaId }
+                                }
+                            });
+
+                            return { exito: true };
+                        } catch (err) {
+                            logger.error(`[PADRE][UI.ACCION_USUARIO] Error solicitando parada a hijo2:`, err);
+                            return { exito: false, error: err && err.message ? err.message : 'error' };
+                        }
                     }
 
                     // Reproducir video solicitado por hijo2
@@ -3597,6 +3688,52 @@
 
                         return { exito: true };
                     }
+
+                        // Reproducir video solicitado por hijo2: pedir datos a hijo2 y mostrar modal con video
+                        if (accion === 'reproducir-video') {
+                            const paradaId = mensaje.datos?.paradaActual;
+                            if (!paradaId) return { exito: false, error: 'paradaId_no_especificado' };
+
+                            try {
+                                const respuestaParada = await enviarMensajeConConfirmacion({
+                                    tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADA,
+                                    origen: CONFIG_PADRE_LOCAL.ID,
+                                    destino: 'hijo2',
+                                    datos: { paradaId, incluirMedia: true }
+                                });
+
+                                if (!respuestaParada || !respuestaParada.datos) {
+                                    logger.warn(`[PADRE][UI.ACCION_USUARIO] Respuesta vacía de hijo2 para parada ${paradaId}`);
+                                    return { exito: false, error: 'respuesta_vacia' };
+                                }
+
+                                const { video } = respuestaParada.datos || {};
+                                if (!video) {
+                                    logger.warn(`[PADRE][UI.ACCION_USUARIO] Parada ${paradaId} no tiene video en hijo2`);
+                                    return { exito: false, error: 'sin_video' };
+                                }
+
+                                // Mostrar modal con el video
+                                await enviarMensaje({
+                                    destino: 'hijo1',
+                                    tipo: TIPOS_MENSAJE.UI.MODAL,
+                                    origen: CONFIG_PADRE_LOCAL.ID,
+                                    datos: {
+                                        accion: 'mostrar',
+                                        tipo: 'informacion',
+                                        titulo: respuestaParada.datos.nombre || `Video ${paradaId}`,
+                                        contenido: `<div class="media-container" style="text-align:center"><video controls style="max-width:100%;height:auto" src="${video}"></video></div>`,
+                                        acciones: [{ texto: 'Cerrar', id: 'cerrar' }],
+                                        datos: { origen: mensaje.origen, paradaId }
+                                    }
+                                });
+
+                                return { exito: true };
+                            } catch (err) {
+                                logger.error(`[PADRE][UI.ACCION_USUARIO] Error solicitando parada a hijo2:`, err);
+                                return { exito: false, error: err && err.message ? err.message : 'error' };
+                            }
+                        }
 
                     return { exito: false, error: 'Acción no reconocida' };
                 } catch (err) {
