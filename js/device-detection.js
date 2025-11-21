@@ -1,8 +1,4 @@
-/**
- * Módulo de detección de dispositivos
- * @module DeviceDetection
- * @version 1.0.0
- */
+import logger from './logger.js';
 
 /**
  * Detecta si el dispositivo actual es móvil
