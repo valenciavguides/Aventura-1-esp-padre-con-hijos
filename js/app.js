@@ -13,6 +13,27 @@ import { promesasPendientes } from './monitoreo.js';
 
 import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './funciones-mapa.js';
 
+/**
+ * Migrar registros tempranos desde el fallback global a la mensajería.
+ * Algunos módulos registran handlers antes de que `mensajeria` esté
+ * completamente inicializada. Esta función re-aplica esas registraciones
+ * al Map interno de `mensajeria` llamando a su `registrarControlador`.
+ */
+export async function registrarControladoresApp() {
+    try {
+        const { registrarControlador } = await import('./mensajeria.js');
+        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+            globalThis.__vv_manejadores.forEach((cb, tipo) => {
+                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[APP] error registrando controlador', tipo, e); }
+            });
+            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        }
+        logger.info('[APP][registrarControladores] Controladores migrados (si existían)');
+    } catch (error) {
+        logger.warn('[APP][registrarControladores] No se pudo migrar controladores:', error.message);
+    }
+}
+
 // ============================================================
 // NOTA: El objeto 'estado' ha sido movido a codigo-padre.html
 // siguiendo el patrón arquitectónico donde cada componente
@@ -284,14 +305,22 @@ function agruparParadasCercanas(paradas, radioMetros) {
  * @param {string} modo - Nuevo modo ('casa' o 'aventura')
  */
 export async function actualizarInterfazModo(estado, modo) {
+    if (!estado) return;
+    if (!estado.hijosInicializados) estado.hijosInicializados = new Set();
+    if (typeof estado.hijosInicializados[Symbol.iterator] !== 'function') {
+        logger.warn('estado.hijosInicializados no es iterable, omitiendo actualización de interfaz');
+        return;
+    }
+
     for (const hijoId of estado.hijosInicializados) {
         try {
-            await enviarMensaje({
+            const resultado = enviarMensaje({
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: 'padre',
                 datos: { modo }
             });
+            if (resultado && typeof resultado.then === 'function') await resultado;
         } catch (error) {
             logger.error(`Error al actualizar modo en ${hijoId}:`, error);
         }
@@ -306,18 +335,25 @@ export async function actualizarInterfazModo(estado, modo) {
  */
 export function notificarError(codigo, error, contexto = {}) {
     logger.error('Error cr�tico:', error);
-    enviarMensaje({
-        destino: 'padre',
-        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-        origen: 'padre',
-        datos: {
-            codigo,
-            mensaje: error.message,
-            stack: error.stack,
-            contexto,
-            timestamp: new Date().toISOString()
+    try {
+        const r = enviarMensaje({
+            destino: 'padre',
+            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+            origen: 'padre',
+            datos: {
+                codigo,
+                mensaje: error.message,
+                stack: error.stack,
+                contexto,
+                timestamp: new Date().toISOString()
+            }
+        });
+        if (r && typeof r.then === 'function') {
+            r.catch(err => logger.error('Error al notificar error:', err));
         }
-    }).catch(err => logger.error('Error al notificar error:', err));
+    } catch (err) {
+        logger.error('Error al notificar error:', err);
+    }
 }
 
 /**
@@ -426,20 +462,38 @@ export async function manejarCambioModo(estado, mensaje) {
     }
 
     const { modo, opciones = {}, motivo = 'no especificado' } = mensaje.datos;
-    const modosValidos = Object.keys(MODOS);
+
+    // Normalizar modo: aceptar tanto claves ('CASA','AVENTURA') como valores ('casa','aventura')
+    const modosKeys = Object.keys(MODOS); // ['CASA','AVENTURA']
+    const modosValues = Object.values(MODOS); // ['casa','aventura']
+
+    let modoNormalized = null; // valor en minúsculas: 'casa'|'aventura'
+    let modoKey = null; // clave en mayúsculas: 'CASA'|'AVENTURA'
+
+    if (typeof modo === 'string') {
+        const lower = modo.toLowerCase();
+        const upper = modo.toUpperCase();
+        if (modosValues.includes(lower)) {
+            modoNormalized = lower;
+            modoKey = modosKeys.find(k => MODOS[k] === lower);
+        } else if (modosKeys.includes(upper)) {
+            modoKey = upper;
+            modoNormalized = MODOS[upper];
+        }
+    }
 
     try {
-        // 2. Validar modo solicitado
-        if (!modo || !modosValidos.includes(modo)) {
-            const errorMsg = `Modo inv�lido: '${modo}'. V�lidos: ${modosValidos.join(', ')}`;
+        // 2. Validar modo solicitado (ahora normalizado)
+        if (!modoNormalized) {
+            const errorMsg = `Modo inv�lido: '${modo}'. V�lidos: ${modosKeys.join(', ')}`;
             logger.warn(`${logPrefix} ${errorMsg}`, { modo, mensajeId });
             return { exito: false, error: errorMsg };
         }
 
         // 3. Validar transici�n de modos
         const modoActual = estado.modo?.actual || 'normal';
-        if (modo === modoActual) {
-            logger.info(`${logPrefix} El modo ya est� establecido a '${modo}'`, { mensajeId });
+        if (modoNormalized === modoActual) {
+            logger.info(`${logPrefix} El modo ya est� establecido a '${modoNormalized}'`, { mensajeId });
             return { exito: true, cambiado: false, modoActual };
         }
 
@@ -455,12 +509,12 @@ export async function manejarCambioModo(estado, mensaje) {
 
         registrarEvento('CAMBIO_MODO', eventoCambioModo);
 
-        // 5. Validar permisos (si es necesario)
-        if (MODOS[modo].requiereAutenticacion) {
-            const tienePermisos = await validarPermisosCambioModo(mensaje.origen, modo);
+        // 5. Validar permisos (si es necesario) - comprobar en MODOS_OPERACION de forma segura
+        if (MODOS_OPERACION && MODOS_OPERACION[modoNormalized] && MODOS_OPERACION[modoNormalized].requiereAutenticacion) {
+            const tienePermisos = await validarPermisosCambioModo(mensaje.origen, modoNormalized);
             if (!tienePermisos) {
                 const errorMsg = 'No tiene permisos para cambiar a este modo';
-                logger.warn(`${logPrefix} ${errorMsg}`, { origen: mensaje.origen, modo });
+                logger.warn(`${logPrefix} ${errorMsg}`, { origen: mensaje.origen, modo: modoNormalized });
                 return { exito: false, error: errorMsg };
             }
         }
@@ -490,7 +544,7 @@ export async function manejarCambioModo(estado, mensaje) {
             // 9. Actualizar el estado global
             estado.modo = estado.modo || {};
             estado.modo.anterior = modoActual;
-            estado.modo.actual = modo;
+            estado.modo.actual = modoNormalized;
             estado.modo.ultimoCambio = {
                 timestamp,
                 origen: mensaje.origen,
@@ -498,17 +552,17 @@ export async function manejarCambioModo(estado, mensaje) {
                 opciones
             };
 
-            // 10. Actualizar interfaz y limpiar recursos seg�n el modo
-            await actualizarInterfazModo(modo);
-            await limpiarRecursosPorModo(modo, opciones);
+            // 10. Actualizar interfaz y limpiar recursos según el modo
+            await actualizarInterfazModo(estado, modoNormalized);
+            await limpiarRecursosPorModo(estado, modoNormalized, opciones);
 
             // 11. Notificar a los componentes del cambio completado
-            await notificarCambioModoCompletado(modoActual, modo, motivo);
+            await notificarCambioModoCompletado(modoActual, modoNormalized, motivo);
 
             // 12. Registrar �xito
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`, {
                 modoAnterior: modoActual,
-                modoNuevo: modo,
+                modoNuevo: modoNormalized,
                 duracion: `${Date.now() - timestamp}ms`
             });
 
@@ -516,7 +570,7 @@ export async function manejarCambioModo(estado, mensaje) {
                 exito: true, 
                 cambiado: true,
                 modoAnterior: modoActual, 
-                modoActual: modo,
+                modoActual: modoNormalized,
                 timestamp
             };
 
@@ -531,7 +585,7 @@ export async function manejarCambioModo(estado, mensaje) {
 
             // Intentar restaurar el estado anterior
             try {
-                await restaurarEstadoModoAnterior(modoActual, modo, errorMsg);
+                await restaurarEstadoModoAnterior(estado, modoActual, modo, errorMsg);
             } catch (errorRestauracion) {
                 logger.error(`${logPrefix} Error al restaurar el modo anterior: ${errorRestauracion.message}`, {
                     error: errorRestauracion,
@@ -567,6 +621,7 @@ export async function manejarCambioModo(estado, mensaje) {
             await enviarMensaje({
                 destino: mensaje?.origen || 'sistema',
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                origen: 'padre',
                 mensajeId: generarIdUnico(),
                 timestamp: Date.now(),
                 datos: {
@@ -610,6 +665,7 @@ async function notificarCambioModoInminente(modoAnterior, modoNuevo, motivo) {
     await enviarMensaje({
         tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
         origen: 'sistema',
+        destino: 'broadcast',
         mensajeId: generarIdUnico(),
         timestamp: Date.now(),
         datos: {
@@ -631,6 +687,7 @@ async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
     await enviarMensaje({
         tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
         origen: 'sistema',
+        destino: 'broadcast',
         mensajeId: generarIdUnico(),
         timestamp: Date.now(),
         datos: {
@@ -890,6 +947,13 @@ export async function enviarEstadoGlobal(estado) {
             paradaActual: estado.paradaActual,
             monitoreo: estado.monitoreo,
         };
+
+        if (!estado) return;
+        if (!estado.hijosInicializados) estado.hijosInicializados = new Set();
+        if (typeof estado.hijosInicializados[Symbol.iterator] !== 'function') {
+            logger.warn('estado.hijosInicializados no es iterable, omitiendo envio de estado global');
+            return;
+        }
 
         const hijosSinConfirmar = new Set(estado.hijosInicializados);
 
