@@ -12,8 +12,27 @@ import {
 import { CONFIG, MAPA_TIPOS_HIJO } from './config.js';
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import { validarCoordenadas } from './validacion.js';
-import { generarIdUnico, manejarError } from './utils.js';
+import { generarIdUnico, manejarError, ajustarTimeoutPorConexion } from './utils.js';
 import logger from './logger.js';
+
+/**
+ * Migrar registros tempranos desde el fallback global a la mensajería.
+ * Ejecutar después de inicializar mensajería en el padre.
+ */
+export async function registrarControladoresMapa() {
+    try {
+        const { registrarControlador } = await import('./mensajeria.js');
+        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+            globalThis.__vv_manejadores.forEach((cb, tipo) => {
+                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[MAPA] error registrando controlador', tipo, e); }
+            });
+            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        }
+        logger.info('[MAPA][registrarControladores] Controladores migrados (si existían)');
+    } catch (error) {
+        logger.warn('[MAPA][registrarControladores] No se pudo migrar controladores:', error.message);
+    }
+}
 
 /**
  * Calcula la distancia entre dos puntos geográficos usando la fórmula de Haversine
@@ -189,20 +208,79 @@ if (typeof document !== 'undefined') {
  * @returns {boolean} True si la inicialización fue exitosa.
  */
 export function inicializarServicioMapa(mapaInstance, opciones = {}) {
-    if (!mapaInstance) {
-        logger.error('No se proporcionó instancia del mapa');
-        return false;
+    // Si se proporciona una instancia válida, usarla directamente
+    if (mapaInstance) {
+        _mapaInstance = mapaInstance;
+        _mapaOpciones = { ...opciones };
+        arrayParadasLocal = window.AVENTURA_PARADAS || [];
+        logger.info('Servicio de mapa inicializado correctamente (instancia recibida)');
+        return true;
     }
-    
-    _mapaInstance = mapaInstance;
-    _mapaOpciones = { ...opciones };
-    
-    // Inicializar array de paradas locales con datos del padre
-    arrayParadasLocal = window.AVENTURA_PARADAS || [];
-    
-    logger.info('Servicio de mapa inicializado correctamente');
-    
-    return true;
+
+    // Intentar crear la instancia internamente si Leaflet ya está disponible
+    if (typeof L !== 'undefined' && L.map) {
+        try {
+            const containerId = (opciones && opciones.containerId) || 'mapa';
+            const container = document.getElementById(containerId);
+            if (!container) {
+                logger.warn(`[MAPA] Contenedor #${containerId} no encontrado; no se puede crear mapa internamente`);
+                return false;
+            }
+
+            // Si el contenedor ya tiene una instancia de Leaflet asociada, asumir que
+            // el mapa ya fue inicializado por otra llamada y tratar como éxito.
+            // Leaflet marca el contenedor con _leaflet_id cuando ya existe un mapa.
+            try {
+                if (container._leaflet_id) {
+                    logger.info(`[MAPA] Contenedor #${containerId} ya inicializado (leaflet id=${container._leaflet_id}); asumiendo mapa listo`);
+                    return true;
+                }
+            } catch (err) {
+                // Ignorar cualquier error al inspeccionar el contenedor.
+            }
+
+            // Crear la instancia de mapa con la configuración por defecto
+            const mapa = L.map(containerId, {
+                center: CONFIG.MAPA?.CENTER || [39.4699, -0.3763],
+                zoom: CONFIG.MAPA?.ZOOM || 13,
+                minZoom: CONFIG.MAPA?.MIN_ZOOM || 12,
+                maxZoom: CONFIG.MAPA?.MAX_ZOOM || 18,
+                zoomControl: CONFIG.MAPA?.ZOOM_CONTROL ?? false
+            });
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(mapa);
+
+            _mapaInstance = mapa;
+            _mapaOpciones = { ...opciones };
+            arrayParadasLocal = window.AVENTURA_PARADAS || [];
+
+            logger.info('Servicio de mapa inicializado correctamente (instancia creada internamente)');
+            return true;
+        } catch (error) {
+            // Si el error corresponde a un contenedor ya inicializado, no lo tratamos
+            // como fallo crítico: significa que otra llamada ya creó el mapa.
+            try {
+                const msg = (error && error.message) ? error.message : '';
+                if (msg.includes('Map container is already initialized')) {
+                    logger.warn('[MAPA] Intento de crear mapa pero el contenedor ya está inicializado; usando mapa existente');
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            logger.error('[MAPA] Error creando instancia del mapa internamente:', error);
+            return false;
+        }
+    }
+
+    // Si no se puede crear la instancia ahora, emitir advertencia y devolver false.
+    // Esto evita lanzar un error en tiempo de inicialización externo y permite que
+    // el llamador reintente cuando la API/instancia esté disponible.
+    logger.warn('No se proporcionó instancia del mapa y Leaflet no está listo; espere a volver a llamar con la instancia');
+    return false;
 }
 
 /**
@@ -608,6 +686,8 @@ export async function mostrarTodasLasParadas(paradasExternas) {
                     title: parada.nombre || `Parada ${parada.id}`
                 }).addTo(_mapaInstance);
 
+                marcador.setZIndexOffset(600);
+
                 marcadoresParadas.set(parada.id, marcador);
             }
         });
@@ -628,7 +708,7 @@ function actualizarPosicionUsuario(coordenadas) {
     try {
         validarCoordenadas(coordenadas);
 
-        ejecutarOperacionMapa(mapa => {
+        Promise.resolve(ejecutarOperacionMapa(mapa => {
             if (marcadorUsuario) {
                 mapa.removeLayer(marcadorUsuario);
             }
@@ -641,7 +721,7 @@ function actualizarPosicionUsuario(coordenadas) {
             }).addTo(mapa);
 
             console.info('Posición del usuario actualizada');
-        }).catch(error => {
+        })).catch(error => {
             logger.error('Error al actualizar la posición del usuario:', error);
         });
     } catch (error) {
@@ -657,6 +737,18 @@ function actualizarPosicionUsuario(coordenadas) {
  */
 function dibujarTramo(tramo, destacado = false) {
     try {
+        // TEMP DEBUG: imprimir objeto `tramo` en consola cuando se active la bandera global
+        try {
+            if (typeof window !== 'undefined' && window.__vv_debug_tramo) {
+                // Clonar para evitar referencias circulares al mostrar
+                let copia = null;
+                try { copia = JSON.parse(JSON.stringify(tramo)); } catch (e) { copia = tramo; }
+                console.info('[DEBUG-TRAMO] dibujarTramo llamado con:', copia);
+            }
+        } catch (dbgErr) {
+            console.debug('[DEBUG-TRAMO] Error al imprimir tramo debug:', dbgErr);
+        }
+
         if (!tramo || !tramo.inicio || !tramo.fin) {
             throw new Error('Datos del tramo incompletos.');
         }
@@ -675,6 +767,8 @@ function dibujarTramo(tramo, destacado = false) {
             weight: destacado ? 6 : 4,
             opacity: destacado ? 0.9 : 0.7
         }).addTo(_mapaInstance);
+
+        polyline.setZIndexOffset(500);
 
         return polyline;
     } catch (error) {
@@ -734,27 +828,40 @@ export function dibujarRutaConMarcadores(coordenadasHijo2, opciones = {}) {
             });
         };
 
-        // Agregar marcadores en los puntos de inicio, fin y paradas intermedias
+        // Agregar marcadores SOLO para inicio, parada y fin (omitir waypoints intermedios)
         coordenadasHijo2.forEach((coord, index) => {
-            let markerColor = '#4CAF50'; // Verde por defecto
+            // Omitir waypoints (no queremos marcadores amarillos intermedios)
+            if (coord.tipo === 'waypoint') return;
+
+            const isFirst = index === 0;
+            const isLast = index === coordenadasHijo2.length - 1;
+
             let markerTitle = coord.nombre || `Punto ${index + 1}`;
 
-            // Determinar color basado en el tipo de coordenada y posición
-            if (coord.tipo === 'inicio') {
+            // Si es el punto final, usar icono de bandera
+            if (isLast) {
+                markerTitle = coord.nombre || 'Fin de tramo';
+                // Usar emoji de bandera cuadriculada (🏁) como divIcon para evitar dependencia de archivos
+                const flagDivIcon = L.divIcon({
+                    className: 'finish-flag-icon',
+                    html: '<div style="font-size:28px;line-height:28px;">🏁</div>',
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 28]
+                });
+                const markerFin = L.marker([coord.lat, coord.lng], { icon: flagDivIcon, title: markerTitle }).addTo(_mapaInstance);
+                markerFin.setZIndexOffset(700);
+                marcadoresParadas.set(`ruta-fin`, markerFin);
+                return;
+            }
+
+            // Para inicio o paradas, usar icono coloreado pequeño
+            let markerColor = '#4CAF50';
+            if (coord.tipo === 'inicio' || (coord.tipo === 'tramo' && isFirst)) {
                 markerColor = '#F44336'; // Rojo para inicio
                 markerTitle = coord.nombre || 'Inicio';
             } else if (coord.tipo === 'parada') {
                 markerColor = '#4CAF50'; // Verde para paradas
                 markerTitle = coord.nombre || `Parada ${coord.id}`;
-            } else if (coord.tipo === 'waypoint') {
-                markerColor = '#FF9800'; // Naranja para waypoints
-                markerTitle = coord.nombre || 'Waypoint';
-            } else if (coord.tipo === 'tramo' && index === coordenadasHijo2.length - 1) {
-                markerColor = '#2196F3'; // Azul para fin de tramo
-                markerTitle = coord.nombre || 'Fin de tramo';
-            } else if (coord.tipo === 'tramo') {
-                markerColor = '#F44336'; // Rojo para inicio de tramo
-                markerTitle = coord.nombre || 'Inicio de tramo';
             }
 
             const marker = L.marker([coord.lat, coord.lng], {
@@ -762,7 +869,7 @@ export function dibujarRutaConMarcadores(coordenadasHijo2, opciones = {}) {
                 title: markerTitle
             }).addTo(_mapaInstance);
 
-            // Almacenar el marcador para poder limpiarlo después
+            marker.setZIndexOffset(600);
             marcadoresParadas.set(`ruta-${index}`, marker);
         });
 
@@ -805,15 +912,17 @@ function manejarMostrarRuta(mensaje) {
             
             // Agregar marcadores si es necesario
             if (tramo.inicio) {
-                L.marker([tramo.inicio.lat, tramo.inicio.lng], { 
+                const markerInicio = L.marker([tramo.inicio.lat, tramo.inicio.lng], { 
                     icon: L.icon({ iconUrl: 'red-pin.png' }) 
                 }).addTo(_mapaInstance);
+                markerInicio.setZIndexOffset(600);
             }
             
             if (tramo.fin) {
-                L.marker([tramo.fin.lat, tramo.fin.lng], { 
+                const markerFin = L.marker([tramo.fin.lat, tramo.fin.lng], { 
                     icon: L.icon({ iconUrl: 'flag.png' }) 
                 }).addTo(_mapaInstance);
+                markerFin.setZIndexOffset(600);
             }
             
             return { 
@@ -2006,7 +2115,7 @@ export async function diagnosticarGPS() {
             const posicion = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
-                    timeout: 5000,
+                    timeout: ajustarTimeoutPorConexion(5000),
                     maximumAge: 0
                 });
             });
@@ -2892,7 +3001,7 @@ export function registrarManejadoresMensajes() {
                         soloConImagen: mensaje.datos?.soloConImagen || false,
                         soloConVideo: mensaje.datos?.soloConVideo || false
                     }
-                }, 5000); // 5 segundos timeout
+                }, ajustarTimeoutPorConexion(5000)); // Timeout ajustado según conexión
 
                 if (respuesta && respuesta.datos) {
                     logger.info(`${logPrefix} Paradas cercanas obtenidas: ${respuesta.datos.total || 0} paradas`);
@@ -3710,3 +3819,73 @@ export function dibujarPolylineNavegacion(opciones = {}) {
 
 // Variable para la polyline de navegación
 let polylineNavegacion = null;
+
+// Controlador para estado global GPS
+registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL, async (mensaje) => {
+    try {
+        const permisos = await navigator.permissions.query({name:'geolocation'});
+        estadoMapa.gpsPermisos = permisos.state;
+        
+        if (permisos.state === 'granted') {
+            // Intentar obtener ubicación
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    estadoMapa.gpsPrecision = position.coords.accuracy;
+                    enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
+                        origen: 'funciones-mapa',
+                        destino: mensaje.origen,
+                        datos: {
+                            estado: 'activo',
+                            precision: position.coords.accuracy,
+                            permisos: 'granted'
+                        }
+                    });
+                },
+                (error) => {
+                    enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
+                        origen: 'funciones-mapa',
+                        destino: mensaje.origen,
+                        datos: {
+                            estado: 'error',
+                            error: error.message,
+                            permisos: 'granted'
+                        }
+                    });
+                }
+            );
+        } else if (permisos.state === 'denied') {
+            enviarMensaje({
+                tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
+                origen: 'funciones-mapa',
+                destino: mensaje.origen,
+                datos: {
+                    estado: 'denegado',
+                    permisos: 'denied'
+                }
+            });
+        } else {
+            // prompt
+            enviarMensaje({
+                tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
+                origen: 'funciones-mapa',
+                destino: mensaje.origen,
+                datos: {
+                    estado: 'solicitar',
+                    permisos: 'prompt'
+                }
+            });
+        }
+    } catch (error) {
+        enviarMensaje({
+            tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
+            origen: 'funciones-mapa',
+            destino: mensaje.origen,
+            datos: {
+                estado: 'error',
+                error: error.message
+            }
+        });
+    }
+});
