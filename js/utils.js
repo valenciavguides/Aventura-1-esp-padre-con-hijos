@@ -6,8 +6,34 @@
 
 import logger from './logger.js';
 import { CSS_CLASES, MODOS, ERRORES, TIPOS_MENSAJE } from './constants.js';
-import { registrarControlador, enviarMensaje } from './mensajeria.js';
 import { promesasPendientes } from './monitoreo.js';
+
+// Proveer un fallback seguro para `registrarControlador` durante la
+// evaluación del módulo. Algunos módulos registran controladores en
+// top-level antes de que `mensajeria.js` esté totalmente inicializado
+// (imports circulares). Para evitar `ReferenceError: registrarControlador is not defined`
+// almacenamos las registraciones tempranas en `globalThis.__vv_manejadores`, que
+// `mensajeria.js` migrará a su Map interno cuando se inicialice.
+if (typeof registrarControlador === 'undefined') {
+    try {
+        if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
+    } catch (e) {
+        // En entornos muy restringidos, aseguramos la existencia del objeto
+        globalThis.__vv_manejadores = new Map();
+    }
+
+    /* eslint-disable no-var */
+    var registrarControlador = function(tipo, callback) {
+        if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
+        try {
+            globalThis.__vv_manejadores.set(tipo, callback);
+        } catch (err) {
+            // No bloqueamos la evaluación si algo falla aquí
+            console.warn('[UTILS] Fallback registrarControlador failed:', err);
+        }
+    };
+    /* eslint-enable no-var */
+}
 
 /**
  * Clase personalizada para errores de la aplicación
@@ -1835,7 +1861,76 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
 // - DATOS.SOLICITAR_PARADAS (búsqueda con filtros avanzados y Haversine)
 // - DATOS.SOLICITAR_PARADA (búsqueda por ID con metadata opcional)
 // - DATOS.COORDENADAS_PARADAS (controladores duplicados eliminados)
-// 
+//
 // hijo2 es ahora el experto centralizado en coordenadas y datos de paradas/tramos.
 // Total eliminado: ≈660 líneas de controladores duplicados
 // ============================================================
+
+/**
+ * Calcula un multiplicador de timeout basado en el tipo de conexión de red.
+ * Ajusta los timeouts para conexiones lentas para mejorar la experiencia del usuario.
+ *
+ * @returns {number} Multiplicador de timeout (1.0 = normal, >1.0 = más tiempo)
+ */
+export function calcularMultiplicadorTimeoutConexion() {
+    try {
+        // Verificar si navigator.connection está disponible
+        if (!navigator.connection) {
+            logger.debug('[TIMEOUT] navigator.connection no disponible, usando multiplicador por defecto: 1.0');
+            return 1.0;
+        }
+
+        const connection = navigator.connection;
+        const effectiveType = connection.effectiveType || 'unknown';
+
+        // Multiplicadores basados en el tipo de conexión
+        const multiplicadores = {
+            '4g': 1.0,      // Conexión rápida - timeout normal
+            '3g': 1.5,      // Conexión media - 50% más tiempo
+            '2g': 2.0,      // Conexión lenta - doble tiempo
+            'slow-2g': 3.0, // Conexión muy lenta - triple tiempo
+            'unknown': 1.5  // Desconocido - tiempo moderado
+        };
+
+        const multiplicador = multiplicadores[effectiveType] || multiplicadores.unknown;
+
+        logger.debug(`[TIMEOUT] Tipo de conexión: ${effectiveType}, multiplicador: ${multiplicador}x`);
+        return multiplicador;
+
+    } catch (error) {
+        logger.warn('[TIMEOUT] Error al calcular multiplicador de conexión:', error);
+        return 1.5; // Multiplicador conservador por defecto
+    }
+}
+
+/**
+ * Ajusta un timeout base según la conexión de red actual.
+ * @param {number} timeoutBase - Timeout base en milisegundos
+ * @returns {number} Timeout ajustado
+ */
+export function ajustarTimeoutPorConexion(timeoutBase) {
+    const multiplicador = calcularMultiplicadorTimeoutConexion();
+    const timeoutAjustado = Math.round(timeoutBase * multiplicador);
+
+    logger.debug(`[TIMEOUT] Timeout ajustado: ${timeoutBase}ms -> ${timeoutAjustado}ms (${multiplicador}x)`);
+    return timeoutAjustado;
+}
+
+/**
+ * Función para migrar controladores tempranos (fallback) hacia la mensajería
+ * Debe invocarse desde el padre después de `await inicializarMensajeria()`.
+ */
+export async function registrarControladoresUtils() {
+    try {
+        const { registrarControlador } = await import('./mensajeria.js');
+        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+            globalThis.__vv_manejadores.forEach((cb, tipo) => {
+                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[UTILS] error registrando controlador', tipo, e); }
+            });
+            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        }
+        logger.info('[UTILS][registrarControladores] Controladores migrados (si existían)');
+    } catch (error) {
+        logger.warn('[UTILS][registrarControladores] No se pudo migrar controladores:', error.message);
+    }
+}
