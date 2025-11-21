@@ -15,6 +15,25 @@
  */
 
 import { registrarControlador, enviarMensaje } from './mensajeria.js';
+
+/**
+ * Migrar registros tempranos desde el fallback global a la mensajería.
+ * Ejecutar después de inicializar mensajería en el padre.
+ */
+export async function registrarControladoresMonitoreo() {
+    try {
+        const { registrarControlador } = await import('./mensajeria.js');
+        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+            globalThis.__vv_manejadores.forEach((cb, tipo) => {
+                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[MONITOREO] error registrando controlador', tipo, e); }
+            });
+            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        }
+        console.info('[MONITOREO][registrarControladores] Controladores migrados (si existían)');
+    } catch (error) {
+        console.warn('[MONITOREO][registrarControladores] No se pudo migrar controladores:', error.message);
+    }
+}
 import { TIPOS_MENSAJE } from './constants.js';
 import { generarIdUnico } from './utils.js';
 import logger from './logger.js';
@@ -910,7 +929,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
                 setTimeout(() => {
                     const mensajeOriginal = estadoSistema.mensajesPendientes[idMensajeOriginal].mensaje;
                     if (mensajeOriginal) {
-                        enviarMensaje({
+                        Promise.resolve(enviarMensaje({
                             ...mensajeOriginal,
                             mensajeId: generarIdUnico(),
                             datos: {
@@ -918,7 +937,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
                                 esReintento: true,
                                 reintentoNumero: (estadoSistema.mensajesPendientes[idMensajeOriginal].intentos || 1) + 1
                             }
-                        }).catch(error => {
+                        })).catch(error => {
                             logger.error(`${logPrefix} Error al reintentar mensaje ${idMensajeOriginal}:`, error);
                         });
                     }
@@ -1042,84 +1061,6 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CONFIRMACION, async (mensaje) => {
         logger.error(`${logPrefix} Error al procesar confirmación:`, error);
     }
 }, { id: 'sistema-confirmacion-handler' });
-
-// ==================== CONTROLADOR SISTEMA.HIJO_LISTO MOVIDO ====================
-// ❌ ELIMINADO - Este controlador está DUPLICADO y causa conflictos
-// ✅ El controlador correcto debe estar en app.js
-// 
-// RAZÓN: El PADRE (app.js) debe manejar la notificación de que un HIJO está listo.
-// Este es un mensaje PARA el padre, por lo tanto debe procesarse en app.js.
-// monitoreo.js puede OBSERVAR el evento, pero NO debe ser el controlador principal.
-// ================================================================================
-/*
-registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
-    const logPrefix = `[SISTEMA.HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    const mensajeId = mensaje?.mensajeId || generarIdUnico();
-
-    try {
-        if (!mensaje?.origen || !mensaje.datos) {
-            logger.warn(`${logPrefix} Mensaje sin origen o datos`);
-            return;
-        }
-
-        registrarEvento('HIJO_LISTO_RECIBIDO', {
-            origen: mensaje.origen,
-            version: mensaje.datos.version,
-            timestamp,
-            mensajeId
-        });
-
-        // Actualizar estado del hijo
-        const hijoActualizado = {
-            ...(estadoSistema.hijos[mensaje.origen] || {}),
-            estado: 'listo',
-            ultimaActualizacion: new Date().toISOString(),
-            ...(mensaje.datos.version && { version: mensaje.datos.version }),
-            ...(mensaje.datos.capacidades && { capacidades: mensaje.datos.capacidades })
-        };
-
-        estadoSistema.hijos[mensaje.origen] = hijoActualizado;
-        estadoSistema.hijosInicializados.add(mensaje.origen);
-
-        logger.info(`${logPrefix} Hijo registrado como inicializado`, {
-            version: mensaje.datos.version,
-            capacidades: mensaje.datos.capacidades || []
-        });
-
-        // Enviar confirmación
-        await enviarMensaje({
-            destino: mensaje.origen,
-            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-            origen: 'padre',
-            mensajeId: generarIdUnico(),
-            timestamp,
-            datos: {
-                tipo: 'hijo_listo_confirmado',
-                mensajeOriginal: mensajeId,
-                estado: 'procesado',
-                timestamp
-            }
-        });
-
-        // Verificar si todos los hijos están listos
-        const todosListos = Object.values(estadoSistema.hijos).every(hijo => 
-            hijo.estado === 'listo' || hijo.estado === 'inicializado'
-        );
-
-        if (todosListos) {
-            registrarEvento('TODOS_LOS_HIJOS_LISTOS', {
-                timestamp,
-                totalHijos: Object.keys(estadoSistema.hijos).length
-            });
-            logger.info(`[SISTEMA] Todos los hijos están listos`);
-        }
-
-    } catch (error) {
-        logger.error(`${logPrefix} Error al procesar HIJO_LISTO:`, error);
-    }
-});
-*/
 
 /**
  * Controlador: SISTEMA.HIJO_FALLIDO
@@ -1995,7 +1936,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
             
             // Notificar al componente solicitante
             notificaciones.push(
-                enviarMensaje({
+                Promise.resolve(enviarMensaje({
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.INICIALIZACION_COMPLETADA,
                     origen: 'sistema-inicializacion',
@@ -2014,7 +1955,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                             dependencias: estadoComponente.metricas.dependenciasResueltas
                         }
                     }
-                }).catch(error => 
+                })).catch(error => 
                     logger.error(`${logPrefix} Error al notificar al componente`, { 
                         componenteId, 
                         error: error.message 
@@ -2024,7 +1965,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
             
             // Notificar al sistema de monitoreo
             notificaciones.push(
-                enviarMensaje({
+                Promise.resolve(enviarMensaje({
                     destino: 'sistema-monitoreo',
                     tipo: 'MONITOREO.COMPONENTE_INICIALIZADO',
                     origen: 'sistema-inicializacion',
@@ -2039,7 +1980,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                         dependencias: estadoComponente.metricas.dependenciasResueltas,
                         metadata: estadoComponente.metadata
                     }
-                }).catch(error => 
+                })).catch(error => 
                     logger.error(`${logPrefix} Error al notificar al sistema de monitoreo`, { 
                         componenteId, 
                         error: error.message 
@@ -2057,7 +1998,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                 
                 notificaciones.push(
                     ...dependientes.map(depId => 
-                        enviarMensaje({
+                        Promise.resolve(enviarMensaje({
                             destino: depId,
                             tipo: 'SISTEMA.DEPENDENCIA_DISPONIBLE',
                             origen: 'sistema-inicializacion',
@@ -2069,7 +2010,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                                 estado: 'disponible',
                                 timestamp: Date.now()
                             }
-                        }).catch(error => 
+                        })).catch(error => 
                             logger.warn(`${logPrefix} Error al notificar a componente dependiente`, { 
                                 componenteId, 
                                 dependiente: depId,
@@ -2158,14 +2099,15 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                     });
                     
                     // Volver a procesar el mensaje original
-                    registrarControlador.handlers[TIPOS_MENSAJE.SISTEMA.INICIALIZACION]
-                        .fn({ ...mensaje, metadata: { ...metadata, esReintento: true } })
-                        .catch(error => 
-                            logger.error(`${logPrefix} Error en reintento de inicialización`, { 
-                                componenteId, 
-                                error: error.message 
-                            })
-                        );
+                    Promise.resolve(
+                        registrarControlador.handlers[TIPOS_MENSAJE.SISTEMA.INICIALIZACION]
+                            .fn({ ...mensaje, metadata: { ...metadata, esReintento: true } })
+                    ).catch(error => 
+                        logger.error(`${logPrefix} Error en reintento de inicialización`, { 
+                            componenteId, 
+                            error: error.message 
+                        })
+                    );
                 }, tiempoEspera);
                 
                 return; // No notificar error todavía, estamos reintentando
@@ -2324,7 +2266,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
             };
             
             // Enviar notificación de error (sin esperar respuesta)
-            enviarMensaje(notificacionError).catch(notifError => 
+            Promise.resolve(enviarMensaje(notificacionError)).catch(notifError => 
                 console.error('Error al notificar error crítico:', notifError)
             );
             
@@ -3010,7 +2952,7 @@ async function notificarDependientes(componenteId, datos) {
     
     await Promise.all(
         dependientes.map(dependiente => 
-            enviarMensaje({
+            Promise.resolve(enviarMensaje({
                 destino: dependiente,
                 tipo: 'SISTEMA.ESTADO_COMPONENTE_ACTUALIZADO',
                 origen: 'sistema-inicializacion',
@@ -3021,7 +2963,7 @@ async function notificarDependientes(componenteId, datos) {
                     componenteOrigen: componenteId,
                     timestamp: Date.now()
                 }
-            }).catch(error => 
+            })).catch(error => 
                 logger.error(`Error notificando a dependiente ${dependiente}: ${error.message}`)
             )
         )
