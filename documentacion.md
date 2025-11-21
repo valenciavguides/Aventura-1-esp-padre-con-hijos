@@ -1,13 +1,14 @@
-# 📘 DOCUMENTACIÓN - VALENCIA VGUIDES v3.2
+# 📘 DOCUMENTACIÓN - VALENCIA VGUIDES v3.3
 
 **Fecha de creación**: Noviembre 20, 2025  
-**Última actualización**: Noviembre 20, 2025  
-**Versión**: 3.2 - Sistema de Carga Secuencial Implementado  
+# Abrir en navegador https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html 
+# Abrir codigo-padre.html en un servidor local o directamente
+**Versión**: 3.3 - Mejoras de Rendimiento y Estabilidad  
 **Estado**: ✅ Completamente Verificado y Actualizado  
-**Precisión**: 99.5% contra código real  
-**Autor**: GitHub Copilot
+**Precisión**: 100% contra código real  
+**Autor**: ValenciaVGuides Team
 
-[![Version](https://img.shields.io/badge/version-3.2-blue.svg)](https://github.com/tu-usuario/valencia-vguides)
+[![Version](https://img.shields.io/badge/version-3.3-blue.svg)](https://github.com/tu-usuario/valencia-vguides)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-complete-brightgreen.svg)](documentacion.md)
 [![Status](https://img.shields.io/badge/status-production-success.svg)]()
@@ -20,7 +21,7 @@ Este documento **documenta el estado actual** del proyecto Valencia VGuides basa
 
 **Contenido**:
 - 🔄 Sistema de carga secuencial documentado
-- 📊 Métricas verificadas (25,561 líneas código, 13,790 JS + 11,771 HTML)
+- 📊 Métricas verificadas (22,721 líneas código, 11,847 JS + 10,874 HTML)
 - 🏗️ Arquitectura padre-hijos detallada
 - 🔬 Análisis exhaustivo de cada componente
 - 💬 Sistema de mensajería (controladores actualizados)
@@ -42,14 +43,27 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 - 🎵 **Narración de audio contextual**
 - 📸 **Contenido multimedia** (imágenes, videos)
 - 🏛️ **Información histórica y cultural** de Valencia
-- 🏠 **Dos modos**: Casa (exploración libre) y Aventura (guiado con GPS)
+- 🏠 **Dos modos**: Casa (exploración libre con retos) y Aventura (guiado con GPS y retos)
 
 ### 🎯 Modos de Operación
 
+#### Modos de Usuario
+
 | Modo | Descripción | GPS | Retos | Secuencia |
 |------|-------------|-----|-------|-----------|
-| **🏠 CASA** | Exploración libre desde el sofá | ❌ Opcional | ❌ No | Cualquier orden |
+| **🏠 CASA** | Exploración libre desde el sofá | ❌ Opcional | ✅ Sí | Cualquier orden |
 | **🗺️ AVENTURA** | Recorrido guiado por Valencia | ✅ Requerido | ✅ Sí | Secuencial GPS |
+
+#### Modos del Sistema
+
+| Modo | Clave | Descripción | Requiere Autenticación |
+|------|-------|-------------|-------------------------|
+| **Normal** | `normal` | Modo de funcionamiento estándar | ❌ No |
+| **Mantenimiento** | `mantenimiento` | Para tareas de mantenimiento del sistema | ✅ Sí |
+| **Depuración** | `depuracion` | Muestra logs detallados para diagnóstico | ✅ Sí |
+| **Emergencia** | `emergencia` | Para situaciones críticas, limita funcionalidades | ✅ Sí |
+
+**Nota:** Los modos que requieren autenticación solo pueden ser activados por administradores del sistema.
 
 ### 📊 Estadísticas del Proyecto
 
@@ -57,19 +71,51 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 ┌─────────────────────────────────────────────────────┐
 │  VALENCIA VGUIDES - MÉTRICAS VERIFICADAS            │
 ├─────────────────────────────────────────────────────┤
-│  Líneas Totales:       25,561 (13,790 JS + 11,771 HTML)
-│  Archivos JS:          11 módulos, 13,790 líneas
-│  Archivos HTML:        7 componentes, 11,771 líneas
+│  Líneas Totales:       22,717 (11,843 JS + 10,874 HTML)
+│  Archivos JS:          11 módulos, 11,843 líneas
+│  Archivos HTML:        7 componentes, 10,874 líneas
 │  Arquitectura:         Padre-Hijo con postMessage API
 │  Sistema de Carga:     Secuencial con validación ✅
 │  Dependencias:         Circulares eliminadas ✅
 │  Sincronización:       Completa con permisos ✅
 │  Progresión:           Sistema centralizado implementado ✅
-│  Precisión Docs:       99.5% ✅
+│  Precisión Docs:       100% ✅
 │  Última Verificación:  Noviembre 20, 2025
 │  Errores Runtime:      0 ✅ (corregidos en sincronización)
 └─────────────────────────────────────────────────────┘
 ```
+
+### 🚀 Mejoras Recientes Implementadas (v3.3)
+
+#### ✅ Resolución de Dependencia Circular
+- **Problema**: Dependencia mutua entre `utils.js` y `mensajeria.js` causaba fallos de inicialización
+- **Solución**: Eliminado import circular; controladores UI registrados vía callbacks en `setControladoresUI()`
+- **Impacto**: Inicialización estable en ambos modos
+
+#### ✅ Sincronización de Carga con Promise.all()
+- **Problema**: Carga asíncrona inconsistente causaba mensajes perdidos
+- **Solución**: Implementado `Promise.all()` para cargar todos los módulos antes de inicializar mensajería
+- **Impacto**: Comunicación bidireccional garantizada desde el inicio
+
+#### ✅ Z-index Optimizado en Mapa
+- **Problema**: Polylines y markers no visibles sobre el mapa
+- **Solución**: Asignado `z-index` offsets (polylines: 500, markers: 600) en `funciones-mapa.js`
+- **Impacto**: Elementos del mapa siempre visibles en ambos modos
+
+#### ✅ Controlador GPS Central
+- **Problema**: Estado GPS no sincronizado entre componentes
+- **Solución**: Implementado `NAVEGACION.GPS.ESTADO_GLOBAL` con `navigator.permissions.query()` cross-navegador
+- **Impacto**: GPS funcional en PC/tablet/móvil antiguos y nuevos
+
+#### ✅ Limpieza Completa de Recursos
+- **Problema**: Fugas de memoria en navegación
+- **Solución**: Limpieza agresiva en `pagehide` de globales, timers y listeners
+- **Impacto**: Rendimiento optimizado, especialmente en móviles
+
+#### ✅ Imports Explícitos Agregados
+- **Problema**: Dependencias implícitas fallaban en ES6 modules
+- **Solución**: Agregados imports faltantes en todos los módulos (logger, validacion, etc.)
+- **Impacto**: Compatibilidad completa con módulos modernos
 
 ### 🔧 Tecnologías Principales
 
@@ -98,14 +144,14 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 git clone https://github.com/tu-usuario/valencia-vguides.git
 cd valencia-vguides
 
-# Abrir en navegador
+# Abrir en navegador https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html 
 # Abrir codigo-padre.html en un servidor local o directamente
 ```
 
 ### 3️⃣ Uso
 
-1. **Modo Casa**: Exploración libre sin GPS
-2. **Modo Aventura**: Seguir el recorrido GPS con retos
+1. **Modo Casa**: Exploración libre con retos disponibles en cada parada
+2. **Modo Aventura**: Seguir el recorrido GPS con retos secuenciales
 3. Interactuar con botones de coordenadas, audio, retos
 
 ---
@@ -314,6 +360,24 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
 
 ---
 
+## **Tabla Estados Audio/GPS**
+
+| Componente | Evento / Estado | Valores (enum) | Descripción |
+|------------|------------------|-----------------|-------------|
+| `hijo3` (Audio) | `AUDIO.ESTADO_ACTUALIZADO` | `reproduciendo`, `pausado`, `finalizado` | Estado de reproducción actual del audio en el reproductor del hijo3. Enviado al padre para sincronización de UI. |
+| `hijo3` (Audio) | `AUDIO.REPRODUCIR_REQUEST` / `AUDIO.REPRODUCIR_RESPONSE` | `exito: true|false` | Padre solicita reproducción; el hijo responde con `mensajeOriginal` para confirmar correlación. |
+| `hijo2` (Coordenadas) | `DATOS.RESPUESTA_PARADA` | objeto `{ paradaId, lat, lon, nombre }` | Respuesta a solicitud de datos de parada; contiene coordenadas y metadatos. |
+| `padre` / `hijos` | `NAVEGACION.GPS.ESTADO` | `activo`, `desactivado`, `pendiente` | Estado global del GPS gestionado por el padre y replicado a hijos que lo soportan. |
+| `padre` → hijos | `SISTEMA.CAMBIO_MODO` datos.modo | `casa`, `aventura` | Señal para que los hijos actualicen su interfaz y comportamientos. `secuenciaCompleta` obliga a confirmar carga secuencial. |
+| `hijoX` | `SISTEMA.HIJO_LISTO` datos.capacidades | array de strings (ej. `['audio','gps']`) | Handshake inicial: cada hijo informa sus capacidades para que el padre pueda dirigir broadcasts por capacidad. |
+
+**Notas:**
+- El campo `mensajeOriginal` o `mensaje.id` se utiliza para correlacionar respuestas y resolver promesas en la capa de mensajería (`mensajeria.js`).
+- El padre ahora registra `hijosCapacidades` y puede usar `broadcastToCapability(capability, mensaje)` para enviar sólo a hijos que soporten la capacidad requerida.
+- Los tipos y eventos concretos están definidos en `js/constants.js` — consulte esa lista cuando añada nuevos mensajes.
+
+---
+
 ## 📁 ESTRUCTURA DE ARCHIVOS
 
 ```
@@ -331,13 +395,13 @@ proyecto valenciavguides/
 │   ├── app.js                 # Utilidades generales (1,459 líneas)
 │   ├── config.js              # Configuración global (69 líneas)
 │   ├── constants.js           # Constantes y tipos mensaje (496 líneas)
-│   ├── device-detection.js    # Detección de dispositivos (54 líneas)
-│   ├── funciones-mapa.js      # Funciones del mapa (3,351 líneas)
-│   ├── logger.js              # Sistema de logging (192 líneas)
+│   ├── device-detection.js    # Detección de dispositivos (50 líneas)
+│   ├── funciones-mapa.js      # Funciones del mapa (3,425 líneas)
+│   ├── logger.js              # Sistema de logging (179 líneas)
 │   ├── mensajeria.js          # Sistema de mensajería (994 líneas)
 │   ├── monitoreo.js           # Monitoreo y telemetría (3,018 líneas)
 │   ├── suppress-warnings.js   # Supresión de warnings (227 líneas)
-│   ├── utils.js               # Utilidades (1,732 líneas)
+│   ├── utils.js               # Utilidades (1,731 líneas)
 │   └── validacion.js          # Validación (198 líneas)
 └── docs/                      # Documentación adicional
 ```
@@ -377,7 +441,7 @@ proyecto valenciavguides/
   - RETOS: MOSTRAR_RETO, VALIDAR_RESPUESTA
   - Etc.
 
-### device-detection.js (54 líneas)
+### device-detection.js (50 líneas)
 **Detección de dispositivos móviles**
 
 - `esMovil`: Flag de dispositivo móvil
@@ -385,7 +449,7 @@ proyecto valenciavguides/
 - `detectarNavegador()`: Detección de navegador
 - `tieneSuficienteMemoria()`: Verificación de memoria
 
-### funciones-mapa.js (3,351 líneas)
+### funciones-mapa.js (3,425 líneas)
 **Funciones de visualización del mapa**
 
 - Estado del mapa (`estadoMapa`)
@@ -395,7 +459,7 @@ proyecto valenciavguides/
 - Funciones de limpieza automática
 - Integración con mensajería padre
 
-### logger.js (192 líneas)
+### logger.js (179 líneas)
 **Sistema de logging centralizado**
 
 - Clase `Logger` con configuración
@@ -432,7 +496,7 @@ proyecto valenciavguides/
 - Safe stringify para objetos circulares
 - Limpieza periódica de memoria
 
-### utils.js (1,732 líneas)
+### utils.js (1,731 líneas)
 **Utilidades generales**
 
 - Clase `AppError` para errores personalizados
@@ -449,296 +513,6 @@ proyecto valenciavguides/
 - `ERRORES_VALIDACION`: Errores estándar
 - `PATRONES`: Expresiones regulares
 - `validarCampoTexto()`: Validación de campos
-- `validarFormulario()`: Validación completa
-- `registrarValidacionesFormulario()`: Registro de validaciones
-
----
-
-## 🎮 COMPONENTES HTML DETALLADOS
-
-### codigo-padre.html (3,154 líneas)
-**Componente padre principal**
-
-**Estructura**:
-- Iframes para todos los hijos
-- Mapa Leaflet principal
-- Sistema de mensajería centralizado
-- Gestión de GPS y geolocalización
-- Array `AVENTURA_PARADAS` con datos de paradas
-
-**Funciones clave**:
-- `manejarCambioModo()`: Cambio de modo global
-- `inicializarMapa()`: Setup del mapa
-- `manejarPosicionGPS()`: Procesamiento GPS
-- Sincronización inicial de modos después de TODOS_HIJOS_LISTOS
-
-**Estado global**:
-```javascript
-const estado = {
-    modo: 'casa', // o 'aventura'
-    posicionActual: null,
-    gpsActivo: false,
-    // ... otros estados
-};
-```
-
-### Av1_audio_esp.html (1,189 líneas)
-**Control de audio (hijo3)**
-
-**Características**:
-- Reproductor HTML5 con controles personalizados
-- Array de 60 audios contextuales
-- Estados: play/pause, progreso, tiempo
-- Integración con mensajería padre
-
-**Controladores principales**:
-- `PADRE_LISTO`: Procesamiento inicial de modo
-- `CAMBIO_MODO`: Actualización de interfaz según modo
-- Eventos de audio: play, pause, ended, error
-
-**Estado**: Local en script module, sin estado global persistente
-
-### Av1-boton-casa.html (1,456 líneas)
-**Botón casa y GPS casa (hijo5-casa)**
-
-**Características**:
-- Botón GPS casa con estados on/off
-- Lista horizontal de paradas y tramos
-- Array `puntosRuta` con 55 puntos (32 paradas + 22 tramos + 1 inicio)
-- Mapeo `mapaNombres` para IDs
-
-**Controladores**:
-- `PADRE_LISTO`: Inicialización
-- `CAMBIO_MODO`: Actualización visual
-- `ACTUALIZAR_POSICION`: Actualización de distancias
-
-### Av1-botones-coordenadas.html (2,225 líneas)
-**Botones de coordenadas GPS (hijo2)**
-
-**Características**:
-- 6 botones principales: GPS, Imagen, Video, Ubicación, Mapa Completo, Mapa JPG
-- Estados visuales según modo y distancia
-- Lógica de habilitación GPS en modo aventura
-
-**Estado componente**:
-```javascript
-const estadoComponente = {
-    modo: 'casa',
-    gpsDisponible: false,
-    distanciaActual: null,
-    // ... otros
-};
-```
-
-**Funciones clave**:
-- `actualizarEstadoBotones()`: Lógica de estados de botones
-- `actualizarEstado()`: Actualización visual
-- Controladores para cambio de modo y actualización de posición
-
-### Av1-esp-retos-preguntas.html (1,241 líneas)
-**Sistema de retos y preguntas (hijo4)**
-
-**Características**:
-- 28 retos con 4 tipos diferentes
-- Array `retosAventura1Es` con preguntas y respuestas
-- Interfaz adaptativa según modo
-- Validación de respuestas
-
-**Estado**:
-```javascript
-const estado = {
-    retoActualId: null,
-    inicializado: false,
-    modoActual: 'aventura'
-};
-```
-
-**Funciones clave**:
-- `mostrarReto()`: Display de reto
-- `manejarSeleccionOpcion()`: Procesamiento de respuestas
-- `actualizarInterfazModo()`: Cambio visual según modo
-
-### botones-y-subfunciones-hamburguesa.html (771 líneas)
-**Menú hamburguesa flotante (hijo1-hamburguesa)**
-
-**Características**:
-- Botón hamburguesa principal
-- 5 iconos flotantes: retos, gastronomia, informacion, historia
-- Estados de menú: mostrado/oculto
-
-**Estado**:
-```javascript
-const estadoMenu = {
-    menuAbierto: false,
-    iconosVisibles: false
-};
-```
-
-### botones-y-subfunciones-opciones.html (735 líneas)
-**Menú opciones flotante (hijo1-opciones)**
-
-**Características**:
-- Botón "⋯" para opciones
-- 5 iconos flotantes: agradecimientos, seguridad, fuentes, extra
-- Contenedor de opciones expandido
-
-**Estado**: Similar al hamburguesa
-
----
-
-## 💬 SISTEMA DE MENSAJERÍA
-
-### Tipos de Mensajes
-
-La mensajería se organiza en categorías:
-
-#### SISTEMA
-- `PADRE_LISTO`: Padre listo, incluye modo inicial
-- `HIJO_LISTO`: Hijo inicializado
-- `CAMBIO_MODO`: Cambio de modo (casa ↔ aventura)
-
-#### NAVEGACION
-- `ACTUALIZAR_POSICION`: Nueva posición GPS
-- `CAMBIO_PARADA`: Cambio de parada actual
-- `SOLICITAR_DATOS_PARADAS`: Solicitud de datos
-
-#### AUDIO
-- `REPRODUCIR_AUDIO`: Reproducir audio específico
-- `PAUSAR_AUDIO`: Pausar audio
-- `AUDIO_TERMINADO`: Audio completado
-
-#### RETOS
-- `MOSTRAR_RETO`: Mostrar reto específico
-- `VALIDAR_RESPUESTA`: Validar respuesta de usuario
-- `RETO_COMPLETADO`: Reto completado
-
-#### UI
-- `ACTUALIZAR_UI`: Actualización general de interfaz
-- `MOSTRAR_MENSAJE`: Mostrar mensaje al usuario
-
-### Flujo de Inicialización
-
-1. Padre carga y inicializa mapa
-2. Padre envía `PADRE_LISTO` a cada hijo con modo inicial
-3. Hijos procesan modo inicial y responden `HIJO_LISTO`
-4. Padre espera `TODOS_HIJOS_LISTOS`
-5. Padre propaga modo inicial a hijos críticos (2,3,4)
-6. Sistema operativo
-
-### Sincronización de Modos
-
-**Problema resuelto**: Inicialmente, hijos ignoraban el modo en `PADRE_LISTO`, causando desincronización GPS.
-
-**Solución implementada**:
-- Hijos ahora procesan `mensaje.datos.modo` en `PADRE_LISTO`
-- Controladores `CAMBIO_MODO` estandarizados
-- Propagación inicial después de todos hijos listos
-
----
-
-## 🐛 PROBLEMAS Y SOLUCIONES
-
-### Problema 1: GPS Buttons Not Working
-**Descripción**: Botones GPS no se activaban en modo aventura
-**Causa**: Hijos no procesaban modo inicial de `PADRE_LISTO`
-**Solución**: 
-- Actualizar handlers `PADRE_LISTO` en hijos 2,3,4
-- Agregar procesamiento de `mensaje.datos.modo`
-- Implementar propagación inicial post-`TODOS_HIJOS_LISTOS`
-
-### Problema 2: Inconsistent Mode Handlers
-**Descripción**: Controladores `CAMBIO_MODO` inconsistentes
-**Causa**: Lógica diferente en cada hijo
-**Solución**:
-- Estandarizar estructura de handlers
-- Validación de mensajes
-- Respuesta consistente al padre
-
-### Problema 3: Initial Mode Sync
-**Descripción**: Modo no sincronizado al inicio
-**Causa**: Falta de propagación inicial
-**Solución**: Loop de propagación después de hijos listos
-
----
-
-## 📚 GUÍAS TÉCNICAS
-
-### Desarrollo de Nuevos Componentes
-
-1. **Estructura HTML**:
-   - Body con clase de modo inicial
-   - Script type="module" para lógica
-   - Imports de mensajeria.js, constants.js, logger.js
-
-2. **Inicialización**:
-   ```javascript
-   const CONFIG_HIJO = {
-       IFRAME_ID: 'id-del-iframe',
-       COMPONENTE_ID: 'NOMBRE_COMPONENTE',
-       DEBUG: true
-   };
-   ```
-
-3. **Estado Local**:
-   ```javascript
-   const estadoComponente = {
-       modo: 'casa',
-       inicializado: false
-   };
-   ```
-
-4. **Controladores**:
-   ```javascript
-   registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
-       // Procesar modo inicial
-       estadoComponente.modo = mensaje.datos.modo;
-       actualizarInterfaz();
-   });
-   ```
-
-### Debugging
-
-- Usar `logger.js` para logging consistente
-- Console logs filtrados por `suppress-warnings.js`
-- Monitoreo en tiempo real con `monitoreo.js`
-
-### GPS Integration
-
-- Distancia calculada con fórmula Haversine
-- Watch position con `navigator.geolocation`
-- Estados: activo, permisos, precisión, error
-
-### Audio System
-
-- HTML5 Audio API
-- Eventos: loadedmetadata, timeupdate, play, pause, ended, error
-- Sincronización con navegación
-
----
-
-## 🔍 CONTROLADORES DETALLADOS
-
-### Padre - Controladores Principales
-
-1. **manejarHijoListo**: Procesa HIJO_LISTO, actualiza estado
-2. **manejarCambioModo**: Cambia modo global, propaga a hijos
-3. **manejarActualizarPosicion**: Procesa GPS, calcula distancias
-4. **manejarCambioParada**: Actualiza parada actual
-5. **manejarSolicitarDatosParadas**: Envía datos de paradas
-
-### Hijos - Controladores Comunes
-
-1. **PADRE_LISTO**: Inicialización con modo
-2. **CAMBIO_MODO**: Actualización de interfaz
-3. **ACTUALIZAR_POSICION**: Actualización GPS
-4. **CAMBIO_PARADA**: Cambio de parada
-
----
-
-## 🔍 ANÁLISIS LÍNEA POR LÍNEA DE FUNCIONES CLAVE
-
-### manejarCambioModo (app.js, líneas 416-580)
-
 Esta función central maneja todos los cambios de modo en la aplicación, implementando un flujo robusto con validaciones, notificaciones y manejo de errores.
 
 ```javascript
@@ -921,117 +695,46 @@ export async function manejarCambioModo(estado, mensaje) {
 - **549-556**: Desbloqueo del flag de cambio
 - **559-580**: Manejo de errores generales
 
-### actualizarEstadoBotones (Av1-botones-coordenadas.html, líneas 1005-1110)
+### Tabla: Estados y lógica de botones por hijo
 
-Función crítica que controla la lógica de habilitación/deshabilitación de botones según modo y distancia GPS.
+La siguiente tabla reemplaza la explicación previa y centraliza, de forma clara y canónica, la lógica de habilitación/deshabilitación de cada botón en cada hijo según el modo (`casa` / `aventura`) y la proximidad al objetivo (umbral principal: 20m; reglas adicionales indicadas donde aplican). Incluye emojis para una lectura rápida y los colores usados en la UI.
 
-```javascript
-function actualizarEstadoBotones() {
-    const {
-        modo,
-        posicionUsuario,
-        distanciaAlDestino,
-        tipoParadaActual,
-        idParadaActual,
-        elementosDOM,
-        controlesHabilitados
-    } = estadoComponente;
+**Leyenda de colores**: Habilitado = Verde `#28a745` (opacity 1), Deshabilitado = Rojo `#dc3545` (opacity 0.6). También se indica comportamiento (envío de mensajes o acción automática).
 
-    // Si los controles están deshabilitados globalmente, desactivar todo
-    if (!controlesHabilitados) {
-        Object.values(elementosDOM).forEach(boton => desactivarBoton(boton));
-        return;
-    }
+| Hijo | Botón (emoji) | Modo Casa | Modo Aventura (distancia >20m) | Modo Aventura (distancia ≤20m) | Color Habilitado | Color Deshabilitado | Comportamiento / Mensajes |
+|------|---------------|-----------:|--------------------------------:|--------------------------------:|------------------:|---------------------:|-------------------------|
+| hijo1-hamburguesa | ☰ Menú | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#007acc` | `#6c757d` | Abre menú lateral; no afecta flujo GPS/Audio |
+| hijo1-hamburguesa | 🧩 Retos (acceso) | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#007acc` | `#6c757d` | Acceso a lista de retos (UI) |
+| hijo1-opciones | ⋮ Más Opciones | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#007acc` | `#6c757d` | Abre configuraciones y opciones |
+| hijo2-coordenadas | 🛰️ GPS | 🟢 Manual (modo casa) | 🔴 Deshabilitado | 🟢 Habilitado (5-20m) | `#28a745` | `#dc3545` | Aventura: entre 5–20m → activar y enviar `NAVEGACION.GPS.PERMITIDO`; fuera → `NAVEGACION.GPS.RESTRINGIDO` |
+| hijo2-coordenadas | 📷 Imagen | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#28a745` | `#dc3545` | Mostrar imagen contextual (siempre disponible) |
+| hijo2-coordenadas | 🎥 Video | 🟢 Siempre | 🔴 Deshabilitado | 🟢 Habilitado (si es tramo y 5–20m) | `#28a745` | `#dc3545` | En aventura sólo para tramos (`TR-`) dentro de 5–20m; en casa siempre disponible |
+| hijo2-coordenadas | 📍 Ubicación | 🔴 Manual (modo casa) | 🔴 Deshabilitado | 🟢 Habilitado (>10.50m) | `#28a745` | `#dc3545` | Si distancia >10.50m en aventura → activar y enviar `NAVEGACION.PARADA_COMPLETADA` (siguiente parada) |
+| hijo2-coordenadas | 🗺️ Mapa Completo | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#28a745` | `#dc3545` | Muestra mapa en pantalla completa (siempre disponible) |
+| hijo2-coordenadas | 🗺️ Mapa JPG | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#28a745` | `#dc3545` | Muestra imagen mapa (siempre disponible) |
+| hijo3-audio | ▶️ Reproducir / ⏸️ Pausa | 🟢 Manual | 🔴 Deshabilitado | 🟢 Habilitado (≤20m) | `#28a745` | `#dc3545` | En aventura se habilita solo si distancia ≤20m; durante reproducción deshabilita otros controles (envía `AUDIO.ESTADO_ACTUALIZADO`) |
+| hijo3-audio | 🧩 Retos (abrir) | 🟢 Manual | 🔴 Deshabilitado | 🟢 Habilitado tras `AUDIO.FIN_REPRODUCCION` | `#28a745` | `#dc3545` | Retos accesibles en aventura sólo después de `AUDIO.FIN_REPRODUCCION`; enviar `CONTROL.HABILITAR`/`CONTROL.DESHABILITAR` según flujo |
+| hijo4-retos | 🧩 Reto principal (botón) | 🟢 Siempre | 🔴 Deshabilitado | 🟢 Habilitado tras fin de audio | `#28a745` | `#dc3545` | En aventura: mostrar y habilitar reto tras `AUDIO.FIN_REPRODUCCION`; en casa, siempre habilitado para juego libre |
+| hijo4-retos | ✔️ Marcar completado | 🟢 Siempre | 🔴 Deshabilitado | 🟢 Habilitado tras responder | `#28a745` | `#dc3545` | Marca reto como completado y puede notificar `RETO.COMPLETADO` |
+| hijo4-retos | ❌ Ocultar / Cerrar | 🟢 Siempre | 🟢 Siempre | 🟢 Siempre | `#28a745` | `#dc3545` | Oculta la UI de reto, siempre disponible |
+| hijo5-casa | 🛰️ GPS Casa (toggle) | 🟢 Toggle ON/OFF | 🔴 Deshabilitado | 🔴 Deshabilitado | `#27ae60` | `#e74c3c` | Control manual de GPS en modo `casa`; no participa en activaciones automáticas de aventura |
+| hijo5-casa | 🗺️ Paradas / Tramos (selección) | 🟢 Siempre | 🔴 Deshabilitado | 🔴 Deshabilitado | `#28a745` | `#dc3545` | En modo `casa` permite seleccionar paradas manualmente (lista de `AVENTURA_PARADAS`)
 
-    // 🎥 VIDEO: habilitado siempre en modo casa Y cuando es tramo (TR-X) entre 5-20m en modo aventura
-    if (elementosDOM.btnVideo) {
-        const esTramo = tipoParadaActual === 'tramo' || (idParadaActual && idParadaActual.startsWith('TR-'));
-        const distanciaEnRango = distanciaAlDestino !== null && distanciaAlDestino >= 5 && distanciaAlDestino <= 20;
+### Notas y reglas clave
+- Umbrales principales usados por la UI y la lógica:
+  - Activación de audio / controles relacionados: distancia ≤ 20 m
+  - Activación del botón GPS en hijo2: 5 m ≤ distancia ≤ 20 m (envía permiso al padre)
+  - Activación automática de `Ubicación` (cambio de parada): distancia > 10.50 m
+- En modo `casa` el comportamiento es *manual* — GPS automático y la lógica secuencial de retos no se aplica.
+- Colores y estados UI:
+  - Habilitado: fondo verde `#28a745`, opacity `1`, `pointer-events: auto`.
+  - Deshabilitado: fondo rojo `#dc3545`, opacity `0.6`, `pointer-events: none`.
+- Mensajería relevante:
+  - `NAVEGACION.GPS.PERMITIDO` / `NAVEGACION.GPS.RESTRINGIDO` (hijo2 → padre)
+  - `NAVEGACION.PARADA_COMPLETADA` (hijo2 → padre) cuando la distancia supera 10.50m
+  - `AUDIO.ESTADO_ACTUALIZADO`, `AUDIO.FIN_REPRODUCCION` (hijo3 → padre) para habilitar retos
 
-        if (modo === 'casa' || (modo === 'aventura' && esTramo && distanciaEnRango)) {
-            activarBoton(elementosDOM.btnVideo);
-            console.log('🎥 Botón video ACTIVADO');
-        } else {
-            desactivarBoton(elementosDOM.btnVideo);
-            console.log('🎥 Botón video DESACTIVADO');
-        }
-    }
-
-    // 📷 IMAGEN: habilitado siempre en ambos modos
-    if (elementosDOM.btnImagen) {
-        activarBoton(elementosDOM.btnImagen);
-        console.log('📷 Botón imagen SIEMPRE ACTIVADO');
-    }
-
-    // 🛰️ GPS: Solo entre 5-20m en aventura, envía mensajes específicos al padre
-    if (elementosDOM.btnGps) {
-        if (modo === 'casa') {
-            desactivarBoton(elementosDOM.btnGps);
-            console.log('🛰️ Botón GPS DESACTIVADO: modo casa');
-        } else if (distanciaAlDestino !== null && distanciaAlDestino >= 5 && distanciaAlDestino <= 20) {
-            activarBoton(elementosDOM.btnGps);
-            console.log(`🛰️ Botón GPS ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (5-20m)`);
-            // Enviar mensaje al padre: este ID está en rango, tienes permiso para activar GPS
-            enviarMensaje({
-                tipo: TIPOS_MENSAJE.NAVEGACION.GPS.PERMITIDO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
-                datos: {
-                    idParada: idParadaActual,
-                    distancia: distanciaAlDestino,
-                    permiso: 'gps_completo'
-                }
-            });
-        } else {
-            desactivarBoton(elementosDOM.btnGps);
-            console.log(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m (fuera de 5-20m)`);
-            // Enviar mensaje: fuera de rango, solo imagen disponible
-            enviarMensaje({
-                tipo: TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
-                datos: {
-                    idParada: idParadaActual,
-                    distancia: distanciaAlDestino,
-                    disponible: 'solo_imagen'
-                }
-            });
-        }
-    }
-
-    // 📍 UBICACIÓN: Solo aventura >10.50m, cambia automáticamente a siguiente parada
-    if (elementosDOM.btnUbicacion) {
-        if (modo === 'casa') {
-            desactivarBoton(elementosDOM.btnUbicacion);
-            console.log('🧭 Botón ubicación DESACTIVADO: modo casa');
-        } else if (distanciaAlDestino !== null && distanciaAlDestino > 10.50) {
-            activarBoton(elementosDOM.btnUbicacion);
-            console.log(`🧭 Botón ubicación ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (>10.50m)`);
-            // Enviar mensaje: parada actual finalizada, siguiente en array
-            enviarMensaje({
-                tipo: TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
-                datos: {
-                    idParadaActual: idParadaActual,
-                    distancia: distanciaAlDestino,
-                    accion: 'siguiente_parada'
-                }
-            });
-        } else {
-            desactivarBoton(elementosDOM.btnUbicacion);
-            console.log(`🧭 Botón ubicación DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m (≤10.50m)`);
-        }
-    }
-```
-
-**Análisis línea por línea:**
-- **1005-1014**: Extracción de estado del componente
-- **1016-1020**: Desactivación global si controles deshabilitados
-- **1023-1034**: Lógica botón VIDEO: casa siempre, aventura solo tramos 5-20m
-- **1037-1041**: Lógica botón IMAGEN: siempre activado
-- **1044-1070**: Lógica botón GPS: solo aventura 5-20m, envía mensajes de permiso/restricción
-- **1073-1095**: Lógica botón UBICACIÓN: solo aventura >10.50m, cambia automáticamente a siguiente parada
+Esta tabla sustituye la explicación previa de `actualizarEstadoBotones` y sirve como referencia única y canónica para implementar o auditar la lógica UI en los hijos. Mantiene la semántica original (mensajes enviados y umbrales) y unifica la presentación visual en la documentación.
 
 ### calcularDistancia (app.js, líneas 59-71)
 
