@@ -9,6 +9,8 @@
 import { CONFIG_MENSAJERIA, TIPOS_MENSAJE } from './constants.js';
 // NOTA: No importar desde utils.js para evitar dependencia circular
 // import { generarIdUnico } from './utils.js'; // ❌ Causa dependencia circular
+// Pero sí podemos importar ajustarTimeoutPorConexion ya que no depende de mensajeria
+import { ajustarTimeoutPorConexion } from './utils.js';
 import logger from './logger.js';
 
 // Detect mobile devices for optimizations
@@ -25,6 +27,34 @@ function generarIdUnico() {
     return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Manejadores centralizados (separado del objeto estadoMensajeria
+// para evitar errores de acceso durante imports circulares).
+const manejadores = new Map();
+
+// Getter seguro para los manejadores. Devuelve el Map del módulo si está
+// disponible, o el fallback en `globalThis.__vv_manejadores` cuando sea
+// necesario (registro temprano durante imports circulares).
+function __vv_getManejadores() {
+    try {
+        if (typeof manejadores !== 'undefined' && manejadores instanceof Map) {
+            return manejadores;
+        }
+    } catch (e) {
+        // ignore
+    }
+    if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
+    return globalThis.__vv_manejadores;
+}
+
+// Fallback global para registros tempranos (evita TDZ en import cycles).
+// Algunos módulos pueden invocar `registrarControlador` mientras este
+// módulo todavía se está evaluando por una importación circular. Para
+// soportar eso, guardamos registros tempranos en `globalThis.__vv_manejadores`
+// y los migramos a `manejadores` una vez que `inicializarMensajeria` se
+// haya ejecutado. Usamos `globalThis` en tiempo de ejecución para evitar
+// TDZ al leer una variable de módulo que aún no se inicializó.
+globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+
 // ================== MENSAJERÍA CENTRALIZADA =====================
 
 // Estado global de la mensajería (usando configuración centralizada)
@@ -40,6 +70,79 @@ const estadoMensajeria = {
     }
 };
 
+// Registro de capacidades declaradas por cada hijo (padre mantiene esto)
+// Map<hijoId, Set<capability>>
+const hijosCapacidades = new Map();
+
+/**
+ * Registra las capacidades declaradas por un hijo.
+ * @param {string} hijoId
+ * @param {Array<string>} capacidades
+ */
+function registrarCapacidadesHijo(hijoId, capacidades = []) {
+    try {
+        if (!hijoId) return;
+        const set = new Set(Array.isArray(capacidades) ? capacidades : [capacidades]);
+        hijosCapacidades.set(hijoId, set);
+        if (estadoMensajeria.debug) console.debug('[MENSAJERIA] Capacidades registradas', hijoId, Array.from(set));
+    } catch (e) {
+        console.warn('[MENSAJERIA] Error registrando capacidades hijo:', e);
+    }
+}
+
+/**
+ * Obtiene los hijos que declaran una capacidad específica
+ * @param {string} capability
+ * @returns {Array<string>} lista de ids
+ */
+function hijosConCapability(capability) {
+    const result = [];
+    for (const [hijoId, set] of hijosCapacidades.entries()) {
+        if (set && set.has(capability)) result.push(hijoId);
+    }
+    return result;
+}
+
+/**
+ * Broadcast dirigido por capability; clona `datos` antes de enviar.
+ * @param {string} capability
+ * @param {Object} mensajeObj - objeto con tipo, origen, datos, version opcional
+ */
+function broadcastToCapability(capability, mensajeObj) {
+    if (!capability || !mensajeObj) return { enviados: 0 };
+    const targets = hijosConCapability(capability);
+    const origenSeguro = window.location.origin;
+    let enviados = 0;
+    const datosClonados = (typeof structuredClone === 'function')
+        ? structuredClone(mensajeObj.datos)
+        : JSON.parse(JSON.stringify(mensajeObj.datos || {}));
+
+    const mensaje = {
+        id: generarIdUnico(),
+        tipo: mensajeObj.tipo,
+        origen: mensajeObj.origen,
+        destino: 'broadcast',
+        datos: datosClonados,
+        version: mensajeObj.version || '1.0.0',
+        timestamp: new Date().toISOString()
+    };
+
+    targets.forEach(hijoId => {
+        try {
+            const iframe = document.getElementById(hijoId);
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage(mensaje, origenSeguro);
+                enviados++;
+            }
+        } catch (e) {
+            console.warn(`[MENSAJERIA] No se pudo enviar mensaje a ${hijoId}:`, e);
+        }
+    });
+
+    if (estadoMensajeria.debug) console.debug(`[MENSAJERIA] broadcastToCapability(${capability}) enviados: ${enviados}`);
+    return { enviados };
+}
+
 // ================== FUNCIONES PRINCIPALES CENTRALIZADAS =====================
 
 /**
@@ -54,6 +157,13 @@ function validarDestino(destino) {
     
     // 'padre' siempre es válido (desde hijo o para comunicación interna del padre)
     if (destino === 'padre') {
+        return true;
+    }
+    
+    // Soportar envíos globales/broadcast desde el padre (o alias 'todos')
+    if (destino === 'broadcast' || destino === 'todos') {
+        // Consideramos válido el destino broadcast; la resolución final
+        // se hace en `enviarMensaje` (se enviará a todos los iframes hijos).
         return true;
     }
     
@@ -89,6 +199,23 @@ export async function inicializarMensajeria(config = {}) {
             console.log(`[MENSAJERIA] Inicializado - Rol: ${rol}, ID: ${estadoMensajeria.componenteId || estadoMensajeria.iframeId || 'desconocido'}`);
         }
 
+        // Migrar controladores que pudieron haberse registrado antes de
+        // que este módulo terminara de evaluarse (import cycles). Los
+        // módulos que llamaron `registrarControlador` temprano añadieron
+        // entradas en `window.__vv_manejadores`; aquí los migramos al Map
+        // principal `manejadores` y limpiamos el fallback.
+        try {
+            if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+                globalThis.__vv_manejadores.forEach((cb, key) => {
+                    try { manejadores.set(key, cb); } catch (e) { /* ignore */ }
+                });
+                globalThis.__vv_manejadores.clear();
+            }
+        } catch (e) {
+            // No crítico; seguimos adelante
+            console.warn('[MENSAJERIA] Error migrando manejadores tempranos:', e);
+        }
+
         return Promise.resolve();
     } catch (error) {
         console.error('[MENSAJERIA] Error durante inicialización:', error);
@@ -105,66 +232,153 @@ export async function inicializarMensajeria(config = {}) {
  * @param {Object} [params.datos={}] - Datos del mensaje.
  * @param {string} [params.version='1.0.0'] - Versión del mensaje.
  */
-export function enviarMensaje({ tipo, origen, destino, datos = {}, version = '1.0.0' }) {
-    if (!tipo || !origen || !destino) {
-        throw new Error('Campos obligatorios faltantes para enviarMensaje: tipo, origen y destino son obligatorios');
-    }
+export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
+    const defaultOrigen = estadoMensajeria.componenteId || (window.parent === window ? 'padre' : 'hijo');
 
-    if (!validarDestino(destino)) {
-        const errorMsg = destino === 'funciones-mapa'
-            ? `Destino 'funciones-mapa' no válido. Los mensajes GPS ahora se manejan directamente llamando a las funciones de funciones-mapa.js desde el padre.`
-            : `Destino no válido: ${destino}`;
-        throw new Error(errorMsg);
-    }
+    return Promise.resolve().then(() => {
+        // Normalizar firma: aceptar tanto un objeto {tipo, origen, destino, datos}
+        // como la forma legacy (destino, tipo, datos)
+        let tipo, origen, destino, datos = {}, version = '1.0.0';
 
-    // Validación específica para mensajes de consulta
-    if (tipo === TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS ||
-        tipo === TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO ||
-        tipo === TIPOS_MENSAJE.DATOS.SOLICITAR_RETO) {
-        
-        if (!datos.paradaId) {
-            throw new Error(`Mensaje de consulta ${tipo} requiere 'paradaId' en datos`);
-        }
-        if (!datos.tipoConsulta) {
-            throw new Error(`Mensaje de consulta ${tipo} requiere 'tipoConsulta' en datos`);
-        }
-    }
-
-    const mensaje = {
-        id: generarIdUnico(),
-        tipo,
-        origen,
-        destino,
-        datos,
-        version,
-        timestamp: new Date().toISOString()
-    };
-
-    // Determinar el destino del mensaje
-    let targetWindow;
-    const origenSeguro = window.location.origin;
-
-    if (destino === 'padre') {
-        // Comunicación hijo → padre: usar window.parent
-        // O padre → padre (comunicación interna): usar window
-        if (window.parent === window) {
-            // Ya estamos en el padre, usar window para comunicación interna
-            targetWindow = window;
+        if (typeof paramsOrDestino === 'object' && paramsOrDestino !== null && !Array.isArray(paramsOrDestino)) {
+            ({ tipo, origen, destino, datos = {}, version = '1.0.0' } = paramsOrDestino);
         } else {
-            targetWindow = window.parent;
+            destino = paramsOrDestino;
+            tipo = tipoOrOptions;
+            datos = maybeDatos || {};
+            origen = datos.origen || defaultOrigen;
         }
-    } else {
-        // Comunicación padre → hijo: usar iframe
-        const iframe = document.getElementById(destino);
-        if (!iframe || !iframe.contentWindow) {
-            throw new Error(`Destino ${destino} no encontrado o no accesible`);
-        }
-        targetWindow = iframe.contentWindow;
-    }
 
-    // Enviar el mensaje al destino correspondiente
-    console.log(`📤 [MENSAJERIA] Enviando mensaje - tipo: ${mensaje.tipo}, origen: ${mensaje.origen}, destino: ${mensaje.destino}`);
-    targetWindow.postMessage(mensaje, origenSeguro);
+        if (!tipo || !origen || !destino) {
+            throw new Error('Campos obligatorios faltantes para enviarMensaje: tipo, origen y destino son obligatorios');
+        }
+
+        // Permitir destinos especiales: 'broadcast' o 'todos'
+        if (destino === 'broadcast' || destino === 'todos') {
+            // Si estamos en el padre, enviar a todos los iframes hijos encontrados
+            if (window.parent === window) {
+                const origenSeguro = window.location.origin;
+                const datosClonados = (typeof structuredClone === 'function')
+                    ? structuredClone(datos)
+                    : JSON.parse(JSON.stringify(datos || {}));
+
+                const mensaje = {
+                    id: generarIdUnico(),
+                    tipo,
+                    origen,
+                    destino: 'broadcast',
+                    datos: datosClonados,
+                    version,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Enviar a todos los iframes con contentWindow
+                const iframes = Array.from(document.getElementsByTagName('iframe'));
+                let enviados = 0;
+                iframes.forEach(iframe => {
+                    try {
+                        if (iframe && iframe.contentWindow) {
+                            iframe.contentWindow.postMessage(mensaje, origenSeguro);
+                            enviados++;
+                        }
+                    } catch (e) {
+                        console.warn(`[MENSAJERIA] No se pudo enviar broadcast a iframe ${iframe.id}:`, e);
+                    }
+                });
+
+                console.log(`📤 [MENSAJERIA] Broadcast enviado - tipo: ${tipo}, origen: ${origen}, enviados: ${enviados}`);
+                try {
+                    console.debug('[MENSAJERIA][BROADCAST] detalles', {
+                        tipo,
+                        origen,
+                        enviados,
+                        datos: datosClonados,
+                        timestamp: mensaje.timestamp
+                    });
+                } catch (e) {
+                    console.debug('[MENSAJERIA][BROADCAST] enviado (no se pudo serializar detalles)');
+                }
+
+                return { broadcast: true, enviados };
+            } else {
+                // Si estamos en un hijo, reenviamos al padre para que haga el broadcast
+                const mensajeForward = {
+                    id: generarIdUnico(),
+                    tipo,
+                    origen,
+                    destino: 'broadcast',
+                    datos,
+                    version,
+                    timestamp: new Date().toISOString()
+                };
+                try {
+                    console.debug('[MENSAJERIA] Reenviando broadcast al padre', { tipo, origen, destino: 'broadcast', datos: (typeof structuredClone === 'function') ? structuredClone(datos || {}) : JSON.parse(JSON.stringify(datos || {})) });
+                } catch (e) {
+                    // ignore serialization problems in debug
+                }
+                window.parent.postMessage(mensajeForward, window.location.origin);
+                return { forwarded: true };
+            }
+        }
+
+        if (!validarDestino(destino)) {
+            const errorMsg = destino === 'funciones-mapa'
+                ? `Destino 'funciones-mapa' no válido. Los mensajes GPS ahora se manejan directamente llamando a las funciones de funciones-mapa.js desde el padre.`
+                : `Destino no válido: ${destino}`;
+            throw new Error(errorMsg);
+        }
+
+        // Validación específica para mensajes de consulta
+        if (tipo === TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS ||
+            tipo === TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO ||
+            tipo === TIPOS_MENSAJE.DATOS.SOLICITAR_RETO) {
+            
+            if (!datos.paradaId) {
+                throw new Error(`Mensaje de consulta ${tipo} requiere 'paradaId' en datos`);
+            }
+            if (!datos.tipoConsulta) {
+                throw new Error(`Mensaje de consulta ${tipo} requiere 'tipoConsulta' en datos`);
+            }
+        }
+
+        const mensaje = {
+            id: generarIdUnico(),
+            tipo,
+            origen,
+            destino,
+            datos,
+            version,
+            timestamp: new Date().toISOString()
+        };
+
+        // Determinar el destino del mensaje
+        let targetWindow;
+        const origenSeguro = window.location.origin;
+
+        if (destino === 'padre') {
+            // Comunicación hijo → padre: usar window.parent
+            // O padre → padre (comunicación interna): usar window
+            if (window.parent === window) {
+                // Ya estamos en el padre, usar window para comunicación interna
+                targetWindow = window;
+            } else {
+                targetWindow = window.parent;
+            }
+        } else {
+            // Comunicación padre → hijo: usar iframe
+            const iframe = document.getElementById(destino);
+            if (!iframe || !iframe.contentWindow) {
+                throw new Error(`Destino ${destino} no encontrado o no accesible`);
+            }
+            targetWindow = iframe.contentWindow;
+        }
+
+        // Enviar el mensaje al destino correspondiente
+        console.log(`📤 [MENSAJERIA] Enviando mensaje - tipo: ${mensaje.tipo}, origen: ${mensaje.origen}, destino: ${mensaje.destino}`);
+        targetWindow.postMessage(mensaje, origenSeguro);
+        // Devolver información útil incluyendo el id del mensaje publicado
+        return { delivered: true, mensajeId: mensaje.id };
+    });
 }
 
 /**
@@ -173,31 +387,56 @@ export function enviarMensaje({ tipo, origen, destino, datos = {}, version = '1.
  * @param {number} [params.timeout=10000] - Timeout en milisegundos
  * @returns {Promise<Object>} Promesa que resuelve con la respuesta
  */
-export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = 10000 }) {
+export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = ajustarTimeoutPorConexion(10000) }) {
     return new Promise((resolve, reject) => {
         const mensajeId = generarIdUnico();
         
         // Configurar timeout
         const timer = setTimeout(() => {
-            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
+            if (confirmacionesPendientes.has(mensajeId)) confirmacionesPendientes.delete(mensajeId);
             reject(new Error(`Timeout esperando confirmación de ${destino} para mensaje ${tipo}`));
         }, timeout);
         
         // Registrar handler temporal para la respuesta
         const handleResponse = (respuesta) => {
             clearTimeout(timer);
-            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
             resolve(respuesta.datos);
         };
         
-        estadoMensajeria.manejadores.set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
+        // Intentar usar el Map principal; si no está inicializado aún
+        // (por TDZ en import cycles), guardamos en el fallback global.
+        try {
+            __vv_getManejadores().set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
+        } catch (err) {
+            // Fallback explícito por seguridad
+            if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
+            globalThis.__vv_manejadores.set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
+        }
+        // Registrar también en confirmacionesPendientes para soportar respuestas
+        // que incluyan datos.mensajeOriginal en lugar de un tipo dinámico.
+        confirmacionesPendientes.set(mensajeId, { resolve, reject, timer, tipo, destino });
         
         // Enviar mensaje
         try {
-            enviarMensaje({ tipo, origen, destino, datos: { ...datos, mensajeId }, version });
+            const prom = Promise.resolve(enviarMensaje({ tipo, origen, destino, datos: { ...datos, mensajeId }, version }));
+            // Además de la clave interna `mensajeId`, registrar la entrada usando
+            // el id real publicado (cuando esté disponible) para soportar hijos
+            // que devuelvan `mensajeOriginal: mensaje.id`.
+            prom.then(res => {
+                try {
+                    if (res && res.mensajeId) {
+                        // Mapear el id publicado al mismo manejador de confirmación
+                        confirmacionesPendientes.set(res.mensajeId, { resolve, reject, timer, tipo, destino });
+                    }
+                } catch (e) {
+                    // no crítico
+                }
+            }).catch(() => { /* ignore */ });
         } catch (error) {
             clearTimeout(timer);
-            estadoMensajeria.manejadores.delete(`${tipo}_RESPONSE_${mensajeId}`);
+            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
             reject(error);
         }
     });
@@ -210,10 +449,27 @@ export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}
  */
 export function registrarControlador(tipo, callback) {
     if (!tipo || typeof callback !== 'function') {
-        throw new Error('Tipo de mensaje y callback son obligatorios para registrar un controlador');
+        // No lanzar excepción para evitar romper la inicialización de la app.
+        // En su lugar, registrar información diagnóstica para investigar la llamada errónea.
+        try {
+            console.warn('[MENSAJERIA] Registrar controlador ignorado: tipo o callback inválido', { tipo, callbackType: typeof callback });
+            console.trace();
+        } catch (e) {
+            // Si console falla por alguna razón, ignoramos silenciosamente
+        }
+        return;
     }
 
-    estadoMensajeria.manejadores.set(tipo, callback);
+    // Guardar el controlador. Si `manejadores` aún no está disponible
+    // (puede pasar por TDZ debido a imports circulares), usamos el
+    // fallback global `__vv_manejadores`. Cuando `inicializarMensajeria`
+    // corra, migramos las entradas al Map real.
+    try {
+        __vv_getManejadores().set(tipo, callback);
+    } catch (err) {
+        if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
+        globalThis.__vv_manejadores.set(tipo, callback);
+    }
 }
 
 /**
@@ -246,12 +502,73 @@ function manejarMensajeEntrante(event) {
         return;
     }
     
-    console.log(`✅ [MENSAJERIA] Mensaje aceptado - destino: ${mensaje.destino}, tipo: ${mensaje.tipo}, origen: ${mensaje.origen}`);    if (!estadoMensajeria.manejadores.has(mensaje.tipo)) {
-        console.warn('Mensaje no reconocido o sin controlador registrado:', mensaje);
-        return;
+    console.log(`✅ [MENSAJERIA] Mensaje aceptado - destino: ${mensaje.destino}, tipo: ${mensaje.tipo}, origen: ${mensaje.origen}`);
+
+    // Si la respuesta incluye referencia a un mensaje original, resolver confirmación pendiente.
+    try {
+        const mensajeOriginalRef = mensaje.datos && (mensaje.datos.mensajeOriginal || mensaje.datos.idSolicitud || mensaje.datos.solicitudOriginalId);
+        if (mensajeOriginalRef && confirmacionesPendientes.has(mensajeOriginalRef)) {
+            const info = confirmacionesPendientes.get(mensajeOriginalRef);
+            try {
+                clearTimeout(info.timer);
+            } catch (e) {}
+            try { info.resolve(mensaje.datos); } catch (e) { /* ignore */ }
+            confirmacionesPendientes.delete(mensajeOriginalRef);
+            // No llamar al controlador adicionalmente; la confirmación ya seprocesó.
+            return;
+        }
+    } catch (e) {
+        // ignore
     }
 
-    const controlador = estadoMensajeria.manejadores.get(mensaje.tipo);
+    // Procesar mensajes de registro de capacidades (handshake) enviados por hijos
+    try {
+        if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.COMPONENTE_INICIALIZADO || mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_LISTO) {
+            const capacidades = mensaje.datos && mensaje.datos.capacidades ? mensaje.datos.capacidades : null;
+            if (capacidades) {
+                registrarCapacidadesHijo(mensaje.origen, capacidades);
+            }
+            // Registrar al hijo como conectado para heartbeat si estamos en el padre
+            if (window.parent === window && mensaje.origen) {
+                estadoMensajeria.heartbeat.hijosConectados.add(mensaje.origen);
+            }
+            // Enviar confirmación de padre al hijo (no bloquear)
+            try {
+                enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                    origen: estadoMensajeria.componenteId || 'padre',
+                    datos: { timestamp: Date.now() }
+                }).catch && null;
+            } catch (e) {
+                // ignorar errores en confirmación
+            }
+        }
+    } catch (e) {
+        console.warn('[MENSAJERIA] Error procesando handshake de capacidades:', e);
+    }
+    // Intentar obtener el controlador desde el Map principal. Si no
+    // existe (o no está accesible por TDZ), intentar el fallback global.
+    const mapa = __vv_getManejadores();
+    const controlador = mapa && mapa.get ? mapa.get(mensaje.tipo) : undefined;
+    if (!controlador) {
+        try {
+            const datosClon = (typeof structuredClone === 'function')
+                ? structuredClone(mensaje.datos || {})
+                : JSON.parse(JSON.stringify(mensaje.datos || {}));
+            const handlersRegistered = mapa && typeof mapa.keys === 'function' ? Array.from(mapa.keys()) : [];
+            console.warn('[MENSAJERIA] Mensaje no reconocido o sin controlador registrado', {
+                tipo: mensaje.tipo,
+                origen: mensaje.origen,
+                destino: mensaje.destino,
+                datos: datosClon,
+                handlersRegistered
+            });
+        } catch (e) {
+            console.warn('Mensaje no reconocido o sin controlador registrado (no se pudo serializar):', mensaje);
+        }
+        return;
+    }
     try {
         controlador(mensaje);
     } catch (error) {
@@ -261,6 +578,9 @@ function manejarMensajeEntrante(event) {
 
 // Registrar el listener global para mensajes entrantes
 window.addEventListener('message', manejarMensajeEntrante);
+
+// Mapa para confirmaciones pendientes: mensajeOriginalId -> { resolve, reject, timer }
+const confirmacionesPendientes = new Map();
 
 /**
  * Inicia el sistema de heartbeat para monitorear conectividad con hijos.
@@ -439,7 +759,7 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SOLICITAR_DATOS_HIJO, async (men
             hijo, 
             tipoInfo = 'estado', 
             parametros = {}, 
-            timeout = 5000,
+            timeout = ajustarTimeoutPorConexion(5000),
             permitirParcial = false
         } = mensaje.datos;
 
