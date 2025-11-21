@@ -1293,17 +1293,40 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
 // Controlador para cambio de modo
 registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
     const logPrefix = `[hijo2][CAMBIO_MODO]`;
+    const CONFIG_HIJO = { IFRAME_ID: 'hijo2' };
 
     try {
-        const { modo } = mensaje.datos;
-
-        // Validar modo
-        if (!modo || (modo !== 'casa' && modo !== 'aventura')) {
-            throw new Error(`Modo inválido: ${modo}. Debe ser 'casa' o 'aventura'`);
+        // Paso 1: Validar carga secuencial - esperar permiso del padre
+        if (!mensaje.datos?.secuenciaCompleta) {
+            logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, esperando permiso...`);
+            // Enviar NACK y esperar mensaje de PERMISO_INICIALIZACION
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { error: 'Secuencia no completa', esperarPermiso: true }
+            });
+            return;
         }
 
-        logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+        // Paso 2: Extraer datos con destructuring
+        const { modo } = mensaje.datos || {};
 
+        // Paso 3: Validar datos extraídos
+        if (!modo || !['casa', 'aventura'].includes(modo)) {
+            logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { error: 'Modo inválido', modoRecibido: modo }
+            });
+            return;
+        }
+
+        // Paso 4: Loggear éxito y procesar
+        logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+        
         // Actualizar estado interno
         estadoComponente.modo = modo;
 
@@ -1314,21 +1337,16 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
         document.body.className = `modo-${modo} hijo2-container`;
         actualizarEstado(`Modo cambiado a: ${modo}`, 'info');
 
-        // Enviar confirmación al padre
+        // Paso 5: Enviar confirmación
         await enviarMensaje({
-            tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_RESPONSE,
-            origen: 'hijo2',
-            destino: 'padre',
-            datos: {
-                exito: true,
-                modo: modo,
-                timestamp: Date.now()
-            }
-        }).catch(error => logger.error('[hijo2] Error enviando confirmación de cambio de modo:', error));
+            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: mensaje.origen,
+            datos: { modo, exito: true, timestamp: Date.now() }
+        });
 
-        logger.info(`${logPrefix} Modo cambiado exitosamente a: ${modo}`);
     } catch (error) {
-        logger.error(`${logPrefix} Error:`, error);
+        logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
         actualizarEstado('Error cambiando modo', 'error');
     }
 });
@@ -1341,17 +1359,6 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => 
     estadoComponente.tipoParadaActual = tipoParada;
     actualizarEstadoBotones();
     logger.debug(`[hijo2] Distancia actualizada: ${distancia?.toFixed(1) || 'desconocida'}m`);
-});
-
-// Controlador para cambio de parada
-registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, (mensaje) => {
-    const { idParada, tipo, nombre } = mensaje.datos;
-    estadoComponente.idParadaActual = idParada;
-    estadoComponente.tipoParadaActual = tipo;
-    estadoComponente.paradaActual = nombre;
-    actualizarEstadoBotones();
-    actualizarEstado(`Parada cambiada: ${nombre}`, 'info');
-    logger.info(`[hijo2] Parada cambiada a: ${idParada} (${tipo})`);
 });
 
 // ==================== CONTROLADORES ====================
@@ -1505,10 +1512,12 @@ try {
                 logger.info(`${logPrefix} FILTRANDO: paradaId=${paradaId}, total antes=${CoordenadasParadas.length}, despues=${coordenadasFiltradas.length}`);
                 logger.debug(`${logPrefix} Coordenadas encontradas:`, coordenadasFiltradas.map(c => ({id: c.id, tipo: c.tipo, nombre: c.nombre})));
 
-                // Para cambios individuales en modo casa, simplificar tramos a un solo punto
+                // Para cambios individuales en modo casa, antiguamente se simplificaban tramos a un solo punto
+                // Si la solicitud explícitamente pide rutas (`incluirRutas: true`) respetamos la estructura completa
                 if (contexto === 'cambio_parada_individual' && coordenadasFiltradas.length === 1) {
                     const coord = coordenadasFiltradas[0];
-                    if (coord.tipo === 'tramo' && coord.fin) {
+                    const solicitarRutas = mensaje.datos?.incluirRutas === true;
+                    if (coord.tipo === 'tramo' && coord.fin && !solicitarRutas) {
                         // Convertir tramo a un solo punto usando las coordenadas finales
                         coordenadasFiltradas = [{
                             id: coord.id,
@@ -1518,6 +1527,9 @@ try {
                             coordenadas: coord.fin // Usar punto final como coordenadas del marcador
                         }];
                         logger.debug(`${logPrefix} Tramo simplificado a punto único:`, coordenadasFiltradas[0]);
+                    } else if (coord.tipo === 'tramo' && solicitarRutas) {
+                        logger.debug(`${logPrefix} Solicitud incluye rutas; devolviendo tramo completo con inicio/waypoints/fin`);
+                        // Dejar coord tal cual (inicio/waypoints/fin) para que el mapa dibuje la polyline
                     }
                 }
             } 
