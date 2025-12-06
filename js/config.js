@@ -55,6 +55,20 @@ export const CONFIG = {
         MAX_ZOOM: 18,
         ZOOM_CONTROL: true // Habilitado
     }
+    ,
+    // Configuración de GPS y tolerancias
+    GPS: {
+        ENABLE_HIGH_ACCURACY: true,
+        TIMEOUT_MS: 15000,
+        MAXIMUM_AGE_MS: 0,
+        REJECT_ACCURACY_M: 5000,
+        IDEAL_ACCURACY_M: 7,
+        IMMEDIATE_ACCURACY_M: 15,
+        SOFT_ACCURACY_M: 300,
+        REQUIRED_CONSECUTIVE_GOOD: 2,
+        BUFFER_SIZE: 3,
+        WEAK_GPS_TIMEOUT_MS: 10000
+    }
 };
 
 // Cambiar las exportaciones para usar CommonJS si ES6 no es compatible
