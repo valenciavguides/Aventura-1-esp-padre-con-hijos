@@ -23,6 +23,31 @@ export const MODOS = {
 };
 
 /**
+ * Configuración de TTL (Time To Live) para limpieza automática de memoria
+ * Optimizado por tipo de dispositivo para mejorar rendimiento
+ * ✅ PROBLEMA 26: Centralización de TTLs para evitar duplicación
+ */
+export const TTL_LIMPIEZA = {
+    // Mensajería: limpieza de mensajes procesados y promesas pendientes
+    MENSAJERIA: {
+        MOVIL: 30000,      // 30 segundos (móvil necesita limpieza agresiva)
+        DESKTOP: 60000     // 60 segundos (1 minuto)
+    },
+    
+    // Logger: limpieza de historial de logs
+    LOGGER: {
+        MOVIL: 300000,     // 5 minutos (móvil conserva menos logs)
+        DESKTOP: 60000     // 1 minuto (desktop limpia más frecuentemente)
+    },
+    
+    // Suppress Warnings: limpieza de mensajes de error
+    SUPPRESS: {
+        MOVIL: 120000,     // 2 minutos
+        DESKTOP: 300000    // 5 minutos
+    }
+};
+
+/**
  * Tipos de mensajes para la comunicación entre iframes
  * Organizados por categorías para mejor mantenimiento
  */
@@ -41,7 +66,6 @@ export const TIPOS_MENSAJE = {
         HIJO_FALLIDO: 'SISTEMA.HIJO_FALLIDO',
         HEARTBEAT: 'SISTEMA.HEARTBEAT',
         HEARTBEAT_RESPONSE: 'SISTEMA.HEARTBEAT_RESPONSE',
-        PING: 'SISTEMA.PING',
         ACK: 'SISTEMA.ACK',
         NACK: 'SISTEMA.NACK',
         ERROR: 'SISTEMA.ERROR',
@@ -97,8 +121,6 @@ export const TIPOS_MENSAJE = {
     DATOS: {
         SOLICITAR_PARADAS: 'DATOS.SOLICITAR_PARADAS',
         RESPUESTA_PARADAS: 'DATOS.RESPUESTA_PARADAS',
-        SOLICITAR_PARADA: 'DATOS.SOLICITAR_PARADA',
-        RESPUESTA_PARADA: 'DATOS.RESPUESTA_PARADA',
         COORDENADAS_PARADAS: 'DATOS.COORDENADAS_PARADAS',
         COORDENADAS_PARADAS_REQUEST: 'DATOS.COORDENADAS_PARADAS_REQUEST',
         COORDENADAS_PARADAS_RESPONSE: 'DATOS.COORDENADAS_PARADAS_RESPONSE',
@@ -335,178 +357,32 @@ export const CSS_CLASES = {
     HIJO3_CONTAINER: 'hijo3-container'
 };
 
+// ❌ CONFIG_MENSAJERIA ELIMINADO - OBSOLETO
+// mensajeria.js define su propio estadoMensajeria local para evitar dependencias circulares
+
 /**
- * Configuraciones de mensajería centralizadas para evitar dependencias circulares
+ * Construcción programática de la lista de tipos válidos.
+ *
+ * En lugar de mantener múltiples arrays duplicados, derivamos la
+ * lista válida a partir de `TIPOS_MENSAJE` (fuente única de verdad).
  */
-export const CONFIG_MENSAJERIA = {
-    // Estado global de la mensajería
-    ESTADO_INICIAL: {
-        inicializado: false,
-        manejadores: new Map(),
-        mensajesPendientes: new Map(),
-        tiempoEspera: 10000,
-        maxReintentos: 3,
-        mensajesProcesados: new Set(),
-        estadisticas: {
-            mensajesEnviados: 0,
-            mensajesRecibidos: 0,
-            errores: 0,
-            totalTiempoRespuesta: 0,
-            tiempoPromedioRespuesta: 0,
-            ultimoError: null
-        },
-        instancias: new Map(),
-        rol: 'hijo',
-        estado: 'inactivo',
-        timeouts: {},
-        colaMensajes: [],
-        procesandoCola: false,
-        listenerRegistrado: false
-    },
-    
-    // Sistema de heartbeat
-    HEARTBEAT: {
-        activo: false,
-        intervalo: 5000, // 5 segundos
-        timer: null,
-        hijosConectados: new Set(),
-        ultimoHeartbeat: new Map(),
-        timeoutsHeartbeat: new Map(),
-        reintentosMaximos: 3
-    },
-    
-    // Limpieza automática con TTL sincronizado (30s)
-    LIMPIEZA: {
-        ttlMensajesProcesados: 30000, // 30s
-        ttlPromesasPendientes: 30000, // 30s
-        ttlHistorial: 30000, // 30s
-        intervaloLimpieza: 30000, // 30s
-        timerLimpieza: null
+function _flattenTipos(obj) {
+    const out = [];
+    const seen = new Set();
+    function recurse(v) {
+        if (!v && v !== 0) return;
+        if (typeof v === 'string') {
+            if (!seen.has(v)) { seen.add(v); out.push(v); }
+            return;
+        }
+        if (Array.isArray(v)) return v.forEach(recurse);
+        if (typeof v === 'object') return Object.values(v).forEach(recurse);
     }
-};
+    recurse(obj);
+    return out;
+}
 
-/**
- * Tipos de mensaje válidos pregenerados para validación eficiente
- * Dividido en partes para evitar problemas de parsing con arrays largos
- */
-const TIPOS_SISTEMA = [
-    'SISTEMA.INICIALIZACION',
-    'SISTEMA.INICIALIZACION_COMPLETADA',
-    'SISTEMA.ESTADO',
-    'SISTEMA.CAMBIO_MODO',
-    'SISTEMA.COMPONENTE_INICIALIZADO',
-    'SISTEMA.INICIALIZACION_FINALIZADA',
-    'SISTEMA.PADRE_LISTO',
-    'SISTEMA.HIJO_LISTO',
-    'SISTEMA.HEARTBEAT',
-    'SISTEMA.HEARTBEAT_RESPONSE',
-    'SISTEMA.ACK',
-    'SISTEMA.NACK',
-    'SISTEMA.ERROR',
-    'SISTEMA.CONFIRMACION',
-    'SISTEMA.APLICACION_INICIALIZADA'
-];
-
-const TIPOS_NAVEGACION = [
-    'NAVEGACION.CAMBIO_PARADA',
-    'NAVEGACION.ESTABLECER_DESTINO',
-    'NAVEGACION.ACTUALIZAR_POSICION',
-    'NAVEGACION.MOSTRAR_RUTA',
-    'NAVEGACION.ACTUALIZAR_ESTADO',
-    'NAVEGACION.INICIAR',
-    'NAVEGACION.INICIADA',
-    'NAVEGACION.CANCELADA',
-    'NAVEGACION.DESTINO_ESTABLECIDO',
-    'NAVEGACION.LLEGADA_DETECTADA',
-    'NAVEGACION.ERROR',
-    'NAVEGACION.SOLICITAR_DESTINO',
-    'NAVEGACION.ESTADO',
-    'NAVEGACION.VALIDAR_RANGO_PARADA',
-    'NAVEGACION.ENVIAR_PARADA_COMPLETADA',
-    'NAVEGACION.DIBUJAR_POLYLINE'
-];
-
-const TIPOS_DATOS = [
-    'DATOS.SOLICITAR_PARADAS',
-    'DATOS.RESPUESTA_PARADAS',
-    'DATOS.SOLICITAR_PARADA',
-    'DATOS.RESPUESTA_PARADA',
-    'DATOS.COORDENADAS_PARADAS',
-    'DATOS.COORDENADAS_PARADAS_REQUEST',
-    'DATOS.COORDENADAS_PARADAS_RESPONSE',
-    'DATOS.SOLICITAR_DATOS',
-    // Retos - hijo4
-    'DATOS.SOLICITAR_RETO',
-    'DATOS.RESPUESTA_RETO',
-    'DATOS.SOLICITAR_RETOS',
-    'DATOS.RESPUESTA_RETOS'
-];
-
-const TIPOS_AUDIO = [
-    'AUDIO.REPRODUCIR',
-    'AUDIO.PAUSA',
-    'AUDIO.FIN_REPRODUCCION',
-    'AUDIO.ERROR'
-];
-
-const TIPOS_CONTROL = [
-    'CONTROL.HABILITAR',
-    'CONTROL.DESHABILITAR',
-    'CONTROL.CAMBIAR_MODO',
-    'CONTROL.ESTADO'
-];
-
-const TIPOS_RETO = [
-    'RETO.MOSTRAR',
-    'RETO.OCULTAR',
-    'RETO.COMPLETADO'
-];
-
-const TIPOS_UI = [
-    'UI.NOTIFICACION',
-    'UI.MODAL',
-    'UI.ALERTA',
-    'UI.ACCION_USUARIO',
-    'UI.CLOSE_MENUS',
-    'UI.ACTUALIZACION'
-];
-
-const TIPOS_MONITOREO = [
-    'MONITOREO.EVENTO',
-    'MONITOREO.METRICA',
-    'MONITOREO.APLICACION_INICIALIZADA',
-    'MONITOREO.LOGGER_INICIALIZADO'
-];
-
-const TIPOS_COORDINACION = [
-    'COORDINACION.SOLICITAR_DATOS_HIJO',
-    'COORDINACION.RESPUESTA_DATOS_HIJO',
-    'COORDINACION.COORDINAR_ACCION',
-    'COORDINACION.ESTADO_COORDINACION',
-    'COORDINACION.SINCRONIZAR_COMPONENTES'
-];
-
-const TIPOS_MAPA = [
-    'MAPA.INVALIDAR_TAMAÑO',
-    'MAPA.SET_VIEW',
-    'MAPA.GET_CENTER',
-    'MAPA.ADD_MARKER',
-    'MAPA.REMOVE_MARKER',
-    'MAPA.CLEAR_LAYERS'
-];
-
-export const TIPOS_MENSAJE_VALIDOS = [
-    ...TIPOS_SISTEMA,
-    ...TIPOS_NAVEGACION,
-    ...TIPOS_DATOS,
-    ...TIPOS_AUDIO,
-    ...TIPOS_CONTROL,
-    ...TIPOS_RETO,
-    ...TIPOS_UI,
-    ...TIPOS_MONITOREO,
-    ...TIPOS_COORDINACION,
-    ...TIPOS_MAPA
-];
+export const TIPOS_MENSAJE_VALIDOS = _flattenTipos(TIPOS_MENSAJE);
 
 export default {
     LOG_LEVELS,
