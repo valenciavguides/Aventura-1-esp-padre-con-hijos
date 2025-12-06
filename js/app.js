@@ -10,6 +10,7 @@ import { enviarMensaje, registrarControlador, iniciarHeartbeat } from './mensaje
 import { CONFIG } from './config.js';
 import { generarIdUnico } from './utils.js';
 import { promesasPendientes } from './monitoreo.js';
+import { esMovil } from './device-detection.js';
 
 import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './funciones-mapa.js';
 
@@ -34,11 +35,7 @@ export async function registrarControladoresApp() {
     }
 }
 
-// ============================================================
-// NOTA: El objeto 'estado' ha sido movido a codigo-padre.html
-// siguiendo el patrón arquitectónico donde cada componente
-// (padre o hijo) mantiene su propio estado local.
-// ============================================================
+// Estado global en codigo-padre.html
 
 // Funci�n para limpiar historial de monitoreo
 function limpiarHistorialMonitoreo(estado) {
@@ -318,7 +315,13 @@ export async function actualizarInterfazModo(estado, modo) {
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: 'padre',
-                datos: { modo }
+                datos: {
+                    modo,
+                    // Indicar si la secuencia de inicialización global ya se
+                    // completó. Muchos hijos esperan esta bandera para evitar
+                    // aplicar cambios antes de terminar su carga.
+                    secuenciaCompleta: !!(estado && estado.todosHijosListos)
+                }
             });
             if (resultado && typeof resultado.then === 'function') await resultado;
         } catch (error) {
@@ -652,8 +655,7 @@ export async function manejarCambioModo(estado, mensaje) {
  */
 async function validarPermisosCambioModo(origen, modo) {
     // Implementar l�gica de validaci�n de permisos
-    // Por ejemplo, verificar roles, tokens, etc.
-    return true; // Temporal: siempre permite el cambio
+    return true;
 }
 
 /**
@@ -707,21 +709,29 @@ async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
  */
 async function limpiarRecursosPorModo(estado, modo, opciones = {}) {
     try {
-        // Limpieza autom�tica del mapa si est� disponible
-        if (window.funcionesMapa?.limpiarPorEstado) {
-            const limpiado = await window.funcionesMapa.limpiarPorEstado({
-                modo: modo,
-                paradaActual: estado.paradaActual,
-                tramoActual: null,
-                ...opciones
-            });
-            
-            if (limpiado) {
-                logger.debug(`Limpieza autom�tica del mapa ejecutada por cambio a modo ${modo}`);
+        if (modo === 'mantenimiento') {
+            if (window.funcionesMapa?.desactivarGPS) {
+                await window.funcionesMapa.desactivarGPS();
+            }
+            if (window.funcionesMapa?.limpiarMapa) {
+                await window.funcionesMapa.limpiarMapa();
+            }
+            logger.debug(`Limpieza de recursos para modo ${modo} completada`);
+        } else if (modo === 'aventura') {
+            if (window.funcionesMapa?.limpiarPorEstado) {
+                const limpiado = await window.funcionesMapa.limpiarPorEstado({
+                    modo: modo,
+                    paradaActual: estado.paradaActual,
+                    tramoActual: null,
+                    ...opciones
+                });
+                
+                if (limpiado) {
+                    logger.debug(`Limpieza automática del mapa ejecutada por cambio a modo ${modo}`);
+                }
             }
         }
         
-        // Aqu� se pueden agregar m�s limpiezas espec�ficas por modo
         if (modo === 'mantenimiento') {
             // Limpiezas espec�ficas para modo mantenimiento
         } else if (modo === 'depuracion') {
@@ -984,125 +994,8 @@ export async function enviarEstadoGlobal(estado) {
     }
 }
 
-// Registrar controlador global para respuestas de parada
-// CONTROLADOR DATOS.RESPUESTA_PARADA movido a utils.js (FASE 10)
-
-// ==================== CONTROLADORES DE AUDIO ====================
-// Los controladores AUDIO están implementados directamente en Av1_audio_esp.html (hijo3)
-// con patrón REQUEST/RESPONSE bidireccional:
-// - AUDIO.REPRODUCIR_REQUEST/RESPONSE
-// - AUDIO.PAUSA_REQUEST/RESPONSE  
-// - AUDIO.CONTROL_REQUEST/RESPONSE
-// - AUDIO.FIN_REPRODUCCION (evento)
-// - AUDIO.ERROR (evento)
-// - AUDIO.ESTADO_ACTUALIZADO (evento)
-
-
-// ==================== CONTROLADORES DE NAVEGACI�N MOVIDOS A funciones-mapa.js ====================
-// Los siguientes 5 controladores han sido movidos a funciones-mapa.js:
-// - NAVEGACION.ACTUALIZAR_POSICION (l�neas ~3884-4204)
-// - NAVEGACION.CENTRAR_EN_UBICACION (l�neas ~4205-4428)
-// - NAVEGACION.MOSTRAR_MAPA_COMPLETO (l�neas ~4429-4644)
-// - NAVEGACION.MOSTRAR_MAPA_JPG (l�neas ~4645-4890)
-// - NAVEGACION.ESTADO_MAPA (l�neas ~6612-6889)
-// Total: ~2,728 l�neas eliminadas de app.js y movidas a funciones-mapa.js
-// ==========================================================================================
-
-// ===== CONTROLADOR CONTROL.HABILITAR INCORRECTO ELIMINADO =====
-// Este controlador ten�a etiqueta CONTROL.HABILITAR pero l�gica de ACTUALIZAR_POSICION
-// Controlador eliminado (l�neas 2986-3330, ~345 l�neas)
-// Inclu�a 3 funciones auxiliares: verificarProximidadAPuntosInteres, buscarPuntosInteresCercanos, calcularDistancia
-// ==================================================================
-
-// ===== CONTROLADORES CONTROL MOVIDOS =====
-// Movidos a modo-handler.js (FASE 5, ~743 l�neas)
-// 4 controladores con 2 funciones auxiliares:
-//   1. HABILITAR (191 l�neas)
-//   2. DESHABILITAR (97 l�neas)  
-//   3. CAMBIAR_MODO (227 l�neas)
-//   4. ESTADO (208 l�neas)
-//   + obtenerDetallesComponente (20 l�neas)
-//   + verificarEstadoHijo (18 l�neas)
-// ============================================
-
-// ===== CONTROLADOR UI.NOTIFICACION MOVIDO =====
-// Movido a utils.js (FASE 6, ~257 l�neas)
-// Gestiona notificaciones en la interfaz con validaci�n completa
-// ================================================
-
-// ===== CONTROLADOR UI.MODAL MOVIDO =====
-// Movido a utils.js (FASE 6, ~287 l�neas con funci�n auxiliar manejarInteraccionModal)
-// Gestiona di�logos modales: confirmaciones, formularios, contenido personalizado
-// ============================================
-
-// ===== CONTROLADOR UI.ACCION_USUARIO MOVIDO =====
-// Movido a utils.js (FASE 6, ~27 l�neas con funciones auxiliares)
-// Incluye: manejarInteraccionAlerta, manejarInteraccionNotificacion
-// ============================================
-
-// ===== CONTROLADOR UI.ALERTA MOVIDO =====
-// Movido a utils.js (FASE 6, ~277 l�neas)
-// Gestiona alertas del sistema con validaci�n completa
-// ============================================
-
-// ?? NOTA: Segundo controlador UI.ACCION_USUARIO duplicado eliminado (exist�a aqu�)
-// Ahora consolidado en el controlador principal movido a utils.js (FASE 6)
-
-// ?? NOTA: Funciones auxiliares manejarInteraccionAlerta y manejarInteraccionNotificacion movidas
-// a utils.js junto con el controlador UI.ACCION_USUARIO (FASE 6)
-
-// ?? NOTA: Tercer controlador UI.ACCION_USUARIO duplicado eliminado (exist�a aqu�)
-// Ahora consolidado en el controlador principal movido a utils.js (FASE 6)
-
-// ===== CONTROLADOR RETO.MOSTRAR MOVIDO =====
-// Movido a validacion.js (FASE 7, ~256 l�neas con funci�n auxiliar)
-// Gestiona visualizaci�n de retos en la interfaz
-// Incluye funci�n auxiliar: verificarRestriccionesMostrarReto
-// ============================================
-
-// ===== CONTROLADOR RETO.OCULTAR MOVIDO =====
-// Movido a validacion.js (FASE 7, ~258 l�neas con funciones auxiliares)
-// Gestiona ocultaci�n de retos en la interfaz
-// Incluye funciones auxiliares: verificarRestriccionesOcultarReto, notificarRetoCompletadoExitosamente
-// ============================================
-
-// ===== CONTROLADOR RETO.COMPLETADO MOVIDO =====
-// Movido a validacion.js (FASE 7, ~263 l�neas con funciones auxiliares)
-// Gestiona finalizaci�n exitosa de retos en el sistema
-// Incluye funciones auxiliares: manejarSiguienteAccionDespuesDeReto, otorgarRecompensa
-// ============================================
-
-// ===== CONTROLADOR UI.CLOSE_MENUS MOVIDO =====
-// Movido a utils.js (FASE 6, ~152 l�neas)
-// Gestiona cierre de men�s de la interfaz
-// ============================================
-
-// ===== CONTROLADOR UI.ACTUALIZACION MOVIDO =====
-// Movido a utils.js (FASE 6, ~277 l�neas)
-// Gestiona actualizaciones din�micas de la interfaz
-// ============================================
-
-// ===== CONTROLADOR SISTEMA.ERROR MOVIDO =====
-// Movido a monitoreo.js (FASE 2, ~258 l�neas incluyendo funci�n notificarErrorCritico)
-// ============================================
-
-// ?? NOTA: Controlador SISTEMA.ESTADO duplicado eliminado (exist�a en l�nea 1517)
-// El controlador principal se encuentra en la l�nea ~1517 con implementaci�n m�s completa
-
-// ===== CONTROLADOR SISTEMA.NOTIFICACION MOVIDO =====
-// Movido a monitoreo.js (FASE 2, ~358 l�neas incluyendo 3 funciones auxiliares)
-// Funciones auxiliares: obtenerDireccionIP, registrarAccionImportante
-// ====================================================
-
-// ===== CONTROLADOR SISTEMA.INICIALIZACION MOVIDO =====
-// Movido a monitoreo.js (FASE 2, ~715 l�neas con JSDoc extensa)
-// Incluye gesti�n completa de ciclo de vida de inicializaci�n de componentes:
-// - Validaci�n de mensajes y par�metros
-// - Gesti�n de dependencias entre componentes
-// - Manejo de timeouts y reintentos autom�ticos
-// - Notificaciones a componentes dependientes
-// - Registro detallado de m�tricas de rendimiento
-// ======================================================
+// Controladores AUDIO implementados en Av1_audio_esp.html (hijo3)
+// Controladores NAVEGACI�N en funciones-mapa.js
 
 /**
  * Maneja la confirmaci�n de inicializaci�n de componentes.
@@ -1125,165 +1018,9 @@ export async function enviarEstadoGlobal(estado) {
 
 // CONTROLADOR SISTEMA.INICIALIZACION_FINALIZADA movido a monitoreo.js (FASE 10)
 
-// Add handlers for data messages
-/**
- * Maneja las respuestas de datos de una parada espec�fica.
- * Este controlador procesa la informaci�n detallada de una parada recibida
- * de un componente del sistema, como el m�dulo de datos o un servicio externo.
- * 
- * @param {Object} mensaje - Mensaje con los datos de la parada
- * @param {string} mensaje.origen - ID del componente que env�a la respuesta
- * @param {Object} mensaje.datos - Datos de la parada
- * @param {string} mensaje.datos.paradaId - Identificador �nico de la parada
- * @param {string} mensaje.datos.nombre - Nombre de la parada
- * @param {Object} mensaje.datos.ubicacion - Coordenadas de ubicaci�n {lat: number, lng: number}
- * @param {Array<Object>} [mensaje.datos.rutas] - Rutas que pasan por esta parada
- * @param {Object} [mensaje.datos.metadatos] - Metadatos adicionales de la parada
- * @param {string} [mensaje.datos.estado] - Estado actual de la parada
- * @param {string} [mensaje.datos.mensajeId] - ID del mensaje original que solicit� los datos
- */
-registrarControlador (TIPOS_MENSAJE.DATOS.RESPUESTA_PARADA, async (mensaje) => {
-    const logPrefix = `[RESPUESTA_PARADA][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    
-    try {
-        // 1. Validaci�n del mensaje
-        if (!mensaje?.origen) {
-            logger.warn(`${logPrefix} Mensaje sin origen, ignorando`);
-            return;
-        }
-
-        const { paradaId, nombre, ubicacion, rutas = [], metadatos = {}, estado = 'activa', mensajeId } = mensaje.datos || {};
-        
-        // 2. Validaci�n de campos obligatorios
-        if (!paradaId) {
-            const errorMsg = 'Falta el campo obligatorio: paradaId';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                datos: {
-                    error: errorMsg,
-                    mensajeId: mensaje.mensajeId,
-                    timestamp,
-                    campoFaltante: 'paradaId'
-                }
-            });
-            return;
-        }
-
-        // 3. Validaci�n de ubicaci�n
-        if (!ubicacion || typeof ubicacion.lat !== 'number' || typeof ubicacion.lng !== 'number') {
-            const errorMsg = 'Ubicaci�n de parada inv�lida o faltante';
-            logger.warn(`${logPrefix} ${errorMsg}`, { paradaId });
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                datos: {
-                    error: errorMsg,
-                    mensajeId: mensaje.mensajeId,
-                    timestamp,
-                    campoFaltante: 'ubicacion'
-                }
-            });
-            return;
-        }
-
-        // 4. Procesar la informaci�n de la parada
-        try {
-            // Aqu� ir�a la l�gica para procesar los datos de la parada
-            // Por ejemplo, actualizar el estado de la aplicaci�n o el almacenamiento local
-            
-            // Ejemplo: Actualizar el estado global de paradas
-            if (!estadoParadas) {
-                estadoParadas = new Map();
-            }
-            
-            const datosParada = {
-                id: paradaId,
-                nombre: nombre || `Parada ${paradaId}`,
-                ubicacion,
-                rutas,
-                metadatos,
-                estado,
-                ultimaActualizacion: timestamp,
-                origen: mensaje.origen
-            };
-            
-            estadoParadas.set(paradaId, datosParada);
-            
-            // 5. Registrar en el logger
-            logger.info(`${logPrefix} Datos de parada actualizados`, {
-                paradaId,
-                nombre: datosParada.nombre,
-                totalRutas: rutas.length,
-                estado
-            });
-            
-            // 6. Notificar a otros componentes si es necesario
-            if (mensaje.datos?.notificarActualizacion !== false) {
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.DATOS.ACTUALIZACION_PARADA,
-                    datos: {
-                        paradaId,
-                        timestamp,
-                        origen: 'sistema',
-                        accion: 'actualizacion',
-                        datos: datosParada
-                    },
-                    broadcast: true
-                });
-            }
-            
-            // 7. Responder con confirmaci�n si se solicit�
-            if (mensajeId) {
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                    datos: {
-                        mensajeOriginalId: mensajeId,
-                        timestamp,
-                        estado: 'procesado',
-                        paradaId,
-                        totalRutas: rutas.length
-                    }
-                });
-            }
-            
-        } catch (procesarError) {
-            const errorMsg = `Error al procesar datos de parada: ${procesarError.message}`;
-            logger.error(`${logPrefix} ${errorMsg}`, {
-                paradaId,
-                error: procesarError
-            });
-            
-            throw new Error(errorMsg);
-        }
-        
-    } catch (error) {
-        const errorMsg = `Error en manejo de RESPUESTA_PARADA: ${error.message}`;
-        logger.error(`${logPrefix} ${errorMsg}`, error);
-        
-        try {
-            // Notificar el error de manera segura
-            await enviarMensaje({
-                destino: mensaje?.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                datos: {
-                    error: errorMsg,
-                    mensajeId: mensaje?.mensajeId,
-                    timestamp: Date.now(),
-                    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-                }
-            });
-        } catch (nestedError) {
-            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
-        }
-        
-        // Relanzar el error para que pueda ser manejado por otros mecanismos
-        throw error;
-    }
-});
+// ❌ CONTROLADOR RESPUESTA_PARADA (singular) ELIMINADO - OBSOLETO
+// El sistema actual usa RESPUESTA_PARADAS (plural) para recibir arrays completos
+// y COORDENADAS_PARADAS_REQUEST/RESPONSE para solicitudes específicas
 
 // Confirmado: No hay dependencias de generarHashContenido, configurarUtils, registrarListener, removerListener o removerTodosLosListeners.
 
@@ -1513,6 +1250,41 @@ export async function coordinarAccion(idCoordinacion, acciones, opciones = {}) {
 }
 
 /**
+ * Ejecuta una acción coordinada individual
+ * @param {Object} accion - Acción a ejecutar
+ * @returns {Promise<Object>} Resultado de la ejecución
+ */
+async function ejecutarAccionCoordinada(accion) {
+    const { componente, tipo, datos } = accion;
+
+    try {
+        logger.debug(`Ejecutando acción coordinada para ${componente}: ${tipo}`);
+
+        // Enviar mensaje al componente especificado
+        const resultado = await enviarMensaje(componente, tipo, datos);
+
+        logger.debug(`Acción coordinada completada para ${componente}`);
+        return {
+            componente,
+            tipo,
+            exito: true,
+            resultado,
+            timestamp: Date.now()
+        };
+
+    } catch (error) {
+        logger.error(`Error ejecutando acción coordinada para ${componente}:`, error);
+        throw {
+            componente,
+            tipo,
+            exito: false,
+            error: error.message,
+            timestamp: Date.now()
+        };
+    }
+}
+
+/**
  * Limpia el cache de datos expirados
  */
 export function limpiarCacheCoordinacion() {
@@ -1610,7 +1382,7 @@ setInterval(limpiarCacheCoordinacion, intervaloCache);
 /**
  * Maneja las solicitudes de datos de paradas.
  * Este controlador procesa las solicitudes de datos de paradas y devuelve la informaci�n solicitada
- * seg�n los criterios de filtrado proporcionados.
+ * según los criterios de filtrado proporcionados.
  * 
  * ?? IMPORTANTE: Este controlador usa patr�n Request/Response DIRECTO (return).
  * La respuesta NO viene en .datos, viene directamente en el objeto de respuesta.
@@ -1649,4 +1421,128 @@ setInterval(limpiarCacheCoordinacion, intervaloCache);
  * // ? INCORRECTO: respuesta.datos.paradas (NO existe)
  */
 // CONTROLADOR DATOS.SOLICITAR_PARADAS movido a utils.js (FASE 10)
+
+// --- Automatic resend logic for CAMBIO_MODO on NACK with esperarPermiso ---
+// pendingModeChanges: hijoId -> { modo, datos, intentos, nextAttemptAt }
+const pendingModeChanges = new Map();
+
+// Backoff configuration
+const MODE_RETRY_BASE_MS = 2000; // base backoff (2s)
+const MODE_RETRY_MAX_MS = 60 * 1000; // max backoff (60s)
+const MODE_RETRY_MAX_INTENTOS = 6; // max attempts before giving up
+
+function _computeBackoff(attempt) {
+    // exponential backoff with jitter
+    const exp = Math.pow(2, Math.max(0, attempt - 1));
+    const base = Math.min(MODE_RETRY_BASE_MS * exp, MODE_RETRY_MAX_MS);
+    // Add small jitter +/-20%
+    const jitter = base * (0.2 * (Math.random() - 0.5));
+    return Math.round(base + jitter);
+}
+
+registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
+    try {
+        if (mensaje?.tipo === TIPOS_MENSAJE.SISTEMA.NACK && mensaje?.datos?.esperarPermiso && mensaje?.origen) {
+            const hijoId = mensaje.origen;
+            const modo = mensaje.datos?.modoSolicitado || (mensaje.datos?.modo || null);
+
+            const existing = pendingModeChanges.get(hijoId) || { intentos: 0 };
+            const intentos = Math.min((existing.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
+            const nextAttemptAt = Date.now() + _computeBackoff(intentos);
+
+            pendingModeChanges.set(hijoId, {
+                modo,
+                datos: mensaje.datos,
+                intentos,
+                nextAttemptAt
+            });
+
+            logger.info(`[APP][CAMBIO_MODO][RESEND] NACK con esperarPermiso de ${hijoId}, guardado intento=${intentos} nextAt=${new Date(nextAttemptAt).toISOString()}`);
+        }
+    } catch (e) {
+        logger.warn('[APP][CAMBIO_MODO][RESEND] Error procesando NACK esperarPermiso:', e);
+    }
+});
+
+registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
+    try {
+        const hijoId = mensaje?.origen;
+        if (hijoId && pendingModeChanges.has(hijoId)) {
+            const pending = pendingModeChanges.get(hijoId);
+            logger.info(`[APP][CAMBIO_MODO][RESEND] HIJO_LISTO de ${hijoId}, reenviando CAMBIO_MODO pendiente (intentos=${pending.intentos})`);
+            try {
+                await enviarMensaje({
+                    destino: hijoId,
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                    origen: 'padre',
+                    datos: {
+                        modo: pending.modo,
+                        ...pending.datos,
+                        secuenciaCompleta: true // Forzar bandera
+                    }
+                });
+                pendingModeChanges.delete(hijoId);
+            } catch (sendErr) {
+                logger.warn(`[APP][CAMBIO_MODO][RESEND] Error reenviando CAMBIO_MODO a ${hijoId} tras HIJO_LISTO:`, sendErr);
+                // update nextAttemptAt to retry later
+                const intentos = Math.min((pending.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
+                pendingModeChanges.set(hijoId, {
+                    ...pending,
+                    intentos,
+                    nextAttemptAt: Date.now() + _computeBackoff(intentos)
+                });
+            }
+        }
+    } catch (e) {
+        logger.warn('[APP][CAMBIO_MODO][RESEND] Error reenviando CAMBIO_MODO tras HIJO_LISTO:', e);
+    }
+});
+
+// Background retry loop: periodically attempt to resend pending CAMBIO_MODO
+setInterval(async () => {
+    try {
+        if (pendingModeChanges.size === 0) return;
+        const now = Date.now();
+        for (const [hijoId, pending] of Array.from(pendingModeChanges.entries())) {
+            if (!pending || typeof pending.nextAttemptAt !== 'number') continue;
+            if (now < pending.nextAttemptAt) continue; // not yet
+
+            if ((pending.intentos || 0) >= MODE_RETRY_MAX_INTENTOS) {
+                logger.error(`[APP][CAMBIO_MODO][RESEND] Máximo intentos alcanzado para ${hijoId}, abortando`);
+                registrarEvento && typeof registrarEvento === 'function' && registrarEvento('CAMBIO_MODO_ABORTADO', { hijoId, intentos: pending.intentos, timestamp: now });
+                pendingModeChanges.delete(hijoId);
+                continue;
+            }
+
+            logger.info(`[APP][CAMBIO_MODO][RESEND] Intentando reenvío programado a ${hijoId} (intento ${pending.intentos + 1})`);
+            try {
+                await enviarMensaje({
+                    destino: hijoId,
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                    origen: 'padre',
+                    datos: {
+                        modo: pending.modo,
+                        ...pending.datos,
+                        secuenciaCompleta: true
+                    }
+                });
+                pendingModeChanges.delete(hijoId);
+                registrarEvento && typeof registrarEvento === 'function' && registrarEvento('CAMBIO_MODO_REENVIADO', { hijoId, timestamp: Date.now() });
+                logger.info(`[APP][CAMBIO_MODO][RESEND] Reenvío exitoso a ${hijoId}`);
+            } catch (sendErr) {
+                // increment attempts and schedule next
+                const intentos = Math.min((pending.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
+                const nextAttemptAt = Date.now() + _computeBackoff(intentos);
+                pendingModeChanges.set(hijoId, {
+                    ...pending,
+                    intentos,
+                    nextAttemptAt
+                });
+                logger.warn(`[APP][CAMBIO_MODO][RESEND] Reintento fallido para ${hijoId}, programado nextAt=${new Date(nextAttemptAt).toISOString()}`, sendErr);
+            }
+        }
+    } catch (err) {
+        logger.warn('[APP][CAMBIO_MODO][RESEND] Error en loop de reintentos:', err);
+    }
+}, 5000);
 
