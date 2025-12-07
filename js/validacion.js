@@ -223,3 +223,40 @@ export function validarCoordenadas(coordenadas) {
     return true;
 }
 
+/**
+ * Normaliza distintos formatos de coordenadas a { lat, lng } o devuelve null si no válidas
+ * Acepta: [lat, lng], {lat, lng}, {lat, lon}, strings numéricas
+ * @param {Array|Object|string} input
+ * @returns {{lat:number,lng:number}|null}
+ */
+export function normalizarCoordenadas(input) {
+    if (input == null) return null;
+    try {
+        if (Array.isArray(input) && input.length >= 2) {
+            const lat = Number(input[0]);
+            const lng = Number(input[1]);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+            return null;
+        }
+        if (typeof input === 'object') {
+            const lat = input.lat !== undefined ? Number(input.lat) : undefined;
+            const lng = input.lng !== undefined ? Number(input.lng) : (input.lon !== undefined ? Number(input.lon) : undefined);
+            if (lat !== undefined && lng !== undefined && Number.isFinite(lat) && Number.isFinite(lng)) {
+                return { lat, lng };
+            }
+            return null;
+        }
+        if (typeof input === 'string') {
+            const parts = input.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+            if (parts.length >= 2) {
+                const lat = Number(parts[0]);
+                const lng = Number(parts[1]);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+    return null;
+}
+
