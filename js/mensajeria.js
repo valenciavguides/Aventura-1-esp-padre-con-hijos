@@ -6,26 +6,12 @@
  * con manejo de errores, reintentos, validación de mensajes y limpieza de recursos.
  */
 
-import { CONFIG_MENSAJERIA, TIPOS_MENSAJE } from './constants.js';
-// NOTA: No importar desde utils.js para evitar dependencia circular
-// import { generarIdUnico } from './utils.js'; // ❌ Causa dependencia circular
-// Pero sí podemos importar ajustarTimeoutPorConexion ya que no depende de mensajeria
-import { ajustarTimeoutPorConexion } from './utils.js';
+import { TIPOS_MENSAJE, TIPOS_MENSAJE_VALIDOS } from './constants.js';
+import { ajustarTimeoutPorConexion, generarIdUnico } from './utils.js';
 import logger from './logger.js';
-
-// Detect mobile devices for optimizations
-const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // ================== UTILIDADES INTERNAS =====================
 
-/**
- * Genera un ID único para mensajes
- * @returns {string} ID único
- * @private
- */
-function generarIdUnico() {
-    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
 
 // Manejadores centralizados (separado del objeto estadoMensajeria
 // para evitar errores de acceso durante imports circulares).
@@ -57,9 +43,29 @@ globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
 
 // ================== MENSAJERÍA CENTRALIZADA =====================
 
-// Estado global de la mensajería (usando configuración centralizada)
+// Estado global de la mensajería (configuración local)
 const estadoMensajeria = {
-    ...CONFIG_MENSAJERIA.ESTADO_INICIAL,
+    inicializado: false,
+    manejadores: new Map(),
+    mensajesPendientes: new Map(),
+    tiempoEspera: 10000,
+    maxReintentos: 3,
+    mensajesProcesados: new Set(),
+    estadisticas: {
+        mensajesEnviados: 0,
+        mensajesRecibidos: 0,
+        errores: 0,
+        totalTiempoRespuesta: 0,
+        tiempoPromedioRespuesta: 0,
+        ultimoError: null
+    },
+    instancias: new Map(),
+    rol: 'hijo',
+    estado: 'inactivo',
+    timeouts: {},
+    colaMensajes: [],
+    procesandoCola: false,
+    listenerRegistrado: false,
     heartbeat: {
         activo: false,
         hijosConectados: new Set(),
@@ -67,7 +73,10 @@ const estadoMensajeria = {
         timeoutsHeartbeat: new Map(),
         intervalo: 5000,
         timer: null
-    }
+    },
+    broadcastsPendientes: [], // Cola de broadcasts esperando a que hijos estén listos
+    hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'], // Hijos críticos que deben estar listos
+    hijosListos: new Set() // Hijos críticos que ya enviaron HIJO_LISTO
 };
 
 // Registro de capacidades declaradas por cada hijo (padre mantiene esto)
@@ -95,7 +104,7 @@ function registrarCapacidadesHijo(hijoId, capacidades = []) {
  * @param {string} capability
  * @returns {Array<string>} lista de ids
  */
-function hijosConCapability(capability) {
+export function hijosConCapability(capability) {
     const result = [];
     for (const [hijoId, set] of hijosCapacidades.entries()) {
         if (set && set.has(capability)) result.push(hijoId);
@@ -108,7 +117,7 @@ function hijosConCapability(capability) {
  * @param {string} capability
  * @param {Object} mensajeObj - objeto con tipo, origen, datos, version opcional
  */
-function broadcastToCapability(capability, mensajeObj) {
+export function broadcastToCapability(capability, mensajeObj) {
     if (!capability || !mensajeObj) return { enviados: 0 };
     const targets = hijosConCapability(capability);
     const origenSeguro = window.location.origin;
@@ -142,6 +151,9 @@ function broadcastToCapability(capability, mensajeObj) {
     if (estadoMensajeria.debug) console.debug(`[MENSAJERIA] broadcastToCapability(${capability}) enviados: ${enviados}`);
     return { enviados };
 }
+
+// Export registrarCapacidadesHijo too so other modules can introspect/update
+export { registrarCapacidadesHijo };
 
 // ================== FUNCIONES PRINCIPALES CENTRALIZADAS =====================
 
@@ -272,6 +284,17 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
                     timestamp: new Date().toISOString()
                 };
 
+                // Verificar si TODOS los hijos esperados están listos
+                const todosHijosListos = estadoMensajeria.hijosEsperados.every(h => estadoMensajeria.hijosListos.has(h));
+                
+                if (!todosHijosListos) {
+                    // Encolar el broadcast para cuando TODOS los hijos estén listos
+                    const faltantes = estadoMensajeria.hijosEsperados.filter(h => !estadoMensajeria.hijosListos.has(h));
+                    estadoMensajeria.broadcastsPendientes.push(mensaje);
+                    console.log(`⏳ [MENSAJERIA] Broadcast encolado (esperando hijos) - tipo: ${tipo}, listos: ${estadoMensajeria.hijosListos.size}/${estadoMensajeria.hijosEsperados.length}, faltantes: [${faltantes.join(', ')}]`);
+                    return { encolado: true, mensaje };
+                }
+
                 // Enviar a todos los iframes con contentWindow
                 const iframes = Array.from(document.getElementsByTagName('iframe'));
                 let enviados = 0;
@@ -342,7 +365,7 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
         }
 
         const mensaje = {
-            id: generarIdUnico(),
+            id: (typeof paramsOrDestino === 'object' && paramsOrDestino && paramsOrDestino.id) ? paramsOrDestino.id : generarIdUnico(),
             tipo,
             origen,
             destino,
@@ -389,54 +412,47 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
  */
 export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = ajustarTimeoutPorConexion(10000) }) {
     return new Promise((resolve, reject) => {
-        const mensajeId = generarIdUnico();
-        
+        const internalId = generarIdUnico();
+        const publishedId = generarIdUnico();
+
         // Configurar timeout
         const timer = setTimeout(() => {
-            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
-            if (confirmacionesPendientes.has(mensajeId)) confirmacionesPendientes.delete(mensajeId);
+            const info = confirmacionesPendientes.get(internalId) || confirmacionesPendientes.get(publishedId);
+            if (info) {
+                eliminarConfirmacionPorInfo(info);
+            }
             reject(new Error(`Timeout esperando confirmación de ${destino} para mensaje ${tipo}`));
         }, timeout);
-        
-        // Registrar handler temporal para la respuesta
-        const handleResponse = (respuesta) => {
-            clearTimeout(timer);
-            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
-            resolve(respuesta.datos);
-        };
-        
-        // Intentar usar el Map principal; si no está inicializado aún
-        // (por TDZ en import cycles), guardamos en el fallback global.
+
+        // Registrar en confirmacionesPendientes AMBAS claves sincronamente
+        const info = { resolve, reject, timer, tipo, destino, internalId, publishedId };
+        confirmacionesPendientes.set(internalId, info);
+        confirmacionesPendientes.set(publishedId, info);
+
+        // Enviar mensaje forzando el id publicado y dejando el id interno en payload.
+        // Añadimos campos canónicos para facilitar la correlación por parte
+        // de los receptores: `respuestaA` (referencia al id interno usado
+        // por quien espera la confirmación) y `mensajeOriginal` (id publicado
+        // en el encabezado). No sobrescribimos si el llamador ya los proveyó.
         try {
-            __vv_getManejadores().set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
-        } catch (err) {
-            // Fallback explícito por seguridad
-            if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
-            globalThis.__vv_manejadores.set(`${tipo}_RESPONSE_${mensajeId}`, handleResponse);
-        }
-        // Registrar también en confirmacionesPendientes para soportar respuestas
-        // que incluyan datos.mensajeOriginal en lugar de un tipo dinámico.
-        confirmacionesPendientes.set(mensajeId, { resolve, reject, timer, tipo, destino });
-        
-        // Enviar mensaje
-        try {
-            const prom = Promise.resolve(enviarMensaje({ tipo, origen, destino, datos: { ...datos, mensajeId }, version }));
-            // Además de la clave interna `mensajeId`, registrar la entrada usando
-            // el id real publicado (cuando esté disponible) para soportar hijos
-            // que devuelvan `mensajeOriginal: mensaje.id`.
+            const datosEnviados = { ...datos };
+            // asegurar compatibilidad: mantener mensajeId para código legado
+            if (!datosEnviados.mensajeId) datosEnviados.mensajeId = internalId;
+            if (!datosEnviados.respuestaA) datosEnviados.respuestaA = internalId;
+            if (!datosEnviados.mensajeOriginal) datosEnviados.mensajeOriginal = publishedId;
+
+            const prom = Promise.resolve(enviarMensaje({ tipo, origen, destino, datos: datosEnviados, version, id: publishedId }));
+            // Compat: asegurar que si enviarMensaje devuelve un mensajeId lo tengamos registrado
             prom.then(res => {
                 try {
-                    if (res && res.mensajeId) {
-                        // Mapear el id publicado al mismo manejador de confirmación
-                        confirmacionesPendientes.set(res.mensajeId, { resolve, reject, timer, tipo, destino });
+                    if (res && res.mensajeId && !confirmacionesPendientes.has(res.mensajeId)) {
+                        confirmacionesPendientes.set(res.mensajeId, info);
                     }
-                } catch (e) {
-                    // no crítico
-                }
+                } catch (e) { /* ignore */ }
             }).catch(() => { /* ignore */ });
         } catch (error) {
             clearTimeout(timer);
-            __vv_getManejadores().delete(`${tipo}_RESPONSE_${mensajeId}`);
+            eliminarConfirmacionPorInfo(info);
             reject(error);
         }
     });
@@ -491,6 +507,18 @@ function manejarMensajeEntrante(event) {
         // Ignorar silenciosamente mensajes no relacionados con el sistema
         return;
     }
+
+    // Validar tipo contra la lista canónica de tipos
+    try {
+        if (Array.isArray(TIPOS_MENSAJE_VALIDOS) && TIPOS_MENSAJE_VALIDOS.length > 0) {
+            if (!TIPOS_MENSAJE_VALIDOS.includes(mensaje.tipo)) {
+                console.warn(`[MENSAJERIA] Tipo de mensaje no reconocido: ${mensaje.tipo} - descartando`);
+                return;
+            }
+        }
+    } catch (e) {
+        // No bloquear por errores de validación de tipos
+    }
     
     console.log(`📥 [MENSAJERIA] Mensaje recibido - tipo: ${mensaje.tipo}, origen: ${mensaje.origen}, destino: ${mensaje.destino}`);
 
@@ -504,18 +532,56 @@ function manejarMensajeEntrante(event) {
     
     console.log(`✅ [MENSAJERIA] Mensaje aceptado - destino: ${mensaje.destino}, tipo: ${mensaje.tipo}, origen: ${mensaje.origen}`);
 
-    // Si la respuesta incluye referencia a un mensaje original, resolver confirmación pendiente.
+    // Compat: detectar respuestas que referencian un mensaje original en el payload
+    // (datos.mensajeOriginal, idSolicitud, solicitudOriginalId) y resolver la
+    // confirmación pendiente por mensajeId.
     try {
-        const mensajeOriginalRef = mensaje.datos && (mensaje.datos.mensajeOriginal || mensaje.datos.idSolicitud || mensaje.datos.solicitudOriginalId);
+        const mensajeOriginalRef = mensaje.datos && (mensaje.datos.mensajeOriginal || mensaje.datos.idSolicitud || mensaje.datos.solicitudOriginalId || mensaje.datos.mensajeId);
         if (mensajeOriginalRef && confirmacionesPendientes.has(mensajeOriginalRef)) {
             const info = confirmacionesPendientes.get(mensajeOriginalRef);
-            try {
-                clearTimeout(info.timer);
-            } catch (e) {}
+            try { clearTimeout(info.timer); } catch (e) {}
             try { info.resolve(mensaje.datos); } catch (e) { /* ignore */ }
-            confirmacionesPendientes.delete(mensajeOriginalRef);
-            // No llamar al controlador adicionalmente; la confirmación ya seprocesó.
+            eliminarConfirmacionPorInfo(info);
+            // No llamar al controlador adicionalmente; la confirmación ya se procesó.
             return;
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    // Compat adicional: algunos componentes envían respuestas usando un tipo
+    // dinámico con el formato `${TIPO}_RESPONSE_${mensajeId}`. Detectar ese
+    // patrón y resolver la confirmación pendiente si existe.
+    try {
+        const dynMatch = typeof mensaje.tipo === 'string' && mensaje.tipo.match(/(.+)_RESPONSE_([A-Za-z0-9_-]+)$/);
+        if (dynMatch) {
+            const mensajeIdRef = dynMatch[2];
+            if (confirmacionesPendientes.has(mensajeIdRef)) {
+                const info = confirmacionesPendientes.get(mensajeIdRef);
+                try { clearTimeout(info.timer); } catch (e) {}
+                try { info.resolve(mensaje.datos); } catch (e) { /* ignore */ }
+                eliminarConfirmacionPorInfo(info);
+                return;
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    // Compat adicional: resolver confirmaciones por id top-level o propiedades comunes
+    try {
+        const candidatos = [];
+        if (mensaje.id) candidatos.push(mensaje.id);
+        if (mensaje.mensajeId) candidatos.push(mensaje.mensajeId);
+        if (mensaje.datos && mensaje.datos.mensajeId) candidatos.push(mensaje.datos.mensajeId);
+        for (const cand of candidatos) {
+            if (cand && confirmacionesPendientes.has(cand)) {
+                const info = confirmacionesPendientes.get(cand);
+                try { clearTimeout(info.timer); } catch (e) {}
+                try { info.resolve(mensaje.datos); } catch (e) { /* ignore */ }
+                eliminarConfirmacionPorInfo(info);
+                return;
+            }
         }
     } catch (e) {
         // ignore
@@ -531,17 +597,59 @@ function manejarMensajeEntrante(event) {
             // Registrar al hijo como conectado para heartbeat si estamos en el padre
             if (window.parent === window && mensaje.origen) {
                 estadoMensajeria.heartbeat.hijosConectados.add(mensaje.origen);
+                
+                // Registrar hijo crítico si está en la lista de esperados
+                if (estadoMensajeria.hijosEsperados.includes(mensaje.origen)) {
+                    estadoMensajeria.hijosListos.add(mensaje.origen);
+                    console.log(`✅ [MENSAJERIA] Hijo crítico listo: ${mensaje.origen} (${estadoMensajeria.hijosListos.size}/${estadoMensajeria.hijosEsperados.length})`);
+                }
+                
+                // Procesar broadcasts pendientes cuando TODOS los hijos críticos están listos
+                const todosListos = estadoMensajeria.hijosEsperados.every(h => estadoMensajeria.hijosListos.has(h));
+                if (todosListos && estadoMensajeria.broadcastsPendientes.length > 0) {
+                    const pendientes = estadoMensajeria.broadcastsPendientes.length;
+                    console.log(`🔄 [MENSAJERIA] ¡TODOS los hijos listos! Procesando ${pendientes} broadcast(s) pendiente(s)`);
+                    
+                    const cola = [...estadoMensajeria.broadcastsPendientes];
+                    estadoMensajeria.broadcastsPendientes = [];
+                    
+                    cola.forEach(mensajePendiente => {
+                        try {
+                            const iframes = Array.from(document.getElementsByTagName('iframe'));
+                            let enviados = 0;
+                            const origenSeguro = window.location.origin;
+                            
+                            iframes.forEach(iframe => {
+                                try {
+                                    if (iframe && iframe.contentWindow) {
+                                        iframe.contentWindow.postMessage(mensajePendiente, origenSeguro);
+                                        enviados++;
+                                    }
+                                } catch (e) {
+                                    console.warn(`[MENSAJERIA] Error enviando broadcast pendiente:`, e);
+                                }
+                            });
+                            
+                            console.log(`📤 [MENSAJERIA] Broadcast pendiente enviado - tipo: ${mensajePendiente.tipo}, enviados: ${enviados}`);
+                        } catch (e) {
+                            console.warn('[MENSAJERIA] Error procesando broadcast pendiente:', e);
+                        }
+                    });
+                }
             }
-            // Enviar confirmación de padre al hijo (no bloquear)
-            try {
-                enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                    origen: estadoMensajeria.componenteId || 'padre',
-                    datos: { timestamp: Date.now() }
-                }).catch && null;
-            } catch (e) {
-                // ignorar errores en confirmación
+            // Enviar confirmación de padre al hijo (no bloquear) - SOLO si NO es el padre real
+            // El padre real envía confirmación personalizada desde su controlador HIJO_LISTO
+            if (estadoMensajeria.rol !== 'padre') {
+                try {
+                    enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                        origen: estadoMensajeria.componenteId || 'padre',
+                        datos: { timestamp: Date.now() }
+                    }).catch && null;
+                } catch (e) {
+                    // ignorar errores en confirmación
+                }
             }
         }
     } catch (e) {
@@ -557,15 +665,30 @@ function manejarMensajeEntrante(event) {
                 ? structuredClone(mensaje.datos || {})
                 : JSON.parse(JSON.stringify(mensaje.datos || {}));
             const handlersRegistered = mapa && typeof mapa.keys === 'function' ? Array.from(mapa.keys()) : [];
-            console.warn('[MENSAJERIA] Mensaje no reconocido o sin controlador registrado', {
-                tipo: mensaje.tipo,
-                origen: mensaje.origen,
-                destino: mensaje.destino,
-                datos: datosClon,
-                handlersRegistered
-            });
+            // Para broadcasts es normal que muchos iframes no tengan manejador
+            // específico; bajar la severidad del log para evitar spam en consola.
+            if (mensaje.destino === 'broadcast') {
+                console.debug('[MENSAJERIA] Mensaje broadcast sin controlador en este componente (esperado en muchos casos)', {
+                    tipo: mensaje.tipo,
+                    origen: mensaje.origen,
+                    destino: mensaje.destino,
+                    handlersRegisteredCount: handlersRegistered.length
+                });
+            } else {
+                console.warn('[MENSAJERIA] Mensaje no reconocido o sin controlador registrado', {
+                    tipo: mensaje.tipo,
+                    origen: mensaje.origen,
+                    destino: mensaje.destino,
+                    datos: datosClon,
+                    handlersRegistered
+                });
+            }
         } catch (e) {
-            console.warn('Mensaje no reconocido o sin controlador registrado (no se pudo serializar):', mensaje);
+            if (mensaje.destino === 'broadcast') {
+                console.debug('Mensaje broadcast sin controlador (no se pudo serializar):', mensaje.tipo, mensaje.origen);
+            } else {
+                console.warn('Mensaje no reconocido o sin controlador registrado (no se pudo serializar):', mensaje);
+            }
         }
         return;
     }
@@ -581,6 +704,23 @@ window.addEventListener('message', manejarMensajeEntrante);
 
 // Mapa para confirmaciones pendientes: mensajeOriginalId -> { resolve, reject, timer }
 const confirmacionesPendientes = new Map();
+
+/**
+ * Elimina todas las claves en el Map de confirmaciones que referencian
+ * al mismo objeto info (para evitar fugas cuando registramos múltiples
+ * claves por la misma confirmación: internalId y publishedId).
+ * @param {Object} info
+ */
+function eliminarConfirmacionPorInfo(info) {
+    if (!info) return;
+    try {
+        for (const [k, v] of Array.from(confirmacionesPendientes.entries())) {
+            if (v === info) confirmacionesPendientes.delete(k);
+        }
+    } catch (e) {
+        // No crítico
+    }
+}
 
 /**
  * Inicia el sistema de heartbeat para monitorear conectividad con hijos.
@@ -603,11 +743,18 @@ export function iniciarHeartbeat(intervalo) {
 
     estadoMensajeria.heartbeat.activo = true;
     let heartbeatPausado = false;
+    let primerHeartbeat = true; // Flag para mostrar el primer latido
 
     const enviarHeartbeat = () => {
         // Pausar heartbeat si la página está oculta
         if (document.hidden || heartbeatPausado) {
             return;
+        }
+
+        // Mostrar confirmación solo en el primer heartbeat
+        if (primerHeartbeat) {
+            console.info('💓 Heartbeat iniciado - Monitoreando conexión con hijos (solo errores se reportarán)');
+            primerHeartbeat = false;
         }
 
         // Usar heartbeat.hijosConectados en vez de hijosConectados directamente
@@ -617,17 +764,15 @@ export function iniciarHeartbeat(intervalo) {
                 origen: 'padre',
                 destino: hijoId,
                 datos: { mensajeId: generarIdUnico() }
-            }).catch(error => console.error(`Error enviando heartbeat a ${hijoId}:`, error));
+            }).catch(error => console.error(`❌ Error enviando heartbeat a ${hijoId}:`, error));
         });
     };
 
     // Pausar/reanudar heartbeat según visibilidad
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-            console.debug('[Heartbeat] Pausado (página oculta)');
             heartbeatPausado = true;
         } else {
-            console.debug('[Heartbeat] Reanudado (página visible)');
             heartbeatPausado = false;
             // Enviar heartbeat inmediatamente al reanudar
             enviarHeartbeat();
@@ -646,6 +791,30 @@ export function detenerHeartbeat() {
         clearInterval(estadoMensajeria.heartbeat.timer);
         estadoMensajeria.heartbeat.timer = null;
         estadoMensajeria.heartbeat.activo = false;
+    }
+}
+
+/**
+ * Pausa el sistema de heartbeat (deja de enviar pings)
+ * ✅ PROBLEMA 29: Pausar heartbeat en modo casa para ahorrar recursos
+ */
+export function pausarHeartbeat() {
+    if (estadoMensajeria.heartbeat.timer) {
+        clearInterval(estadoMensajeria.heartbeat.timer);
+        estadoMensajeria.heartbeat.timer = null;
+        estadoMensajeria.heartbeat.activo = false;
+        logger.debug('[heartbeat] Sistema pausado (modo casa)');
+    }
+}
+
+/**
+ * Reanuda el sistema de heartbeat (vuelve a enviar pings)
+ * ✅ PROBLEMA 29: Reanudar heartbeat en modo aventura
+ */
+export function reanudarHeartbeat() {
+    if (!estadoMensajeria.heartbeat.activo && estadoMensajeria.rol === 'padre') {
+        iniciarHeartbeat();
+        logger.debug('[heartbeat] Sistema reanudado (modo aventura)');
     }
 }
 
@@ -693,6 +862,36 @@ export async function procesarRespuestaDatosHijo(mensaje) {
  * gestionando el cache y resolviendo las promesas pendientes.
  */
 registrarControlador(TIPOS_MENSAJE.COORDINACION.RESPUESTA_DATOS_HIJO, procesarRespuestaDatosHijo);
+
+/**
+ * ✅ PROBLEMA 29: Controlador para cambio de modo (casa/aventura)
+ * Pausa heartbeat en modo casa, lo reanuda en modo aventura
+ */
+registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+    const logPrefix = '[mensajeria][CAMBIO_MODO]';
+    const { modo } = mensaje.datos || {};
+    
+    if (!modo) {
+        logger.warn(`${logPrefix} Mensaje sin modo especificado`);
+        return;
+    }
+    
+    logger.info(`${logPrefix} Cambio de modo detectado: ${modo}`);
+    
+    // Actualizar estado local
+    if (estadoMensajeria.modo !== undefined) {
+        estadoMensajeria.modo = modo;
+    }
+    
+    // ✅ PROBLEMA 29: Pausar/reanudar heartbeat según modo
+    if (modo === 'casa') {
+        logger.info(`${logPrefix} Modo CASA: Pausando heartbeat (no necesario sin GPS)`);
+        pausarHeartbeat();
+    } else if (modo === 'aventura') {
+        logger.info(`${logPrefix} Modo AVENTURA: Reanudando heartbeat (necesario para GPS)`);
+        reanudarHeartbeat();
+    }
+});
 
 /**
  * Obtiene el estado actual del sistema de coordinación
@@ -1004,7 +1203,7 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.COORDINAR_ACCION, async (mensaje
                 try {
                     await enviarMensajeConConfirmacion({
                         destino: depId,
-                        tipo: TIPOS_MENSAJE.SISTEMA.PING,
+                        tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT,
                         origen: 'coordinador',
                         mensajeId: generarIdUnico()
                     }, 2000);
