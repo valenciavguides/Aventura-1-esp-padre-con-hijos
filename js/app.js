@@ -1545,4 +1545,3 @@ setInterval(async () => {
         logger.warn('[APP][CAMBIO_MODO][RESEND] Error en loop de reintentos:', err);
     }
 }, 5000);
-
