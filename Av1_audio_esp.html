@@ -143,6 +143,16 @@
             transform: scale(0.95); 
         }
 
+        /* Imagen dentro del botón retos */
+        #retosBtn img {
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+            border-radius: 50%;
+        }
+
         .progress-row {
             display: flex;
             align-items: center;
@@ -237,21 +247,7 @@
             opacity: 1;
         }
 
-        body.modo-casa #playPauseBtn,
-        body.modo-casa #retosBtn {
-            background: linear-gradient(to right, #28a745, #218838) !important;
-            opacity: 1 !important;
-            cursor: pointer !important;
-            pointer-events: auto !important;
-        }
-
-        body.modo-casa #playPauseBtn:disabled,
-        body.modo-casa #retosBtn:disabled {
-            background: linear-gradient(to right, #28a745, #218838) !important;
-            opacity: 1 !important;
-            cursor: pointer !important;
-            pointer-events: auto !important;
-        }
+        /* Estilos de modo casa eliminados - los botones siguen el estado habilitado/deshabilitado estándar */
 
         /* Estilos para el modo aventura (controles normales) */
         body.modo-aventura .audio-player-controls {
@@ -686,7 +682,8 @@
                 file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
             }
         ];
-        // Exponer copia segura en window por compatibilidad con otros scripts
+        // ✅ PROBLEMA 17: Exponer audioFiles ANTES de definir funciones que lo usan
+        // Esto resuelve el problema de timing cuando cargarYReproducirAudio() se llama rápidamente
         try { window.__vv_audioFiles = audioFiles; } catch (e) { /* ignore */ }
     </script>
     
@@ -696,7 +693,7 @@
                 <i class="fas fa-play icon-play"></i>
             </button>
             <button id="retosBtn" aria-label="Retos">
-                <span class="icon-puzzle">🧩</span>
+                <img src="fotos-botones/H4-fotoretos.png" alt="Retos">
             </button>
         </div>
         <div class="progress-row">
@@ -983,6 +980,32 @@
 
                 logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
 
+                // Aplicar cambio de modo encolado si existía
+                try {
+                    if (estado.pendingCambioModo && estado.pendingCambioModo.modo) {
+                        const modoPendiente = estado.pendingCambioModo.modo;
+                        logger.info(`${logPrefix} Aplicando modo pendiente: ${modoPendiente}`);
+                        actualizarInterfazModo(modoPendiente);
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { tipo: 'inicializacion', modo: modoPendiente }
+                        });
+                        delete estado.pendingCambioModo;
+                    }
+                } catch (err) {
+                    logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
+                }
+
+                // 🔥 NUEVO: Procesar modo inicial si viene en datos
+                const { modoInicial } = mensaje.datos || {};
+                if (modoInicial) {
+                    logger.info(`${logPrefix} Modo inicial recibido: ${modoInicial}`);
+                    actualizarInterfazModo(modoInicial);
+                    logger.debug(`${logPrefix} Interfaz actualizada según modo inicial`);
+                }
+
                 // Preparado para futuras solicitudes de datos adicionales del padre
                 logger.debug(`${logPrefix} Componente listo para recibir datos adicionales si es necesario`);
 
@@ -1110,17 +1133,22 @@
 
             try {
                 // Paso 1: Validar carga secuencial - esperar permiso del padre
-                if (!mensaje.datos?.secuenciaCompleta) {
-                    logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, esperando permiso...`);
-                    // Enviar NACK y esperar mensaje de PERMISO_INICIALIZACION
-                    await enviarMensaje({
-                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        destino: mensaje.origen,
-                        datos: { error: 'Secuencia no completa', esperarPermiso: true }
-                    });
-                    return;
-                }
+                        if (!mensaje.datos?.secuenciaCompleta) {
+                            logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando y notificando padre`);
+                            estado.pendingCambioModo = mensaje.datos || { modo: null };
+                            await enviarMensaje({
+                                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                                origen: CONFIG_HIJO.IFRAME_ID,
+                                destino: mensaje.origen,
+                                datos: {
+                                    error: 'Secuencia no completa',
+                                    esperarPermiso: true,
+                                    tipoOriginal: mensaje.tipo,
+                                    modoSolicitado: mensaje.datos?.modo
+                                }
+                            });
+                            return;
+                        }
 
                 // Paso 2: Extraer datos con destructuring
                 const { modo } = mensaje.datos || {};
@@ -1280,6 +1308,59 @@
             }
         });
 
+        // Controlador para acciones de UI desde botones horizontales
+        registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
+            const logPrefix = `[hijo3][UI.ACCION_USUARIO][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                const { accion, elemento, contexto } = mensaje?.datos || {};
+                
+                if (accion === 'simular_click' && elemento && contexto === 'boton_horizontal') {
+                    logger.info(`${logPrefix} Simulando click en ${elemento} desde boton horizontal`);
+                    
+                    // Buscar el elemento y simular click
+                    const boton = document.getElementById(elemento);
+                    if (boton) {
+                        logger.info(`${logPrefix} ✅ Elemento ${elemento} encontrado, ejecutando click`);
+                        boton.click();
+                        
+                        // Enviar confirmación al padre
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                accion: 'click_ejecutado',
+                                elemento,
+                                exito: true,
+                                timestamp: Date.now()
+                            }
+                        });
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ Elemento ${elemento} no encontrado`);
+                        
+                        // Enviar error al padre
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                codigo: 'ELEMENTO_NO_ENCONTRADO',
+                                mensaje: `Elemento ${elemento} no existe`,
+                                elemento,
+                                timestamp: Date.now()
+                            }
+                        });
+                    }
+                } else {
+                    logger.warn(`${logPrefix} Acción no reconocida:`, { accion, elemento, contexto });
+                }
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando acción UI:`, error);
+            }
+        });
+
         // Controlador para ACK del sistema
         registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
             const logPrefix = `[hijo3][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
@@ -1303,6 +1384,59 @@
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error respondiendo ACK:`, error);
+            }
+        });
+
+        // ============================================================
+        // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+        // ============================================================
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.ACTIVAR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.DESACTIVAR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.ESTADO_ACTUALIZADO] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+            try {
+                console.warn(`[hijo3][GPS.ERROR] Error GPS recibido (no-op):`, mensaje?.datos || {});
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.ERROR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
             }
         });
 
