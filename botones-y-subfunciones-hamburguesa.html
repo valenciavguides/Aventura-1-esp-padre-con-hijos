@@ -933,14 +933,29 @@
       border: none; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
       cursor: pointer; z-index: 1300; opacity: 0; transition: opacity 0.3s;
     }
+        /* Ajuste para imágenes dentro de los iconos flotantes */
+        .icono-flotante img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+            border-radius: inherit;
+        }
   </style>
 </head>
 <body>
   <!-- Botones flotantes (ahora directamente en el body) -->
-  <button id="menu-toggle" class="boton-flotante">☰</button>
-  <button class="icono-flotante" id="icono-retos">🧩</button>
-  <button class="icono-flotante" id="icono-gastronomia">🍽️</button>
-  <button class="icono-flotante" id="icono-informacion">🌐</button>
-  <button class="icono-flotante" id="icono-historia">🏛️</button>
+    <button id="menu-toggle" class="boton-flotante" title="Abrir menú" aria-label="Abrir menú">☰</button>
+    <button class="icono-flotante" id="icono-retos" title="Retos" aria-label="Retos">
+        <img src="fotos-botones/H4-fotoretos.png" alt="Retos">
+    </button>
+    <button class="icono-flotante" id="icono-gastronomia" title="Gastronomía" aria-label="Gastronomía">
+        <img src="fotos-botones/H1-fotogastronomia.png" alt="Gastronomía">
+    </button>
+    <button class="icono-flotante" id="icono-informacion" title="Información" aria-label="Información">🌐</button>
+    <button class="icono-flotante" id="icono-historia" title="Historia" aria-label="Historia">
+        <img src="fotos-botones/H1-videohistoriavalencia.png" alt="Historia de Valencia">
+    </button>
 </body>
 </html>
