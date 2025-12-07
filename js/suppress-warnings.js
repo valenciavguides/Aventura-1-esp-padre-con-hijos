@@ -2,14 +2,22 @@
  * Suprime advertencias específicas en la consola y previene pausas del depurador
  * @module suppress-warnings
  * @version 2.1.0
+ * NOTA: Este archivo NO usa ES6 modules porque se carga como <script src> en el HTML
  */
 
-// Add declarations for errorCounter and errorMessages to fix ReferenceError
+// Detectar dispositivo móvil (inline para evitar imports)
+const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+// TTL de limpieza (inline para evitar imports)
+const TTL_LIMPIEZA = {
+    SUPPRESS: {
+        MOVIL: 120000,
+        DESKTOP: 300000
+    }
+};
+
 let errorCounter = 0;
 let errorMessages = new Set();
-
-// Detección de dispositivo móvil (global para el módulo)
-const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // Store original console methods
 const originalConsole = {
@@ -148,11 +156,18 @@ console.error = function(...args) {
         // Crear una clave única para este error
         let errorKey = '';
         try {
-            errorKey = args.map(arg =>
-                typeof arg === 'string' ? arg.slice(0, 100) :
-                (arg instanceof Error ? arg.message.slice(0, 100) :
-                safeStringify(arg).slice(0, 100))
-            ).join('|');
+            errorKey = args.map(arg => {
+                if (typeof arg === 'string') {
+                    return arg.slice(0, 100);
+                }
+                if (arg instanceof Error) {
+                    // Verificar si existe message antes de usar .slice()
+                    return (arg.message && typeof arg.message === 'string') 
+                        ? arg.message.slice(0, 100) 
+                        : 'sin-mensaje';
+                }
+                return safeStringify(arg).slice(0, 100);
+            }).join('|');
         } catch (e) {
             errorKey = 'error-key-creation-failed';
         }
@@ -201,12 +216,13 @@ function cleanupGlobalAgresivo() {
     errorCounter = 0;
 }
 
+// ✅ PROBLEMA 26: Usar TTL centralizado de constants.js
 // Limpiar periódicamente para evitar fuga de memoria (optimized for mobile)
 setInterval(() => {
     errorCounter = 0;
     limpiarMensajesError();
-    cleanupGlobalAgresivo();  // Added call to new function
-}, esMovil ? 120000 : 300000);  // Changed from 300000/60000 to 120000/300000 (2 min mobile / 5 min desktop)
+    cleanupGlobalAgresivo();
+}, esMovil ? TTL_LIMPIEZA.SUPPRESS.MOVIL : TTL_LIMPIEZA.SUPPRESS.DESKTOP);
 
 // Reemplazar JSON.stringify con una versión segura que maneja referencias circulares
 const originalJSONStringify = JSON.stringify;
