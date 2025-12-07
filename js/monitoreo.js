@@ -139,6 +139,22 @@ export function incrementarContador(nombre, incremento = 1) {
     return nuevoValor;
 }
 
+// Escuchar eventos globales de utilidades (por ejemplo descartes en normalizarParadas)
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('vv:paradas:descartadas', (e) => {
+        try {
+            const cnt = (e && e.detail && Number(e.detail.descartadas)) || 0;
+            if (cnt > 0) {
+                incrementarContador('paradas_descartadas', cnt);
+                registrarMetrica('paradas_descartadas_batch', cnt, { timestamp: Date.now() });
+                logger.info('[MONITOREO] Paradas descartadas registradas', { descartadas: cnt });
+            }
+        } catch (err) {
+            logger.warn('[MONITOREO] Error procesando evento vv:paradas:descartadas', err);
+        }
+    });
+}
+
 /**
  * Obtiene estadísticas de una métrica
  * @param {string} nombre - Nombre de la métrica
@@ -792,17 +808,33 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
             return;
         }
 
-        // 2. Registrar recepción del ACK
-        const idMensajeOriginal = mensaje.datos?.respuestaA || 'desconocido';
+        // 2. Intentar correlacionar el ACK con un mensaje original usando
+        // múltiples puntos posibles donde otros componentes suelen poner referencias.
+        const candidatos = [];
+        if (mensaje.datos && mensaje.datos.respuestaA) candidatos.push(mensaje.datos.respuestaA);
+        if (mensaje.datos && mensaje.datos.mensajeOriginal) candidatos.push(mensaje.datos.mensajeOriginal);
+        if (mensaje.datos && mensaje.datos.solicitudOriginalId) candidatos.push(mensaje.datos.solicitudOriginalId);
+        if (mensaje.datos && mensaje.datos.mensajeId) candidatos.push(mensaje.datos.mensajeId);
+        if (mensaje.mensajeId) candidatos.push(mensaje.mensajeId);
+        if (mensaje.id) candidatos.push(mensaje.id);
+
+        // También soportar patrones dinámicos en el tipo: TIPO_RESPONSE_<id>
+        try {
+            const dynMatch = typeof mensaje.tipo === 'string' && mensaje.tipo.match(/(.+)_RESPONSE_([A-Za-z0-9_-]+)$/);
+            if (dynMatch) candidatos.push(dynMatch[2]);
+        } catch (e) { /* ignore */ }
+
+        const idMensajeOriginal = candidatos.find(c => c) || 'desconocido';
         logger.info(`${logPrefix} ACK recibido para mensaje ${idMensajeOriginal}`, {
             origen: mensaje.origen,
             timestamp: new Date(timestamp).toISOString(),
-            datos: mensaje.datos
+            datos: mensaje.datos,
+            candidatosCorrelacion: candidatos.filter(Boolean)
         });
 
         // 3. Actualizar estado del mensaje original si existe
         let tiempoRespuesta = null;
-        if (estadoSistema.mensajesPendientes && estadoSistema.mensajesPendientes[idMensajeOriginal]) {
+        if (idMensajeOriginal !== 'desconocido' && estadoSistema.mensajesPendientes && estadoSistema.mensajesPendientes[idMensajeOriginal]) {
             tiempoRespuesta = timestamp - estadoSistema.mensajesPendientes[idMensajeOriginal].timestamp;
             
             // Registrar el tiempo de respuesta
@@ -831,6 +863,13 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
                 });
                 promesasPendientes.delete(idMensajeOriginal);
             }
+        } else if (idMensajeOriginal === 'desconocido') {
+            // Si no pudimos correlacionar, bajar la severidad para evitar spam y
+            // dejar datos diagnósticos para investigación.
+            logger.debug(`${logPrefix} ACK sin correlación - ningun id encontrado en candidatos`, {
+                candidatos: candidatos.filter(Boolean),
+                mensaje
+            });
         }
 
         // 4. Registrar métrica de rendimiento
@@ -871,8 +910,21 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
             return;
         }
 
-        // 2. Obtener información del mensaje original
-        const idMensajeOriginal = mensaje.datos?.respuestaA || 'desconocido';
+        // 2. Intentar correlacionar el NACK con un mensaje original usando
+        // múltiples ubicaciones donde los componentes colocan IDs.
+        const candidatos = [];
+        if (mensaje.datos && mensaje.datos.respuestaA) candidatos.push(mensaje.datos.respuestaA);
+        if (mensaje.datos && mensaje.datos.mensajeOriginal) candidatos.push(mensaje.datos.mensajeOriginal);
+        if (mensaje.datos && mensaje.datos.solicitudOriginalId) candidatos.push(mensaje.datos.solicitudOriginalId);
+        if (mensaje.datos && mensaje.datos.mensajeId) candidatos.push(mensaje.datos.mensajeId);
+        if (mensaje.mensajeId) candidatos.push(mensaje.mensajeId);
+        if (mensaje.id) candidatos.push(mensaje.id);
+        try {
+            const dynMatch = typeof mensaje.tipo === 'string' && mensaje.tipo.match(/(.+)_RESPONSE_([A-Za-z0-9_-]+)$/);
+            if (dynMatch) candidatos.push(dynMatch[2]);
+        } catch (e) { /* ignore */ }
+
+        const idMensajeOriginal = candidatos.find(c => c) || 'desconocido';
         const errorMsg = mensaje.datos?.error || 'Error desconocido';
         const codigoError = mensaje.datos?.codigo || 'NACK_SIN_CODIGO';
         
@@ -886,7 +938,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
         });
 
         // 4. Actualizar estado del mensaje original si existe
-        if (estadoSistema.mensajesPendientes && estadoSistema.mensajesPendientes[idMensajeOriginal]) {
+        if (idMensajeOriginal !== 'desconocido' && estadoSistema.mensajesPendientes && estadoSistema.mensajesPendientes[idMensajeOriginal]) {
             const tiempoRespuesta = timestamp - estadoSistema.mensajesPendientes[idMensajeOriginal].timestamp;
             
             // Registrar el fallo
@@ -957,6 +1009,19 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
                 codigo: codigoError,
                 intentos: estadoSistema.mensajesPendientes[idMensajeOriginal].intentos || 1
             });
+        } else if (idMensajeOriginal === 'desconocido') {
+            // Bajar la severidad si no hay correlación para evitar spam en consola.
+            logger.info(`${logPrefix} NACK sin correlación para ningún mensaje conocido`, {
+                origen: mensaje.origen,
+                timestamp: new Date(timestamp).toISOString(),
+                error: errorMsg,
+                codigo: codigoError,
+                candidatos: candidatos.filter(Boolean),
+                datos: mensaje.datos
+            });
+            // Registrar métrica leve y devolver; no intentar reintentos automáticos
+            registrarMetrica('errores_nack_desconocidos', 1, 'count', { origen: mensaje.origen, codigo: codigoError });
+            return;
         }
 
         // 7. Rechazar la promesa pendiente si existe
@@ -1194,11 +1259,12 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO, async (mensaje) => {
 async function notificarErrorCritico({ codigo, mensaje, origen, timestamp, contexto = {} }) {
     const notificacion = {
         destino: 'sistema-monitoreo',
-        tipo: 'MONITOREO.ERROR_CRITICO',
+        tipo: TIPOS_MENSAJE.MONITOREO.EVENTO,
         origen: 'manejador-errores',
         mensajeId: generarIdUnico(),
         timestamp,
         datos: {
+            subtipo: 'ERROR_CRITICO',
             codigo,
             mensaje,
             origen,
@@ -1447,7 +1513,8 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
             return;
         }
 
-        const { 
+        const datos = mensaje.datos || {};
+        let {
             titulo = 'Notificación',
             mensaje: contenido,
             tipo = 'info',
@@ -1456,12 +1523,23 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
             datosAccion = {},
             importante = false,
             metadata = {}
-        } = mensaje.datos || {};
+        } = datos;
 
-        // Validar campos requeridos
+        // Si no hay contenido textual, pero el mensaje tiene una forma estructurada
+        // (por ejemplo { tipo: 'cambio_modo_iniciado', modoAnterior, modoNuevo }),
+        // sintetizamos un mensaje legible en lugar de ignorarlo inmediatamente.
         if (!contenido) {
-            logger.warn(`${logPrefix} Notificación sin contenido, ignorando`, { mensaje });
-            return;
+            if (datos && datos.tipo) {
+                const tipoStruct = datos.tipo;
+                const modoPrev = datos.modoAnterior || datos.modoPrev || '';
+                const modoNuevo = datos.modoNuevo || datos.modoActual || datos.modo || '';
+                contenido = `Evento: ${tipoStruct}${modoPrev || modoNuevo ? ` — ${modoPrev}${modoPrev && modoNuevo ? ' → ' : ''}${modoNuevo}` : ''}`;
+                // anotar que fue sintetizado
+                metadata = Object.assign({ sintetizado: true }, metadata);
+            } else {
+                logger.warn(`${logPrefix} Notificación sin contenido, ignorando`, { mensaje });
+                return;
+            }
         }
 
         // Validar tipo de notificación
@@ -1493,8 +1571,18 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
             importante,
             origen: mensaje.origen
         });
+        // 3. Guardas: prevenir spam y notificaciones vacías repetidas
+        estadoSistema._lastNotificacion = estadoSistema._lastNotificacion || new Map();
+        const notifKey = `${mensaje.origen}::${tipoNotificacion}::${titulo}`;
+        const MIN_INTERVAL = 5000; // ms por tipo/origen (ajustable)
+        const ultimo = estadoSistema._lastNotificacion.get(notifKey) || 0;
+        if (!importante && (Date.now() - ultimo) < MIN_INTERVAL) {
+            logger.debug(`${logPrefix} Notificación duplicada/rápida detectada, ignorando`);
+            return; // Ignorar notificaciones demasiado frecuentes del mismo origen/tipo
+        }
+        estadoSistema._lastNotificacion.set(notifKey, Date.now());
 
-        // 3. Registrar en el historial de notificaciones
+        // 4. Registrar en el historial de notificaciones
         estadoSistema.notificaciones = estadoSistema.notificaciones || [];
         estadoSistema.notificaciones.push({
             ...notificacion,
@@ -1534,12 +1622,12 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
         const envios = destinatarios.map(async destino => {
             try {
                 await enviarMensaje({
-                    destino,
-                    tipo: 'UI.MOSTRAR_NOTIFICACION',
-                    origen: 'sistema-notificaciones',
-                    mensajeId: generarIdUnico(),
-                    timestamp,
-                    datos: notificacion
+                destino,
+                tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                origen: 'sistema-notificaciones',
+                mensajeId: generarIdUnico(),
+                timestamp,
+                datos: notificacion
                 });
                 
                 // Actualizar estado de la notificación
@@ -1634,23 +1722,24 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
         
         // Intentar notificar del error crítico
         try {
-            await enviarMensaje({
-                destino: 'sistema-monitoreo',
-                tipo: 'MONITOREO.ERROR_CRITICO',
-                origen: 'sistema-notificaciones',
-                mensajeId: generarIdUnico(),
-                timestamp: Date.now(),
-                datos: {
-                    codigo: 'ERROR_EN_NOTIFICACION',
-                    mensaje: errorNoManejado,
-                    origen: 'sistema',
-                    contexto: {
-                        errorOriginal: mensaje,
-                        errorManejador: error
-                    },
-                    nivel: 'critico'
-                }
-            });
+                await enviarMensaje({
+                    destino: 'sistema-monitoreo',
+                    tipo: TIPOS_MENSAJE.MONITOREO.EVENTO,
+                    origen: 'sistema-notificaciones',
+                    mensajeId: generarIdUnico(),
+                    timestamp: Date.now(),
+                    datos: {
+                        subtipo: 'ERROR_CRITICO',
+                        codigo: 'ERROR_EN_NOTIFICACION',
+                        mensaje: errorNoManejado,
+                        origen: 'sistema',
+                        contexto: {
+                            errorOriginal: mensaje,
+                            errorManejador: error
+                        },
+                        nivel: 'critico'
+                    }
+                });
         } catch (notifError) {
             // Si falla la notificación, no hay mucho más que podamos hacer
             console.error('Error crítico en el manejador de notificaciones:', notifError);
@@ -1967,7 +2056,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
             notificaciones.push(
                 Promise.resolve(enviarMensaje({
                     destino: 'sistema-monitoreo',
-                    tipo: 'MONITOREO.COMPONENTE_INICIALIZADO',
+                    tipo: TIPOS_MENSAJE.SISTEMA.COMPONENTE_INICIALIZADO,
                     origen: 'sistema-inicializacion',
                     mensajeId: generarIdUnico(),
                     timestamp: Date.now(),
@@ -1996,15 +2085,16 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
                     dependientes 
                 });
                 
-                notificaciones.push(
-                    ...dependientes.map(depId => 
+                        notificaciones.push(
+                            ...dependientes.map(depId => 
                         Promise.resolve(enviarMensaje({
                             destino: depId,
-                            tipo: 'SISTEMA.DEPENDENCIA_DISPONIBLE',
+                            tipo: TIPOS_MENSAJE.SISTEMA.ESTADO,
                             origen: 'sistema-inicializacion',
                             mensajeId: generarIdUnico(),
                             timestamp: Date.now(),
                             datos: {
+                                subtipo: 'DEPENDENCIA_DISPONIBLE',
                                 dependencia: componenteId,
                                 version,
                                 estado: 'disponible',
@@ -2213,11 +2303,12 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION, async (mensaje) => {
         try {
             const notificacionError = {
                 destino: 'sistema-monitoreo',
-                tipo: 'MONITOREO.ERROR_CRITICO',
+                tipo: TIPOS_MENSAJE.MONITOREO.EVENTO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp: timestampError,
                 datos: {
+                    subtipo: 'ERROR_CRITICO_INICIALIZACION',
                     id: errorId,
                     codigo: 'ERROR_CRITICO_INICIALIZACION',
                     mensaje: errorNoManejado,
@@ -2487,11 +2578,12 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION_COMPLETADA, async (men
         try {
             await enviarMensaje({
                 destino: 'sistema-monitoreo',
-                tipo: 'MONITOREO.ERROR_CRITICO',
+                tipo: TIPOS_MENSAJE.MONITOREO.EVENTO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp: Date.now(),
                 datos: {
+                    subtipo: 'ERROR_PROCESANDO_CONFIRMACION',
                     codigo: 'ERROR_PROCESANDO_CONFIRMACION',
                     mensaje: errorNoManejado,
                     origen: 'sistema',
@@ -2539,7 +2631,7 @@ async function manejarInicializacionExitosa({
             // Notificar al sistema de monitoreo
             enviarMensaje({
                 destino: 'sistema-monitoreo',
-                tipo: 'MONITOREO.COMPONENTE_INICIALIZADO',
+                tipo: TIPOS_MENSAJE.SISTEMA.COMPONENTE_INICIALIZADO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp,
@@ -2606,11 +2698,12 @@ async function manejarErrorInicializacion({
             // Notificar al sistema de monitoreo
             enviarMensaje({
                 destino: 'sistema-monitoreo',
-                tipo: 'MONITOREO.ERROR_INICIALIZACION',
+                tipo: TIPOS_MENSAJE.MONITOREO.EVENTO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp,
                 datos: {
+                    subtipo: 'ERROR_INICIALIZACION',
                     componenteId,
                     origen,
                     timestamp,
@@ -2667,7 +2760,7 @@ async function notificarDependencias(componenteId, estado) {
         dependientes.map(dependiente => 
             enviarMensaje({
                 destino: dependiente,
-                tipo: 'SISTEMA.ESTADO_COMPONENTE_ACTUALIZADO',
+                tipo: TIPOS_MENSAJE.SISTEMA.RESPUESTA_ESTADO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp: Date.now(),
@@ -2954,7 +3047,7 @@ async function notificarDependientes(componenteId, datos) {
         dependientes.map(dependiente => 
             Promise.resolve(enviarMensaje({
                 destino: dependiente,
-                tipo: 'SISTEMA.ESTADO_COMPONENTE_ACTUALIZADO',
+                tipo: TIPOS_MENSAJE.SISTEMA.RESPUESTA_ESTADO,
                 origen: 'sistema-inicializacion',
                 mensajeId: generarIdUnico(),
                 timestamp: Date.now(),
