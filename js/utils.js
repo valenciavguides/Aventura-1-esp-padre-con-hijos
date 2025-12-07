@@ -325,9 +325,109 @@ export function generarIdUnico() {
     return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+/**
+ * Normaliza un objeto de parada/tramo a la forma canónica usada por la app.
+ * - No muta el objeto original; devuelve una copia o `null` si es inválido.
+ * - Deriva `id` a partir de `id || parada_id || tramo_id || padreid`.
+ * - Conserva los campos originales y añade `_normalizado: true`.
+ * @param {any} item - Objeto potencial de parada/tramo
+ * @returns {Object|null} Objeto normalizado o null si no es válido
+ */
+export function normalizarParada(item) {
+    try {
+        if (!item || typeof item !== 'object') return null;
+
+        // Derivar id canónico
+        let id = null;
+        if (typeof item.id === 'string' && item.id.trim() !== '') id = item.id.trim();
+        else if (typeof item.parada_id === 'string' && item.parada_id.trim() !== '') id = item.parada_id.trim();
+        else if (typeof item.tramo_id === 'string' && item.tramo_id.trim() !== '') id = item.tramo_id.trim();
+        else if (typeof item.padreid === 'string' && item.padreid.trim() !== '') {
+            // eliminar prefijo 'padre-' si existe
+            id = item.padreid.trim().replace(/^padre-/, '');
+        }
+
+        if (!id) {
+            // No hay id derivable, considerar inválido
+            logger.warn('[UTILS] normalizarParada: elemento sin id derivable, será descartado', item);
+            return null;
+        }
+
+        const tipo = item.tipo || (item.tramo_id ? 'tramo' : (item.parada_id ? 'parada' : undefined));
+
+        // Normalizar coordenadas si se encuentran en campos latitud/longitud
+        const salida = Object.assign({}, item);
+        salida.id = id;
+        if (!salida.tipo && tipo) salida.tipo = tipo;
+
+        if ((salida.latitud !== undefined && salida.longitud !== undefined) &&
+            (!salida.lat || !salida.lng)) {
+            const lat = Number(salida.latitud);
+            const lng = Number(salida.longitud);
+            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+                salida.lat = lat;
+                salida.lng = lng;
+            }
+        }
+
+        salida._normalizado = true;
+        return salida;
+    } catch (error) {
+        logger.error('[UTILS] normalizarParada: error normalizando elemento', error, item);
+        return null;
+    }
+}
+
+/**
+ * Normaliza un array de paradas/tramos. Devuelve array con elementos válidos.
+ * @param {any} arr - Array potencial de paradas
+ * @returns {Array} Array normalizado (vacío si entrada inválida)
+ */
+export function normalizarParadas(arr) {
+    try {
+        if (!Array.isArray(arr)) {
+            logger.warn('[UTILS] normalizarParadas: entrada no es un array');
+            return [];
+        }
+
+        const resultado = [];
+        let descartados = 0;
+        for (let i = 0; i < arr.length; i++) {
+            const n = normalizarParada(arr[i]);
+            if (n) resultado.push(n);
+            else {
+                descartados += 1;
+                logger.debug('[UTILS] normalizarParadas: elemento descartado en índice', i);
+            }
+        }
+
+        // Deduplicar por id (mantener primer encuentro)
+        const vistos = new Set();
+        const dedup = [];
+        for (const el of resultado) {
+            if (vistos.has(el.id)) continue;
+            vistos.add(el.id);
+            dedup.push(el);
+        }
+
+        // Emitir evento con número de elementos descartados para monitoreo (si aplica)
+        try {
+            if (typeof window !== 'undefined' && window && typeof window.dispatchEvent === 'function' && descartados > 0) {
+                window.dispatchEvent(new CustomEvent('vv:paradas:descartadas', { detail: { descartadas: descartados } }));
+            }
+        } catch (err) {
+            logger.debug('[UTILS] normalizarParadas: no se pudo emitir evento de descartes', err);
+        }
+
+        return dedup;
+    } catch (error) {
+        logger.error('[UTILS] normalizarParadas: error procesando array', error);
+        return [];
+    }
+}
+
 // ============================================================
 // CONTROLADORES DE MENSAJERÍA UI
-// Movidos desde app.js (FASE 6)
 // ============================================================
 
 /**
@@ -881,11 +981,6 @@ if (typeof window !== 'undefined') {
 // ============================================
 // ===== CONTROLADOR UI.ACCION_USUARIO =====
 // ============================================
-// Movido desde app.js (FASE 6)
-// Incluye funciones auxiliares:
-// - manejarInteraccionAlerta (~49 líneas)
-// - manejarInteraccionNotificacion (~49 líneas)
-// ============================================
 
 /**
  * Maneja las interacciones del usuario con las alertas.
@@ -983,12 +1078,19 @@ async function manejarInteraccionNotificacion(interaccion) {
  * @param {Object} mensaje - Mensaje de acción de usuario
  * @param {Object} mensaje.datos - Datos de la acción
  * @param {string} mensaje.datos.tipo - Tipo de acción (MODAL_INTERACCION, ALERTA_INTERACCION, NOTIFICACION_INTERACCION)
+ * @param {string} mensaje.datos.accion - Tipo de acción alternativo para compatibilidad (mostrar-imagen, reproducir-video, etc.)
  */
 registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
-    const { tipo } = mensaje.datos || {};
+    const { tipo, accion } = mensaje.datos || {};
+    
+    // Usar tipo primero, luego accion para compatibilidad
+    const tipoAccion = tipo || accion;
+    
+    console.log('🔥 [UTILS][UI.ACCION_USUARIO] MENSAJE RECIBIDO:', mensaje);
+    console.log('🔥 [UTILS][UI.ACCION_USUARIO] TIPO/ACCION:', tipoAccion);
     
     try {
-        switch (tipo) {
+        switch (tipoAccion) {
             case 'MODAL_INTERACCION':
                 await manejarInteraccionModal(mensaje.datos);
                 break;
@@ -998,19 +1100,92 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
             case 'NOTIFICACION_INTERACCION':
                 await manejarInteraccionNotificacion(mensaje.datos);
                 break;
+            case 'mostrar-imagen':
+                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-imagen');
+                await manejarMostrarImagen(mensaje.datos);
+                break;
+            case 'reproducir-video':
+                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO reproducir-video');
+                await manejarReproducirVideo(mensaje.datos);
+                break;
+            case 'backdrop_click':
+                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO backdrop_click');
+                if (typeof window.ocultarHijo4 === 'function') {
+                    window.ocultarHijo4();
+                }
+                break;
             default:
-                logger.warn(`[UI.ACCION_USUARIO] Tipo de acción desconocido: ${tipo}`);
+                logger.warn(`[UI.ACCION_USUARIO] Tipo de acción desconocido: ${tipoAccion}`);
         }
     } catch (error) {
         logger.error(`[UI.ACCION_USUARIO] Error al procesar acción: ${error.message}`, error);
     }
 });
 
+/**
+ * Maneja la acción de mostrar imagen
+ */
+async function manejarMostrarImagen(datos) {
+    const { paradaActual, urlImagen, nombre, sinContenido, mensajeError } = datos || {};
+    
+    console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Datos recibidos:', {
+        paradaActual,
+        urlImagen,
+        nombre,
+        sinContenido,
+        mensajeError
+    });
+    
+    try {
+        if (typeof window.mostrarImagenOverlay === 'function') {
+            if (sinContenido) {
+                console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con mensaje de error');
+                window.mostrarImagenOverlay(null, nombre || `Imagen ${paradaActual}`, mensajeError);
+            } else {
+                console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con imagen:', urlImagen);
+                window.mostrarImagenOverlay(urlImagen, nombre || `Imagen ${paradaActual}`);
+            }
+        } else {
+            console.error('🔥 [UTILS][MOSTRAR_IMAGEN] window.mostrarImagenOverlay no está disponible');
+        }
+    } catch (error) {
+        console.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error:', error);
+    }
+}
+
+/**
+ * Maneja la acción de reproducir video
+ */
+async function manejarReproducirVideo(datos) {
+    const { paradaActual, urlVideo, nombre, sinContenido, mensajeError } = datos || {};
+    
+    console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Datos recibidos:', {
+        paradaActual,
+        urlVideo,
+        nombre,
+        sinContenido,
+        mensajeError
+    });
+    
+    try {
+        if (typeof window.mostrarVideoOverlay === 'function') {
+            if (sinContenido) {
+                console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con mensaje de error');
+                window.mostrarVideoOverlay(null, nombre || `Video ${paradaActual}`, mensajeError);
+            } else {
+                console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con video:', urlVideo);
+                window.mostrarVideoOverlay(urlVideo, nombre || `Video ${paradaActual}`);
+            }
+        } else {
+            console.error('🔥 [UTILS][REPRODUCIR_VIDEO] window.mostrarVideoOverlay no está disponible');
+        }
+    } catch (error) {
+        console.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error:', error);
+    }
+}
+
 // ============================================
 // ===== CONTROLADOR UI.ALERTA =====
-// ============================================
-// Movido desde app.js (FASE 6, ~277 líneas)
-// Gestiona alertas del sistema con validación completa
 // ============================================
 
 /**
@@ -1307,9 +1482,6 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
 // ============================================
 // ===== CONTROLADOR UI.CLOSE_MENUS =====
 // ============================================
-// Movido desde app.js (FASE 6, ~152 líneas)
-// Gestiona cierre de menús de la interfaz
-// ============================================
 
 /**
  * Maneja las solicitudes de cierre de menús en la interfaz de usuario.
@@ -1334,11 +1506,10 @@ registrarControlador(TIPOS_MENSAJE.UI.CLOSE_MENUS, async (mensaje) => {
     } catch (error) {
         logger.error(`${logPrefix} Error procesando CLOSE_MENUS:`, error);
     }
-});// ============================================
-// ===== CONTROLADOR UI.ACTUALIZACION =====
+});
+
 // ============================================
-// Movido desde app.js (FASE 6, ~277 líneas)
-// Gestiona actualizaciones dinámicas de la interfaz
+// ===== CONTROLADOR UI.ACTUALIZACION =====
 // ============================================
 
 /**
@@ -1636,21 +1807,6 @@ registrarControlador(TIPOS_MENSAJE.UI.ACTUALIZACION, async (mensaje) => {
 });
 
 /**
- * Controlador para el mensaje DATOS.RESPUESTA_PARADA.
- * Resuelve promesas pendientes cuando se recibe respuesta de una solicitud de datos de parada.
- * Patrón request-response simple.
- */
-registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADA, (mensaje) => {
-    const { respuestaA } = mensaje.datos || {};
-    if (respuestaA && promesasPendientes.has(respuestaA)) {
-        const { resolve, timeout } = promesasPendientes.get(respuestaA);
-        clearTimeout(timeout);
-        promesasPendientes.delete(respuestaA);
-        resolve(mensaje);
-    }
-});
-
-/**
  * Controlador para el mensaje DATOS.RESPUESTA_PARADAS.
  * Maneja las respuestas de datos de múltiples paradas (PUSH NOTIFICATION).
  * Este es un controlador de PUSH (no request/response) que procesa actualizaciones asíncronas.
@@ -1856,15 +2012,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
     }
 });
 
-// ============================================================
-// NOTA: Los siguientes controladores fueron movidos a hijo2 (Av1-botones-coordenadas.html):
-// - DATOS.SOLICITAR_PARADAS (búsqueda con filtros avanzados y Haversine)
-// - DATOS.SOLICITAR_PARADA (búsqueda por ID con metadata opcional)
-// - DATOS.COORDENADAS_PARADAS (controladores duplicados eliminados)
-//
-// hijo2 es ahora el experto centralizado en coordenadas y datos de paradas/tramos.
-// Total eliminado: ≈660 líneas de controladores duplicados
-// ============================================================
+// Controlador DATOS.SOLICITAR_PARADAS en hijo2 (Av1-botones-coordenadas.html)
 
 /**
  * Calcula un multiplicador de timeout basado en el tipo de conexión de red.
