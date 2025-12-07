@@ -12,7 +12,7 @@ import {
 import { CONFIG, MAPA_TIPOS_HIJO } from './config.js';
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import { validarCoordenadas } from './validacion.js';
-import { generarIdUnico, manejarError, ajustarTimeoutPorConexion } from './utils.js';
+import { generarIdUnico, manejarError, ajustarTimeoutPorConexion, normalizarParadas } from './utils.js';
 import logger from './logger.js';
 
 /**
@@ -57,8 +57,102 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-// Detección de dispositivo móvil (global para el módulo)
-const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+/**
+ * Calcula la tolerancia GPS para un elemento (parada o tramo)
+ * Paradas: 50m fijos
+ * Tramos: distancia máxima entre waypoints consecutivos + 20m de buffer
+ * @param {Object} elemento - Elemento actual (parada o tramo)
+ * @returns {number} Tolerancia en metros
+ */
+function calcularToleranciaGPS(elemento) {
+    if (!elemento) {
+        logger.warn('⚠️ calcularToleranciaGPS: elemento no proporcionado, usando tolerancia por defecto 50m');
+        return 50;
+    }
+
+    // Para paradas: tolerancia fija de 50m
+    if (elemento.tipo === 'parada' || !elemento.waypoints || elemento.waypoints.length === 0) {
+        logger.debug(`📏 Tolerancia GPS para parada "${elemento.id}": 50m (fija)`);
+        return 50;
+    }
+
+    // Para tramos: calcular distancia máxima entre waypoints consecutivos + 20m buffer
+    let distanciaMaxima = 0;
+    for (let i = 0; i < elemento.waypoints.length - 1; i++) {
+        const wp1 = elemento.waypoints[i];
+        const wp2 = elemento.waypoints[i + 1];
+        
+        const distancia = calcularDistancia(
+            wp1.latitud,
+            wp1.longitud,
+            wp2.latitud,
+            wp2.longitud
+        );
+        
+        if (distancia > distanciaMaxima) {
+            distanciaMaxima = distancia;
+        }
+    }
+
+    const tolerancia = Math.ceil(distanciaMaxima + 20);
+    logger.debug(`📏 Tolerancia GPS para tramo "${elemento.id}": ${tolerancia}m (max waypoint: ${Math.ceil(distanciaMaxima)}m + 20m buffer)`);
+    
+    return tolerancia;
+}
+
+/**
+ * Verifica si el usuario ha llegado al destino (parada o tramo)
+ * Usa tolerancia dinámica según el tipo de elemento
+ * @param {Object} posicionUsuario - Posición del usuario {lat, lng}
+ * @param {Object} elementoActual - Elemento de destino (parada o tramo)
+ * @returns {boolean} true si el usuario está dentro de la tolerancia
+ */
+function verificarLlegadaADestino(posicionUsuario, elementoActual) {
+    if (!posicionUsuario || !elementoActual) {
+        logger.warn('⚠️ verificarLlegadaADestino: posicionUsuario o elementoActual no proporcionados');
+        return false;
+    }
+
+    const tolerancia = calcularToleranciaGPS(elementoActual);
+    
+    // Determinar coordenadas del destino
+    let coordenadasDestino;
+    if (elementoActual.tipo === 'parada') {
+        coordenadasDestino = {
+            lat: elementoActual.latitud,
+            lng: elementoActual.longitud
+        };
+    } else if (elementoActual.waypoints && elementoActual.waypoints.length > 0) {
+        // Para tramos, usar el último waypoint como destino
+        const ultimoWaypoint = elementoActual.waypoints[elementoActual.waypoints.length - 1];
+        coordenadasDestino = {
+            lat: ultimoWaypoint.latitud,
+            lng: ultimoWaypoint.longitud
+        };
+    } else {
+        logger.error('❌ verificarLlegadaADestino: elemento sin coordenadas válidas', elementoActual);
+        return false;
+    }
+
+    const distancia = calcularDistancia(
+        posicionUsuario.lat,
+        posicionUsuario.lng,
+        coordenadasDestino.lat,
+        coordenadasDestino.lng
+    );
+
+    const llegada = distancia <= tolerancia;
+    
+    if (llegada) {
+        logger.info(`🎯 Llegada detectada a "${elementoActual.id}" (${elementoActual.tipo}): ${Math.ceil(distancia)}m ≤ ${tolerancia}m`);
+    } else {
+        logger.debug(`🚶 Usuario a ${Math.ceil(distancia)}m de "${elementoActual.id}" (tolerancia: ${tolerancia}m)`);
+    }
+
+    return llegada;
+}
+
+import { esMovil } from './device-detection.js';
 
 // Estado del módulo
 let marcadoresParadas = new Map();
@@ -77,7 +171,11 @@ let arrayParadasLocal = [];
 // Flag para evitar solicitudes duplicadas de datos de paradas
 let datosParadasSolicitados = false;
 
-// Estado del mapa
+// Estado del mapa (ÚNICA FUENTE DE VERDAD para GPS)
+// ARQUITECTURA: funciones-mapa.js mantiene estadoMapa como estado local.
+// El PADRE (codigo-padre.html) mantiene window.estadoPadre.gps como estado global.
+// SINCRONIZACIÓN: Cuando funciones-mapa.js actualiza estadoMapa, debe sincronizar
+// con window.estadoPadre.gps si está disponible (cuando se ejecuta en contexto padre).
 const estadoMapa = {
     modo: MODOS.CASA,
     posicionUsuario: null,
@@ -85,6 +183,8 @@ const estadoMapa = {
     gpsPermisos: null, // null = desconocido, true = concedidos, false = denegados
     gpsPrecision: null, // Precisión actual del GPS en metros
     gpsError: null, // Último error GPS
+    watchId: null, // ID del watcher de navigator.geolocation
+    ultimaUbicacion: null, // { lat, lng } - última ubicación GPS recibida
     siguiendoRuta: false,
     paradaActual: null,
     tramoActual: null,
@@ -97,15 +197,27 @@ const estadoMapa = {
     datosRecopilados: {} // { coordenadas, audio, reto }
 };
 
-// Variables para GPS real (navigator.geolocation)
+// Variable de control para navigator.geolocation.watchPosition
+// (necesaria para clearWatch pero el estado real está en estadoMapa)
 let gpsWatchId = null;
-let gpsEstadoReal = {
-    activo: false,
-    permisos: null, // null = desconocido, true = concedidos, false = denegados
-    precision: null,
-    error: null,
-    ultimaUbicacion: null
-};
+
+/**
+ * Sincroniza el estado GPS local (estadoMapa) con el estado global del padre
+ * ARQUITECTURA: El padre es el orquestador - mantiene window.estadoPadre.gps
+ * Esta función asegura que ambos estados estén sincronizados
+ * @private
+ */
+function sincronizarEstadoGPSConPadre() {
+    if (typeof window !== 'undefined' && window.estadoPadre && window.estadoPadre.gps) {
+        window.estadoPadre.gps.activo = estadoMapa.gpsActivo;
+        window.estadoPadre.gps.permisos = estadoMapa.gpsPermisos;
+        window.estadoPadre.gps.precision = estadoMapa.gpsPrecision;
+        window.estadoPadre.gps.error = estadoMapa.gpsError;
+        window.estadoPadre.gps.watchId = estadoMapa.watchId || gpsWatchId;
+        window.estadoPadre.gps.posicionUsuario = estadoMapa.posicionUsuario;
+        window.estadoPadre.gps.ultimaUbicacion = estadoMapa.ultimaUbicacion;
+    }
+}
 
 // Implementar limpieza automática cuando la página está oculta
 let ultimaActividad = Date.now();
@@ -212,7 +324,7 @@ export function inicializarServicioMapa(mapaInstance, opciones = {}) {
     if (mapaInstance) {
         _mapaInstance = mapaInstance;
         _mapaOpciones = { ...opciones };
-        arrayParadasLocal = window.AVENTURA_PARADAS || [];
+        arrayParadasLocal = normalizarParadas(window.AVENTURA_PARADAS || []);
         logger.info('Servicio de mapa inicializado correctamente (instancia recibida)');
         return true;
     }
@@ -254,7 +366,7 @@ export function inicializarServicioMapa(mapaInstance, opciones = {}) {
 
             _mapaInstance = mapa;
             _mapaOpciones = { ...opciones };
-            arrayParadasLocal = window.AVENTURA_PARADAS || [];
+            arrayParadasLocal = normalizarParadas(window.AVENTURA_PARADAS || []);
 
             logger.info('Servicio de mapa inicializado correctamente (instancia creada internamente)');
             return true;
@@ -357,21 +469,49 @@ export async function setMapView(center, zoom, opciones = {}) {
             return false;
         }
         
-        if (!validarCoordenadas(center)) return false;
-        
-        let centerPoint;
-        if (Array.isArray(center)) {
-            centerPoint = center;
-        } else if (center && typeof center === 'object' && 'lat' in center && 'lng' in center) {
-            centerPoint = [center.lat, center.lng];
-        } else {
-            throw new Error('Centro inválido');
-        }
-        
-        await ejecutarOperacionMapa(mapa => {
-            mapa.setView(centerPoint, zoom, opciones);
-            return true;
-        });
+            // Normalizar entrada: aceptar [lat, lng] o { lat, lng | lon }
+            let coordObj = null;
+            if (Array.isArray(center) && center.length >= 2) {
+                coordObj = { lat: Number(center[0]), lng: Number(center[1]) };
+            } else if (center && typeof center === 'object') {
+                // Aceptar alias 'lon' también
+                const lat = center.lat !== undefined ? Number(center.lat) : undefined;
+                const lng = center.lng !== undefined ? Number(center.lng) : (center.lon !== undefined ? Number(center.lon) : undefined);
+                if (lat !== undefined && lng !== undefined) {
+                    coordObj = { lat, lng };
+                }
+            }
+
+            if (!coordObj) {
+                logger.warn('setMapView: centro inválido recibido', { center });
+                return false;
+            }
+
+            if (!validarCoordenadas(coordObj)) {
+                logger.warn('setMapView: coordenadas inválidas tras normalizar', coordObj);
+                return false;
+            }
+
+            const centerPoint = [coordObj.lat, coordObj.lng];
+
+            // Determinar zoom válido: preferir parámetro, luego opciones.zoom, luego estado del mapa
+            let finalZoom = zoom;
+            if (finalZoom === undefined || finalZoom === null || !isFinite(finalZoom)) {
+                finalZoom = opciones && Number(opciones.zoom) ? Number(opciones.zoom) : undefined;
+            }
+            if (finalZoom === undefined || finalZoom === null || !isFinite(finalZoom)) {
+                try { finalZoom = _mapaInstance ? _mapaInstance.getZoom() : finalZoom; } catch (e) { /* ignore */ }
+            }
+
+            // Si aún no tenemos un zoom válido, dejar que setView lo gestione (o usar 15 como fallback)
+            if (finalZoom === undefined || finalZoom === null || !isFinite(finalZoom)) {
+                finalZoom = opciones && opciones.zoom ? Number(opciones.zoom) : 15;
+            }
+
+            await ejecutarOperacionMapa(mapa => {
+                mapa.setView(centerPoint, finalZoom, opciones);
+                return true;
+            });
         
         return true;
     } catch (error) {
@@ -651,7 +791,7 @@ export function limpiarRecursos() {
 export async function mostrarTodasLasParadas(paradasExternas) {
     try {
         if (paradasExternas) {
-            arrayParadasLocal = paradasExternas;
+            arrayParadasLocal = normalizarParadas(paradasExternas);
         }
 
         // Si el mapa no está inicializado, esperar a que se inicialice
@@ -764,7 +904,7 @@ function dibujarTramo(tramo, destacado = false) {
 
         const polyline = L.polyline(puntos, {
             color: destacado ? '#ff4500' : '#3388ff',
-            weight: destacado ? 6 : 4,
+            weight: destacado ? 7 : 5,
             opacity: destacado ? 0.9 : 0.7
         }).addTo(_mapaInstance);
 
@@ -808,7 +948,7 @@ export function dibujarRutaConMarcadores(coordenadasHijo2, opciones = {}) {
         if (dibujarRuta) {
             const polyline = L.polyline(puntos, {
                 color: '#0077ff',
-                weight: 6,
+                weight: 7,
                 opacity: 0.8
             }).addTo(_mapaInstance);
 
@@ -820,6 +960,16 @@ export function dibujarRutaConMarcadores(coordenadasHijo2, opciones = {}) {
 
         // Crear iconos personalizados usando colores en lugar de archivos
         const crearIconoColoreado = (color) => {
+            // Para marcadores verdes (paradas), usar emoji 🎯
+            if (color === '#4CAF50') {
+                return L.divIcon({
+                    className: 'custom-marker-emoji',
+                    html: '<div style="font-size:25px;line-height:25px;">🎯</div>',
+                    iconSize: [25, 25],
+                    iconAnchor: [12, 12]
+                });
+            }
+            // Para otros colores, usar círculos coloreados
             return L.divIcon({
                 className: 'custom-marker',
                 html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
@@ -841,12 +991,12 @@ export function dibujarRutaConMarcadores(coordenadasHijo2, opciones = {}) {
             // Si es el punto final, usar icono de bandera
             if (isLast) {
                 markerTitle = coord.nombre || 'Fin de tramo';
-                // Usar emoji de bandera cuadriculada (🏁) como divIcon para evitar dependencia de archivos
+                // Usar emoji 🎯 como divIcon para evitar dependencia de archivos
                 const flagDivIcon = L.divIcon({
                     className: 'finish-flag-icon',
-                    html: '<div style="font-size:28px;line-height:28px;">🏁</div>',
-                    iconSize: [28, 28],
-                    iconAnchor: [14, 28]
+                    html: '<div style="font-size:25px;line-height:25px;">🎯</div>',
+                    iconSize: [25, 25],
+                    iconAnchor: [12, 12]
                 });
                 const markerFin = L.marker([coord.lat, coord.lng], { icon: flagDivIcon, title: markerTitle }).addTo(_mapaInstance);
                 markerFin.setZIndexOffset(700);
@@ -945,7 +1095,7 @@ function manejarMostrarRuta(mensaje) {
 
             const polyline = L.polyline([origen, destino], {
                 color: color || '#0077ff',
-                weight: grosor || 6,
+                weight: grosor || 7,
                 opacity: 0.8
             }).addTo(_mapaInstance);
 
@@ -1010,7 +1160,11 @@ function manejarEstablecerDestino(mensaje) {
         
         // Si se solicita centrar el mapa en el destino
         if (opciones?.centrar) {
-            _mapaInstance.setView([destino.lat, destino.lng], opciones.zoom || _mapaInstance.getZoom());
+            // Usar la API centralizada para setView (no llamar directamente a _mapaInstance)
+            ejecutarOperacionMapa(mapa => {
+                mapa.setView([destino.lat, destino.lng], opciones.zoom || mapa.getZoom());
+                return true;
+            }).catch(err => logger.warn('[funciones-mapa] Error centrando destino (async):', err));
         }
         
         console.info(`Destino establecido en [${destino.lat}, ${destino.lng}]`);
@@ -1085,7 +1239,10 @@ function manejarActualizarPosicion(mensaje) {
         
         // Si se solicita seguir al usuario, centrar el mapa
         if (estadoMapa.siguiendoRuta && mensaje.datos.centrar !== false) {
-            _mapaInstance.setView([posicion.lat, posicion.lng], _mapaInstance.getZoom());
+            ejecutarOperacionMapa(mapa => {
+                mapa.setView([posicion.lat, posicion.lng], mapa.getZoom());
+                return true;
+            }).catch(err => logger.warn('[funciones-mapa] Error centrando posición de usuario (async):', err));
         }
         
         console.info(`Posición de usuario actualizada a [${posicion.lat}, ${posicion.lng}]`);
@@ -1384,6 +1541,29 @@ async function procesarRespuestaConsulta(tipo, datos) {
             case 'coordenadas':
                 estadoMapa.datosRecopilados.coordenadas = datos;
                 estadoMapa.esperandoCoordenadas = false;
+                
+                // ✅ DISTRIBUIR INFORMACIÓN COMPLETA a hijo2 para que botones funcionen
+                if (datos && datos.imagen !== undefined && datos.video !== undefined) {
+                    try {
+                        await enviarMensaje({
+                            destino: 'hijo2',
+                            tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS,
+                            origen: 'funciones-mapa',
+                            datos: {
+                                paradas: [datos], // Enviar como array para compatibilidad
+                                paradaActual: datos.paradaId || datos.id,
+                                timestamp: Date.now()
+                            }
+                        });
+                        logger.info(`${logPrefix} Información completa distribuida a hijo2:`, {
+                            paradaId: datos.paradaId || datos.id,
+                            tieneImagen: !!datos.imagen,
+                            tieneVideo: !!datos.video
+                        });
+                    } catch (error) {
+                        logger.error(`${logPrefix} Error distribuyendo datos a hijo2:`, error);
+                    }
+                }
                 break;
             case 'audio':
                 estadoMapa.datosRecopilados.audio = datos;
@@ -1421,27 +1601,58 @@ async function completarCambioParada() {
         
         // Actualizar marcador si hay coordenadas
         if (coordenadas && coordenadas.lat && coordenadas.lng) {
+            // Si el mapa no está inicializado, esperar a que se inicialice
+            if (!_mapaInstance) {
+                logger.info(`${logPrefix} Mapa no inicializado, esperando inicialización...`);
+
+                // Esperar hasta 5 segundos por la inicialización del mapa
+                const maxWaitTime = 5000;
+                const checkInterval = 100;
+                let waited = 0;
+
+                while (!_mapaInstance && waited < maxWaitTime) {
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                    waited += checkInterval;
+                }
+
+                // Si aún no está inicializado después de esperar
+                if (!_mapaInstance) {
+                    logger.warn(`${logPrefix} Mapa no se inicializó después de esperar, no se puede mostrar marcador ni hacer zoom para parada: ${paradaId}`);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Mapa inicializado, procediendo con marcador y zoom`);
+            }
+
             if (marcadorParadaActual) {
-                _mapaInstance.removeLayer(marcadorParadaActual);
+                ejecutarOperacionMapa(mapa => {
+                    try { mapa.removeLayer(marcadorParadaActual); } catch (e) { /* ignore */ }
+                    return true;
+                }).catch(err => logger.warn('[funciones-mapa] Error removiendo marcadorParadaActual:', err));
             }
             
-            marcadorParadaActual = L.marker([coordenadas.lat, coordenadas.lng], {
-                icon: L.icon({
-                    iconUrl: 'current-stop-pin.png',
-                    iconSize: [35, 51],
-                    iconAnchor: [17, 51],
-                    popupAnchor: [0, -51]
-                }),
-                title: coordenadas.nombre || `Parada ${paradaId}`
-            }).addTo(_mapaInstance);
-            
-            // Agregar popup con información
-            const infoPopup = `<b>${coordenadas.nombre || `Parada ${paradaId}`}</b><br>ID: ${paradaId}`;
-            marcadorParadaActual.bindPopup(infoPopup).openPopup();
-            
-            logger.info(`${logPrefix} Popup creado para parada: ${paradaId}`);
-            
-            _mapaInstance.setView([coordenadas.lat, coordenadas.lng], 16);
+            // Crear marcador y agregarlo al mapa mediante la API centralizada
+            await ejecutarOperacionMapa(mapa => {
+                marcadorParadaActual = L.marker([coordenadas.lat, coordenadas.lng], {
+                    icon: L.icon({
+                        iconUrl: 'current-stop-pin.png',
+                        iconSize: [35, 51],
+                        iconAnchor: [17, 51],
+                        popupAnchor: [0, -51]
+                    }),
+                    title: coordenadas.nombre || `Parada ${paradaId}`
+                }).addTo(mapa);
+
+                // Agregar popup con información
+                const infoPopup = `<b>${coordenadas.nombre || `Parada ${paradaId}`}</b><br>ID: ${paradaId}`;
+                try { marcadorParadaActual.bindPopup(infoPopup).openPopup(); } catch (e) { /* ignore */ }
+
+                logger.info(`${logPrefix} Popup creado para parada: ${paradaId}`);
+
+                // Centrar mapa en la parada
+                mapa.setView([coordenadas.lat, coordenadas.lng], 17);
+                return true;
+            }).catch(err => logger.warn(`${logPrefix} Error al agregar marcador/centrar parada:`, err));
         }
         
         // Aquí se podría integrar reproducción de audio y mostrar reto
@@ -1598,9 +1809,12 @@ async function manejarIniciarNavegacion(mensaje) {
         // Si hay coordenadas de inicio, centrar mapa
         if (paradaInicial && arrayParadasLocal.length > 0) {
             const parada = arrayParadasLocal.find(p => p.id === paradaInicial || p.paradaId === paradaInicial || p.padreid === paradaInicial);
-            if (parada) {
-                _mapaInstance.setView([parada.lat, parada.lng], opciones.zoom || 15);
-            }
+                if (parada) {
+                    await ejecutarOperacionMapa(mapa => {
+                        mapa.setView([parada.lat, parada.lng], opciones.zoom || 15);
+                        return true;
+                    }).catch(err => logger.warn('[funciones-mapa] Error centrando parada inicial (async):', err));
+                }
         }
 
         // Notificar que la navegación está iniciando
@@ -1920,7 +2134,12 @@ async function manejarUbicacionGPSActualizada(mensaje) {
             return { exito: false, error: 'Datos inválidos' };
         }
 
-        const { lat, lng, precision, timestamp } = mensaje.datos;
+        // Normalizar nombres: algunos emisores usan `accuracy`, otros `precision`
+        const raw = mensaje.datos || {};
+        const lat = raw.lat ?? raw.latitude ?? raw.coords?.latitude;
+        const lng = raw.lng ?? raw.longitude ?? raw.coords?.longitude;
+        const precision = raw.precision ?? raw.accuracy ?? raw.coords?.accuracy;
+        const timestamp = raw.timestamp ?? raw.coords?.timestamp ?? Date.now();
 
         if (!validarCoordenadas(lat, lng)) {
             logger.warn(`${logPrefix} Coordenadas GPS inválidas:`, { lat, lng });
@@ -1934,7 +2153,7 @@ async function manejarUbicacionGPSActualizada(mensaje) {
             timestamp: timestamp ? new Date(timestamp).toLocaleTimeString() : 'N/A'
         });
 
-        // Actualizar estado del mapa
+        // Actualizar estado del mapa (usar nombres consistentes)
         estadoMapa.posicionUsuario = { lat, lng, precision, timestamp };
         estadoMapa.timestamp = Date.now();
 
@@ -1943,7 +2162,9 @@ async function manejarUbicacionGPSActualizada(mensaje) {
 
         // Si estamos en modo aventura, procesar lógica de detección secuencial
         if (estadoMapa.modo === MODOS.AVENTURA) {
-            await procesarPosicionGPSParaAventura({ lat, lng, accuracy: precision });
+            // procesarPosicionGPSParaAventura acepta tanto objetos normalizados
+            // como el objeto Position del API de Geolocation.
+            await procesarPosicionGPSParaAventura({ lat, lng, accuracy: precision, timestamp });
         }
 
         return { exito: true };
@@ -1978,11 +2199,14 @@ async function manejarEstadoGPSActualizado(mensaje) {
             error: error || 'ninguno'
         });
 
-        // Actualizar estado del mapa
+        // Actualizar estado del mapa (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = activo;
         estadoMapa.gpsPermisos = permisos;
         estadoMapa.gpsPrecision = precision;
         estadoMapa.gpsError = error;
+        
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
 
         // Si GPS se desactiva, remover marcador de usuario
         if (!activo) {
@@ -2030,9 +2254,12 @@ async function manejarErrorGPSMensaje(mensaje) {
             contexto: contexto || 'desconocido'
         });
 
-        // Actualizar estado del mapa
+        // Actualizar estado del mapa (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsError = errorMensaje;
         estadoMapa.gpsActivo = false; // Asumir GPS inactivo en caso de error
+        
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
 
         // Remover marcador de usuario en caso de error
         if (_mapaInstance && marcadorUsuario) {
@@ -2085,13 +2312,14 @@ export async function diagnosticarGPS() {
         },
         gpsEstado: {
             activo: gpsWatchId !== null,
-            watchId: gpsWatchId,
+            watchId: estadoMapa.watchId || gpsWatchId,
             posicionUsuario: estadoMapa.posicionUsuario,
             gpsActivo: estadoMapa.gpsActivo,
             gpsPermisos: estadoMapa.gpsPermisos,
-            gpsError: estadoMapa.gpsError
-        },
-        gpsEstadoReal: gpsEstadoReal
+            gpsError: estadoMapa.gpsError,
+            gpsPrecision: estadoMapa.gpsPrecision,
+            ultimaUbicacion: estadoMapa.ultimaUbicacion
+        }
     };
 
     // Verificar permisos actuales
@@ -2205,11 +2433,14 @@ export async function manejarGPSActivar(mensaje) {
         if (window.parent === window) {
             logger.info(`${logPrefix} Activando GPS directamente (ya en contexto padre)`);
 
-            // Actualizar estado GPS directamente
+            // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
             estadoMapa.gpsActivo = true;
             estadoMapa.gpsPermisos = true;
             estadoMapa.gpsError = null;
-            gpsEstadoReal.activo = true;
+            estadoMapa.watchId = gpsWatchId;
+            
+            // Sincronizar con el estado global del padre
+            sincronizarEstadoGPSConPadre();
 
             logger.info(`${logPrefix} GPS activado directamente`);
             return { exito: true };
@@ -2239,10 +2470,13 @@ export async function manejarGPSActivar(mensaje) {
     } catch (error) {
         logger.error(`${logPrefix} Error en activación GPS: ${error.message}`, error);
 
-        // Actualizar estado local
+        // Actualizar estado local (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsError = error.message;
         estadoMapa.gpsActivo = false;
-        gpsEstadoReal.activo = false;
+        estadoMapa.watchId = null;
+        
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
 
         return { exito: false, error: error.message };
     }
@@ -2261,13 +2495,17 @@ export async function manejarGPSDesactivar(mensaje) {
         if (window.parent === window) {
             logger.info(`${logPrefix} Desactivando GPS directamente (ya en contexto padre)`);
 
-            // Actualizar estado GPS directamente
+            // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
             estadoMapa.gpsActivo = false;
             estadoMapa.gpsPermisos = null;
             estadoMapa.gpsPrecision = null;
             estadoMapa.gpsError = null;
             estadoMapa.posicionUsuario = null;
-            gpsEstadoReal.activo = false;
+            estadoMapa.watchId = null;
+            estadoMapa.ultimaUbicacion = null;
+            
+            // Sincronizar con el estado global del padre
+            sincronizarEstadoGPSConPadre();
 
             // Limpiar marcador de usuario si existe
             if (_mapaInstance && marcadorUsuario) {
@@ -2841,6 +3079,18 @@ async function manejarCambioModoMapa(mensaje) {
         
         logger.info(`${logPrefix} DEBUG: Cambio de modo ${modoAnterior} -> ${modo}, limpiado=${limpiado}`);
         
+        // Restaurar la vista del mapa al centro/zoom por defecto (CONFIG.MAPA)
+        try {
+            const defaultCenter = (CONFIG && CONFIG.MAPA && CONFIG.MAPA.CENTER) ? CONFIG.MAPA.CENTER : [39.4699, -0.3763];
+            const defaultZoom = (CONFIG && CONFIG.MAPA && typeof CONFIG.MAPA.ZOOM === 'number') ? CONFIG.MAPA.ZOOM : 13;
+            logger.debug(`${logPrefix} Restaurando vista por defecto: center=${JSON.stringify(defaultCenter)}, zoom=${defaultZoom}`);
+            // Usar setMapView para garantizar normalización/validación
+            await setMapView(defaultCenter, defaultZoom, { animate: true, duration: 0.6 });
+            logger.info(`${logPrefix} Vista del mapa restaurada al zoom por defecto: ${defaultZoom}`);
+        } catch (e) {
+            logger.warn(`${logPrefix} No se pudo restaurar la vista del mapa al valor por defecto:`, e);
+        }
+
         // Aquí se podrían agregar cambios específicos de estilos/interacción del mapa
         // Por ahora, delegamos a limpiarPorEstado que ya maneja la lógica básica
 
@@ -2903,15 +3153,16 @@ async function manejarRespuestaDatosParadas(mensaje) {
             return;
         }
         
-        // Actualizar array local con los datos del padre
-        arrayParadasLocal = paradas;
+        // Actualizar array local con los datos del padre (normalizar defensivamente)
+        const antes = Array.isArray(paradas) ? paradas.length : 0;
+        arrayParadasLocal = normalizarParadas(paradas);
         datosParadasSolicitados = false; // Reset flag para permitir futuras solicitudes si es necesario
-        
-        logger.info(`${logPrefix} Datos de paradas actualizados: ${paradas.length} paradas cargadas`);
-        
+
+        logger.info(`${logPrefix} Datos de paradas actualizados: ${arrayParadasLocal.length} paradas cargadas (recibidas: ${antes})`);
+
         // Opcional: Mostrar paradas en el mapa si está inicializado
         if (_mapaInstance) {
-            await mostrarTodasLasParadas(paradas);
+            await mostrarTodasLasParadas(arrayParadasLocal);
         }
         
     } catch (error) {
@@ -3326,11 +3577,14 @@ async function iniciarGPSAventura() {
     try {
         logger.info(`${logPrefix} Activando GPS centralizado del padre para modo aventura`);
 
-        // Actualizar estado GPS directamente (ya estamos en el contexto del padre)
+        // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = true;
         estadoMapa.gpsPermisos = true;
         estadoMapa.gpsError = null;
-        gpsEstadoReal.activo = true;
+        estadoMapa.watchId = gpsWatchId;
+        
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
 
         logger.info(`${logPrefix} GPS activado para modo aventura`);
 
@@ -3348,11 +3602,15 @@ function detenerGPS() {
     try {
         logger.info(`${logPrefix} Desactivando GPS centralizado del padre`);
 
-        // Actualizar estado GPS directamente (ya estamos en el contexto del padre)
+        // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = false;
-        estadoMapa.gpsPermisos = false;
+        estadoMapa.gpsPermisos = null;
         estadoMapa.gpsError = null;
-        gpsEstadoReal.activo = false;
+        estadoMapa.watchId = null;
+        estadoMapa.ultimaUbicacion = null;
+        
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
 
         logger.info(`${logPrefix} GPS desactivado`);
 
@@ -3368,16 +3626,34 @@ async function procesarPosicionGPSParaAventura(posicion) {
     const logPrefix = '[funciones-mapa][GPS-POSICION]';
 
     try {
-        const { lat: latitude, lng: longitude, accuracy } = posicion;
+        // Aceptar dos tipos de entrada:
+        //  - objeto normalizado: { lat, lng, accuracy }
+        //  - objeto Position del API Geolocation: { coords: { latitude, longitude, accuracy }, timestamp }
+        let latitude, longitude, accuracy, timestamp;
 
-        logger.debug(`${logPrefix} Posición GPS: lat=${latitude}, lng=${longitude}, accuracy=${accuracy}m`);
+        if (posicion && posicion.coords) {
+            latitude = posicion.coords.latitude;
+            longitude = posicion.coords.longitude;
+            accuracy = posicion.coords.accuracy;
+            timestamp = posicion.timestamp || Date.now();
+        } else {
+            latitude = posicion?.lat ?? posicion?.latitude;
+            longitude = posicion?.lng ?? posicion?.longitude;
+            accuracy = posicion?.accuracy ?? posicion?.precision ?? null;
+            timestamp = posicion?.timestamp ?? Date.now();
+        }
 
-        // Actualizar estado
-        gpsEstadoReal.precision = accuracy;
-        gpsEstadoReal.ultimaUbicacion = { lat: latitude, lng: longitude };
+        logger.debug(`${logPrefix} Posición GPS: lat=${latitude}, lng=${longitude}, accuracy=${accuracy ?? 'N/A'}m`);
 
-        // Solo procesar si precisión es buena (< 50m)
-        if (accuracy > 50) {
+        // Actualizar estado (estadoMapa es la única fuente de verdad)
+        estadoMapa.gpsPrecision = accuracy;
+        estadoMapa.ultimaUbicacion = { lat: latitude, lng: longitude };
+
+        // Sincronizar con el estado global del padre
+        sincronizarEstadoGPSConPadre();
+
+        // Solo procesar si precisión disponible y es buena (< 50m)
+        if (typeof accuracy === 'number' && accuracy > 50) {
             logger.debug(`${logPrefix} Precisión insuficiente: ${accuracy}m > 50m`);
             return;
         }
@@ -3405,15 +3681,87 @@ async function procesarPosicionGPSParaAventura(posicion) {
             return;
         }
 
-        // Calcular distancia
+        // Calcular distancia a siguiente parada
         const distancia = calcularDistancia(latitude, longitude,
             siguienteParada.coordenadas.lat, siguienteParada.coordenadas.lng);
 
-        logger.debug(`${logPrefix} Distancia a ${siguienteParada.padreid}: ${distancia}m`);
+        // Calcular tolerancia GPS dinámica para el elemento actual
+        const toleranciaGPS = calcularToleranciaGPS(siguienteParada);
 
-        // Si está dentro de 20m, activar la parada
-        if (distancia <= 20) {
-            logger.info(`${logPrefix} Activando parada secuencial: ${siguienteParada.padreid}`);
+        logger.debug(`${logPrefix} Distancia a ${siguienteParada.padreid}: ${Math.ceil(distancia)}m (tolerancia: ${toleranciaGPS}m)`);
+
+        // 📤 Enviar actualización de distancia a hijo2 (botones) periódicamente
+        // CRÍTICO: Incluir toleranciaGPS para que hijo2 ajuste lógica de botones dinámicamente
+        try {
+            await enviarMensaje({
+                destino: 'hijo2',
+                tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
+                origen: 'funciones-mapa',
+                datos: {
+                    distanciaAlDestino: Math.ceil(distancia),
+                    idParada: siguienteParada.padreid,
+                    tipoParada: siguienteParada.tipo || 'parada',
+                    toleranciaGPS: toleranciaGPS, // Tolerancia dinámica: 50m paradas, variable tramos
+                    timestamp: Date.now()
+                }
+            });
+            logger.debug(`${logPrefix} 📤 Actualización enviada a hijo2: distancia=${Math.ceil(distancia)}m, tolerancia=${toleranciaGPS}m`);
+        } catch (errorMensaje) {
+            logger.warn(`${logPrefix} Error al enviar actualización de distancia a hijo2:`, errorMensaje);
+        }
+
+        // 📍 RESET ubicacionActiva: SIEMPRE a 50m fijos (no usar tolerancia dinámica)
+        // Razón: Usuario debe estar CERCA (50m) para desactivar ubicación y activar botones
+        if (distancia <= 50) {
+            try {
+                await enviarMensaje({
+                    destino: 'hijo2',
+                    tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
+                    origen: 'funciones-mapa',
+                    datos: {
+                        ubicacionActiva: false, // Usuario a ≤50m, resetear ubicación
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`${logPrefix} 📍 Estado ubicacionActiva reseteado a FALSE (distancia ${Math.ceil(distancia)}m ≤ 50m)`);
+            } catch (errorMensaje) {
+                logger.warn(`${logPrefix} Error enviando reset de ubicacionActiva:`, errorMensaje);
+            }
+        }
+
+        // Verificar llegada usando tolerancia dinámica
+        const llegadaDetectada = verificarLlegadaADestino(
+            { lat: latitude, lng: longitude },
+            siguienteParada
+        );
+
+        // 🗺️ Gestión automática de polylines: remover si distancia ≤50m
+        if (distancia <= 50 && (rutasActivas.length > 0 || polylineNavegacion)) {
+            logger.info(`${logPrefix} 🗺️ Distancia ≤50m, removiendo polylines automáticamente`);
+            try {
+                // Limpiar todas las rutas activas
+                rutasActivas.forEach(ruta => {
+                    if (_mapaInstance && ruta) {
+                        _mapaInstance.removeLayer(ruta);
+                    }
+                });
+                rutasActivas = [];
+                
+                // Limpiar polylineNavegacion
+                if (_mapaInstance && polylineNavegacion) {
+                    _mapaInstance.removeLayer(polylineNavegacion);
+                    polylineNavegacion = null;
+                }
+                
+                logger.debug(`${logPrefix} ✅ Polylines removidas automáticamente`);
+            } catch (errorPolyline) {
+                logger.warn(`${logPrefix} Error removiendo polylines:`, errorPolyline);
+            }
+        }
+
+        // Si está dentro de tolerancia, activar la parada
+        if (llegadaDetectada) {
+            logger.info(`${logPrefix} 🎯 Activando parada secuencial: ${siguienteParada.padreid}`);
 
             // Enviar mensaje de cambio de parada
             await enviarMensaje({
@@ -3445,7 +3793,12 @@ function manejarErrorGPSNavegador(error) {
         message: error.message
     });
     
-    gpsEstadoReal.error = error.message;
+    // Actualizar estado (estadoMapa es la única fuente de verdad)
+    estadoMapa.gpsError = error.message;
+    estadoMapa.gpsActivo = false;
+    
+    // Sincronizar con el estado global del padre
+    sincronizarEstadoGPSConPadre();
 }
 
 // Asignar funciones al objeto global para compatibilidad con código existente
@@ -3459,8 +3812,15 @@ window.funcionesMapa = {
     limpiarRecursos,
     dibujarRutaConMarcadores,
     registrarManejadoresMensajes,
-    limpiarPorEstado
+    limpiarPorEstado,
+    calcularToleranciaGPS,
+    verificarLlegadaADestino,
+    procesarPosicionGPSParaAventura,
+    // Exponer la API pública centralizada para cambiar la vista
+    setMapView
 };
+
+logger.info('[FUNCIONES-MAPA] ✅ Funciones GPS expuestas globalmente');
 
 // Limpieza agresiva de globales al descargar la página
 if (typeof window !== 'undefined') {
