@@ -87,7 +87,8 @@
                     componenteId: CONFIG_HIJO.COMPONENTE_ID,
                     timestamp: Date.now(),
                     version: '2.0',
-                    parentReady: estadoMenu.parentReady
+                    parentReady: estadoMenu.parentReady,
+                    capacidades: ['menu', 'navegacion']
                 }
             });
 
@@ -213,6 +214,12 @@
                     }
 
                     logger.info(`${logPrefixCtrl} Confirmación recibida del padre - controladores listos`);
+
+                    // 🔥 NUEVO: Procesar modo inicial si viene en datos (patrón unificado)
+                    const { modoInicial } = mensaje.datos || {};
+                    if (modoInicial) {
+                        logger.debug(`${logPrefixCtrl} Modo inicial recibido: ${modoInicial} (registrado para consistencia)`);
+                    }
 
                     // Preparado para futuras solicitudes de datos adicionales del padre
                     logger.debug(`${logPrefixCtrl} Componente listo para recibir datos adicionales si es necesario`);
@@ -647,6 +654,66 @@
                 error: error.message,
                 timestamp: Date.now()
             };
+
+            // ============================================================
+            // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+            // ============================================================
+            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ACTIVAR]`;
+                try {
+                    if (!mensaje || !mensaje.origen) return { exito: false };
+                    logger.debug(`${gPrefix} Recibido ACTIVAR GPS (no-op)`);
+                    return { exito: true };
+                } catch (e) {
+                    logger.error(`${gPrefix} Error en handler no-op:`, e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.DESACTIVAR]`;
+                try {
+                    if (!mensaje || !mensaje.origen) return { exito: false };
+                    logger.debug(`${gPrefix} Recibido DESACTIVAR GPS (no-op)`);
+                    return { exito: true };
+                } catch (e) {
+                    logger.error(`${gPrefix} Error en handler no-op:`, e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.UBICACION_ACTUALIZADA]`;
+                try {
+                    logger.debug(`${gPrefix} Ubicación recibida (no-op) desde ${mensaje?.origen}`);
+                    return { exito: true };
+                } catch (e) {
+                    logger.error(`${gPrefix} Error en handler no-op:`, e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ESTADO_ACTUALIZADO]`;
+                try {
+                    logger.debug(`${gPrefix} Estado GPS recibido (no-op):`, mensaje?.datos || {});
+                    return { exito: true };
+                } catch (e) {
+                    logger.error(`${gPrefix} Error en handler no-op:`, e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ERROR]`;
+                try {
+                    logger.warn(`${gPrefix} Error GPS recibido (no-op):`, mensaje?.datos || {});
+                    return { exito: true };
+                } catch (e) {
+                    logger.error(`${gPrefix} Error en handler no-op:`, e);
+                    return { exito: false, error: e.message };
+                }
+            });
         }
     }
 
