@@ -200,6 +200,7 @@
     import { inicializarMensajeria, registrarControlador, enviarMensaje, enviarMensajeConConfirmacion } from './js/mensajeria.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
+    import { normalizarParadas } from './js/utils.js';
 
     const CONFIG_HIJO = {
         IFRAME_ID: 'hijo5-casa',
@@ -726,27 +727,9 @@
                 logger.debug(`${logPrefix} Datos del padre:`, mensaje.datos);
                 logger.info(`${logPrefix} Esperando datos iniciales del padre antes de activar UI`);
                 
-                // Enviar HIJO_LISTO al padre para confirmar que estamos listos
-                try {
-                    await enviarMensaje({
-                        destino: 'padre',
-                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                        origen: 'hijo5-casa',
-                        datos: {
-                            version: '1.0.0',
-                            capacidades: ['modo-selector', 'gps', 'paradas-list'],
-                            tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
-                            timestamp: Date.now()
-                        }
-                    });
-                    console.log(`✅ [hijo5-casa] HIJO_LISTO enviado al padre - esperando confirmación`);
-                    
-                    // NO solicitar datos inmediatamente - esperar confirmación del padre
-                    // La solicitud se hará cuando llegue SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
-                    
-                } catch (error) {
-                    console.error(`❌ [hijo5-casa] Error enviando HIJO_LISTO:`, error);
-                }
+                // Deferir envío de HIJO_LISTO hasta que todos los controladores críticos
+                // (especialmente los relacionados con GPS) se hayan registrado.
+                logger.debug(`${logPrefix} HIJO_LISTO aplazado hasta post-inicialización de controladores`);
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
@@ -765,6 +748,26 @@
             try {
                 logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
                 
+                // 🔥 NUEVO: Procesar modo inicial si viene en datos
+                const { modoInicial } = mensaje.datos || {};
+                if (modoInicial) {
+                    logger.info(`${logPrefix} Modo inicial recibido: ${modoInicial}`);
+                    estado.modo = modoInicial;
+                    
+                    // Sincronizar botón GPS con el modo inicial
+                    estado.gpsActivo = modoInicial === 'aventura';
+                    const btn = document.getElementById('gps-casa-btn');
+                    if (btn) {
+                        btn.classList.toggle('on', estado.gpsActivo);
+                        btn.classList.toggle('off', !estado.gpsActivo);
+                        const label = btn.querySelector('.gps-label');
+                        if (label) {
+                            label.textContent = estado.gpsActivo ? 'ON' : 'OFF';
+                        }
+                        logger.debug(`${logPrefix} Botón GPS sincronizado con modo inicial: ${estado.gpsActivo ? 'ON' : 'OFF'}`);
+                    }
+                }
+                
                 // Ahora sí solicitar datos iniciales del padre
                 await solicitarParadasDelPadre();
                 
@@ -772,6 +775,26 @@
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando confirmación del padre:`, error);
+            }
+            // Aplicar modo pendiente si existe
+            try {
+                if (estado.pendingCambioModo && estado.pendingCambioModo.modo) {
+                    const modoPendiente = estado.pendingCambioModo.modo;
+                    logger.info(`${logPrefix} Aplicando cambio de modo pendiente: ${modoPendiente}`);
+                    // Reutilizar el controlador CAMBIO_MODO existente para aplicar el modo
+                    await enviarMensaje({
+                        destino: 'self',
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: { modo: modoPendiente, secuenciaCompleta: true }
+                    }).catch(() => {
+                        // fallback: aplicar localmente
+                        estado.modo = modoPendiente;
+                    });
+                    delete estado.pendingCambioModo;
+                }
+            } catch (err) {
+                logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
             }
         });
 
@@ -786,6 +809,24 @@
             const logPrefix = `[hijo5-casa][SISTEMA.CAMBIO_MODO][${mensaje?.origen || 'desconocido'}]`;
             
             try {
+                // Si la secuencia global de inicialización no está completa,
+                // encolamos el cambio de modo y notificamos al padre para reintento.
+                if (!mensaje.datos?.secuenciaCompleta) {
+                    logger.warn(`${logPrefix} Mensaje CAMBIO_MODO recibido antes de secuencia completa, encolando y notificando padre`);
+                    estado.pendingCambioModo = mensaje.datos || { modo: null };
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            error: 'Secuencia no completa',
+                            esperarPermiso: true,
+                            tipoOriginal: mensaje.tipo,
+                            modoSolicitado: mensaje.datos?.modo
+                        }
+                    });
+                    return;
+                }
                 // Validación de origen
                 if (!mensaje?.origen) {
                     logger.warn(`${logPrefix} Mensaje sin origen, ignorando`);
@@ -884,7 +925,7 @@
         // ============================================
         // CONTROLADOR: SISTEMA.HEARTBEAT
         // ============================================
-        // Propósito: Responder a pings de conectividad del padre
+        // Propósito: Responder a heartbeats de conectividad del padre
         // Origen esperado: padre, mensajeria
         // Datos requeridos: Ninguno (opcional timestamp)
         // Respuesta: SISTEMA.HEARTBEAT_RESPONSE con timestamp
@@ -986,9 +1027,12 @@
                 
                 logger.info(`${logPrefix} Procesando ${paradas.length} paradas del padre (formato AVENTURA_PARADAS)`);
                 
-                // Transformar datos de AVENTURA_PARADAS al formato esperado por hijo5-casa
+                // Normalizar datos recibidos y transformar al formato esperado por hijo5-casa
+                // Primero normalizar para asegurar `id` y coordenadas cuando sea posible
+                const paradasNormalizadas = normalizarParadas(paradas || []);
+
                 // Mapeo simplificado usando mapaNombres para IDs únicos
-                const paradasTransformadas = paradas.map(paradaPadre => {
+                const paradasTransformadas = paradasNormalizadas.map(paradaPadre => {
                     try {
                         // Validar que paradaPadre es un objeto válido
                         if (!paradaPadre || typeof paradaPadre !== 'object') {
@@ -998,13 +1042,13 @@
                         
                         // Mapeo directo usando padreid único
                         const paradaTransformada = {
-                            id: paradaPadre.padreid,
+                            id: paradaPadre.id || paradaPadre.padreid,
                             parada_id: paradaPadre.parada_id || paradaPadre.tramo_id,
                             tipo: paradaPadre.tipo,
                             audio_id: paradaPadre.audio_id,
                             reto_id: paradaPadre.reto_id,
-                            nombre: mapaNombres[paradaPadre.padreid] || `Parada ${paradaPadre.parada_id || paradaPadre.tramo_id}`,
-                            ubicacion: { lat: 0, lng: 0 } // Placeholder - se actualizará después
+                            nombre: mapaNombres[paradaPadre.id || paradaPadre.padreid] || `Parada ${paradaPadre.parada_id || paradaPadre.tramo_id}`,
+                            ubicacion: { lat: paradaPadre.lat || (paradaPadre.coordenadas && paradaPadre.coordenadas.lat) || 0, lng: paradaPadre.lng || (paradaPadre.coordenadas && paradaPadre.coordenadas.lng) || 0 }
                         };
                         
                         return paradaTransformada;
@@ -1444,6 +1488,11 @@
                 logger.error(`${logPrefix} Error respondiendo ACK:`, error);
             }
         });
+
+        // Instrumentación: confirmar que los controladores GPS fueron registrados
+        try {
+            logger.debug('[hijo5-casa] Controladores GPS registrados y listos para recibir mensajes');
+        } catch (e) { /* ignore */ }
 
         await enviarMensaje({
             destino: 'padre',
