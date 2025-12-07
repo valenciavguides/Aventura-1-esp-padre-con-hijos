@@ -878,16 +878,29 @@
       font-size: 1.5rem; display: none; align-items: center; justify-content: center;
       border: none; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
       cursor: pointer; z-index: 1300; opacity: 0; transition: opacity 0.3s;
-    }
+        }
+        /* Ajuste para imágenes dentro de los iconos flotantes */
+        .icono-flotante img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+            border-radius: inherit;
+        }
   </style>
 </head>
 <body>
   <!-- Botones flotantes (ahora directamente en el body) -->
-  <button id="mas-opciones" class="boton-flotante">⋮</button>
-  <button class="icono-flotante" id="icono-agradecimientos">🤝</button>
-  <button class="icono-flotante" id="icono-seguridad">🚦</button>
-  <button class="icono-flotante" id="icono-fuentes">📚</button>
-  <button class="icono-flotante" id="icono-extra">⭐</button>
+    <button id="mas-opciones" class="boton-flotante" title="Más opciones" aria-label="Más opciones">⋮</button>
+    <button class="icono-flotante" id="icono-agradecimientos" title="Agradecimientos" aria-label="Agradecimientos">
+        <img src="fotos-botones/H1-fotoagradecimientosyfuentes.png" alt="Agradecimientos">
+    </button>
+    <button class="icono-flotante" id="icono-seguridad" title="Consejos seguridad vial" aria-label="Consejos seguridad vial">
+        <img src="fotos-botones/H1-consejosvial.png" alt="Consejos seguridad vial">
+    </button>
+    <button class="icono-flotante" id="icono-fuentes" title="Fuentes" aria-label="Fuentes">📚</button>
+    <button class="icono-flotante" id="icono-extra" title="Extra" aria-label="Extra">⭐</button>
   
   <!-- Nueva sección para botones de opciones -->
   <div id="opciones-container" style="display:none; position:absolute; top:10px; right:10px; z-index:1400;">
