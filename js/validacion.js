@@ -259,3 +259,4 @@ export function normalizarCoordenadas(input) {
     }
     return null;
 }
+
