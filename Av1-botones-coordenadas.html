@@ -207,19 +207,57 @@
         }
         .modal-close {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 24px;
-            color: #333;
-            cursor: pointer;
-            background: #f1f1f1;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
+            --close-size: clamp(44px, 6vmin, 72px);
+            width: var(--close-size);
+            height: var(--close-size);
+            top: calc(-1 * max(12px, calc(var(--close-size) * 0.27)));
+            right: calc(-1 * max(12px, calc(var(--close-size) * 0.27)));
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 0;
+            box-sizing: border-box;
+            font-size: calc(var(--close-size) * 0.9);
             line-height: 1;
+            color: #000;
+            cursor: pointer;
+            background: #ff8c00; /* fondo naranja */
+            border-radius: 50%;
+            border: max(2px, calc(var(--close-size) * 0.096)) solid #00ff00;
+            z-index: 1000020 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .modal-close:hover {
+            transform: scale(1.04);
+            background-color: #ff4500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+
+        .modal-close:active {
+            transform: scale(0.98);
+            background-color: #ff2b00;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.20);
+        }
+
+        .modal-close:focus,
+        .modal-close:focus-visible {
+            outline: 3px solid rgba(0,255,0,0.25);
+            outline-offset: 3px;
+        }
+
+        @media (hover: none) {
+            .modal-close {
+                transform: none;
+            }
+            .modal-close:active {
+                background: #ff2b00;
+                transform: none;
+            }
         }
         .modal-title {
             margin-top: 0;
@@ -290,7 +328,7 @@
     <div class="container">
         <div class="botones-row">
                         <button id="btn-gps" class="boton" title="Activar GPS">
-                                <img src="fotos-botones/H2-fotoruta-AB.png" alt="GPS">
+                            <img src="fotos-botones/fotoruta-A-B.png" alt="Ruta A-B">
                         </button>
             <button id="btn-imagen" class="boton" title="Mostrar Imagen">
                 <img src="fotos-botones/H2-fotoproximo-monumento.png" alt="Imagen parada">
@@ -1116,6 +1154,7 @@ function actualizarEstadoBotones() {
                 activarBoton(elementosDOM.btnGps);
                 console.log(`🛰️ Botón GPS ACTIVADO (${esTramo ? 'TRAMO' : 'PARADA'}): distancia ${distanciaAlDestino.toFixed(1)}m en rango ${rangoMinimo}-${rangoMaximo}m`);
                 // Enviar mensaje al padre: este ID está en rango, tienes permiso para activar GPS
+                try { logger.info('[hijo2] Enviando NAVEGACION.GPS.PERMITIDO', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', idParada: idParadaActual, distancia: distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.GPS.PERMITIDO', CONFIG_HIJO.IFRAME_ID, 'padre', idParadaActual); }
                 enviarMensaje({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.PERMITIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
@@ -1132,6 +1171,7 @@ function actualizarEstadoBotones() {
                 desactivarBoton(elementosDOM.btnGps);
                 console.log(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango ${rangoMinimo}-${rangoMaximo}m`);
                 // Enviar mensaje: fuera de rango, solo imagen disponible
+                try { logger.info('[hijo2] Enviando NAVEGACION.GPS.RESTRINGIDO', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', idParada: idParadaActual, distancia: distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.GPS.RESTRINGIDO', CONFIG_HIJO.IFRAME_ID, 'padre', idParadaActual); }
                 enviarMensaje({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
@@ -1422,6 +1462,7 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
         setBotonActivo('btnUbicacion');
 
         // Enviar mensaje al padre para centrar en ubicación
+        try { logger.info('[hijo2] Enviando NAVEGACION.CENTRAR_EN_UBICACION', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', paradaActual: estadoComponente.idParadaActual, distancia: estadoComponente.distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.CENTRAR_EN_UBICACION'); }
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
             origen: CONFIG_HIJO.IFRAME_ID,
@@ -1445,12 +1486,16 @@ elementosDOM.btnMapaCompleto?.addEventListener('click', async () => {
     try {
         setBotonActivo('btnMapaCompleto');
 
-        // Enviar mensaje al padre para mostrar mapa completo
+        // Diagnóstico: confirmar intento de envío
+        try { logger.info('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-completo', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre' }); } catch (e) { console.log('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-completo'); }
+
+        // Enviar mensaje al padre para mostrar mapa completo (usar wrapper UI.ACCION_USUARIO)
         await enviarMensaje({
-            tipo: TIPOS_MENSAJE.NAVEGACION.MOSTRAR_MAPA_COMPLETO,
+            tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
             origen: CONFIG_HIJO.IFRAME_ID,
             destino: 'padre',
             datos: {
+                accion: 'mostrar-mapa-completo',
                 mostrarTodo: true
             }
         });
@@ -1467,12 +1512,16 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
     try {
         setBotonActivo('btnMapaJpg');
 
-        // Enviar mensaje al padre para mostrar mapa JPG
+        // Diagnóstico: confirmar intento de envío
+        try { logger.info('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-jpg', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre' }); } catch (e) { console.log('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-jpg'); }
+
+        // Enviar mensaje al padre para mostrar mapa JPG (usar wrapper UI.ACCION_USUARIO)
         await enviarMensaje({
-            tipo: TIPOS_MENSAJE.NAVEGACION.MOSTRAR_MAPA_JPG,
+            tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
             origen: CONFIG_HIJO.IFRAME_ID,
             destino: 'padre',
             datos: {
+                accion: 'mostrar-mapa-jpg',
                 formato: 'jpg'
             }
         });
