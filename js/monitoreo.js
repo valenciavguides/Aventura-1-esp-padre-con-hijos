@@ -3258,3 +3258,4 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.INICIALIZACION_FINALIZADA, async (men
 });
 
 logger.info('[MONITOREO] Controladores SISTEMA registrados correctamente');
+
