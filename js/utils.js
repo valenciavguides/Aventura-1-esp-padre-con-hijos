@@ -1104,6 +1104,37 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                 console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-imagen');
                 await manejarMostrarImagen(mensaje.datos);
                 break;
+            case 'mostrar-mapa-completo':
+                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-completo');
+                try {
+                    const url = 'Av1_mapa_completo.html';
+                    if (typeof window.mostrarIframeOverlay === 'function') {
+                        window.mostrarIframeOverlay(url, 'Mapa completo');
+                    } else {
+                        console.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] window.mostrarIframeOverlay no está disponible');
+                    }
+                } catch (err) {
+                    console.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error:', err);
+                }
+                break;
+            case 'mostrar-mapa-jpg':
+                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-jpg');
+                try {
+                    const url = 'mapas/Av1_mapa.jpg';
+                    if (typeof window.mostrarImagenOverlay === 'function') {
+                        window.mostrarImagenOverlay(url, 'Mapa');
+                        const overlay = document.getElementById('imagen-overlay');
+                        if (overlay) {
+                            const cont = overlay.querySelector('.media-contenedor');
+                            if (cont) { cont.style.width = '85vw'; cont.style.height = '85vh'; }
+                        }
+                    } else {
+                        console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
+                    }
+                } catch (err) {
+                    console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error:', err);
+                }
+                break;
             case 'reproducir-video':
                 console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO reproducir-video');
                 await manejarReproducirVideo(mensaje.datos);
