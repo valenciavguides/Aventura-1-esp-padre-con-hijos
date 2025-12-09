@@ -493,10 +493,28 @@ export function registrarControlador(tipo, callback) {
  * @param {MessageEvent} event - Evento de mensaje.
  */
 function manejarMensajeEntrante(event) {
+    // Diagnóstico opcional: mostrar detalles de mensajes entrantes
+    try {
+        if (window.__vv_diagnostics) {
+            try {
+                console.info('[MENSAJERIA][DIAG] Mensaje entrante - origin:', event.origin, 'expected:', window.location.origin, 'data:', event.data);
+                // event.source puede no ser serializable en todos los entornos
+                try { console.debug('[MENSAJERIA][DIAG] event.source:', event.source); } catch (e) { /* ignore */ }
+            } catch (e) { /* no-op diagnóstico */ }
+        }
+    } catch (e) {
+        // proteger diagnósticos para no romper el handler
+    }
+
     // Validar el origen del mensaje para seguridad
     const origenEsperado = window.location.origin;
     if (event.origin !== origenEsperado) {
-        console.warn(`Mensaje rechazado de origen no confiable: ${event.origin}`);
+        console.warn(`Mensaje rechazado de origen no confiable: ${event.origin} (esperado: ${origenEsperado})`);
+        // Añadir ayuda rápida para el desarrollador
+        if (window.__vv_diagnostics) {
+            console.info('[MENSAJERIA][DIAG] Sugerencia: ejecutar el proyecto desde un servidor HTTP (ej. python -m http.server) en lugar de file:// para mantener el mismo origin entre marcos.');
+            try { console.debug('[MENSAJERIA][DIAG] payload:', event.data); } catch (e) { /* ignore */ }
+        }
         return;
     }
 
@@ -665,6 +683,11 @@ function manejarMensajeEntrante(event) {
                 ? structuredClone(mensaje.datos || {})
                 : JSON.parse(JSON.stringify(mensaje.datos || {}));
             const handlersRegistered = mapa && typeof mapa.keys === 'function' ? Array.from(mapa.keys()) : [];
+            if (window.__vv_diagnostics) {
+                try {
+                    console.debug('[MENSAJERIA][DIAG] Handlers registrados en este componente:', handlersRegistered);
+                } catch (e) { /* ignore diag failure */ }
+            }
             // Para broadcasts es normal que muchos iframes no tengan manejador
             // específico; bajar la severidad del log para evitar spam en consola.
             if (mensaje.destino === 'broadcast') {
