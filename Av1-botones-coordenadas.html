@@ -207,56 +207,49 @@
         }
         .modal-close {
             position: absolute;
-            --close-size: clamp(44px, 6vmin, 72px);
-            width: var(--close-size);
-            height: var(--close-size);
-            top: calc(-1 * max(12px, calc(var(--close-size) * 0.27)));
-            right: calc(-1 * max(12px, calc(var(--close-size) * 0.27)));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            box-sizing: border-box;
-            font-size: calc(var(--close-size) * 0.9);
-            line-height: 1;
+            top: -14px;
+            right: -14px;
+            font-size: 55px;
             color: #000;
             cursor: pointer;
             background: #ff8c00; /* fondo naranja */
+            width: 52px;
+            height: 52px;
             border-radius: 50%;
-            border: max(2px, calc(var(--close-size) * 0.096)) solid #00ff00;
+            border: 5px solid #00ff00; /* mismo verde que la ventana flotante, ahora 5px */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 4;
             z-index: 1000020 !important;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-            touch-action: manipulation;
+            transition: background 0.12s ease, transform 0.12s ease;
         }
 
-        .modal-close:hover {
-            transform: scale(1.04);
-            background-color: #ff4500;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-        }
-
-        .modal-close:active {
-            transform: scale(0.98);
-            background-color: #ff2b00;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.20);
-        }
-
+        .modal-close:hover,
         .modal-close:focus,
         .modal-close:focus-visible {
-            outline: 3px solid rgba(0,255,0,0.25);
-            outline-offset: 3px;
+            background: #ff4500; /* naranja-rojizo (casi rojo) */
+            transform: scale(1.06);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            outline: none;
+        }
+
+        /* Ensure touch devices get a consistent active feedback */
+        .modal-close:active {
+            background: #ff2b00; /* slightly more red on press */
+            transform: scale(1.04);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.20);
         }
 
         @media (hover: none) {
             .modal-close {
-                transform: none;
+                -webkit-tap-highlight-color: rgba(0,0,0,0);
+                touch-action: manipulation;
             }
             .modal-close:active {
                 background: #ff2b00;
-                transform: none;
+                transform: scale(1.04);
             }
         }
         .modal-title {
@@ -328,7 +321,7 @@
     <div class="container">
         <div class="botones-row">
                         <button id="btn-gps" class="boton" title="Activar GPS">
-                            <img src="fotos-botones/fotoruta-A-B.png" alt="Ruta A-B">
+                                <img src="fotos-botones/H2-fotoruta-AB.png" alt="GPS">
                         </button>
             <button id="btn-imagen" class="boton" title="Mostrar Imagen">
                 <img src="fotos-botones/H2-fotoproximo-monumento.png" alt="Imagen parada">
@@ -970,6 +963,7 @@
 // ==================== INICIALIZACIÓN DE MENSAJERÍA ====================
 
 import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+import { resolverIdsParada, getPadreId } from './js/utils.js';
 import { TIPOS_MENSAJE } from './js/constants.js';
 import logger from './js/logger.js';
 
@@ -1007,6 +1001,7 @@ const estadoComponente = {
     },
     retoActivo: false, // Flag para saber si hay un reto en progreso
     ubicacionActiva: false // Flag para saber si ubicación está activa
+    ,paradaPendiente: false // Flag para saber si la parada tiene pending en el padre
 };
 
 // Referencias DOM
@@ -1108,7 +1103,7 @@ function actualizarEstadoBotones() {
         
         if (modo === 'casa') {
             activarBoton(elementosDOM.btnVideo);
-            console.log('🎥 Botón video ACTIVADO: modo casa');
+            logger.debug('🎥 Botón video ACTIVADO: modo casa');
         } else if (modo === 'aventura' && esTramo) {
             // Para TRAMOS: usar tolerancia dinámica (distancia máxima del tramo)
             // El usuario necesita ver el video completo del tramo recorriendo todos los waypoints
@@ -1118,21 +1113,21 @@ function actualizarEstadoBotones() {
             
             if (distanciaEnRango) {
                 activarBoton(elementosDOM.btnVideo);
-                console.log(`🎥 Botón video ACTIVADO (TRAMO): distancia ${distanciaAlDestino.toFixed(1)}m dentro de tolerancia ${toleranciaGPS}m`);
+                logger.debug(`🎥 Botón video ACTIVADO (TRAMO): distancia ${distanciaAlDestino.toFixed(1)}m dentro de tolerancia ${toleranciaGPS}m`);
             } else {
                 desactivarBoton(elementosDOM.btnVideo);
-                console.log(`🎥 Botón video DESACTIVADO (TRAMO): distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango 5-${toleranciaGPS}m`);
+                logger.debug(`🎥 Botón video DESACTIVADO (TRAMO): distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango 5-${toleranciaGPS}m`);
             }
         } else {
             desactivarBoton(elementosDOM.btnVideo);
-            console.log('🎥 Botón video DESACTIVADO: no es tramo en aventura');
+            logger.debug('🎥 Botón video DESACTIVADO: no es tramo en aventura');
         }
     }
 
     // 📷 IMAGEN: habilitado siempre en ambos modos
     if (elementosDOM.btnImagen) {
         activarBoton(elementosDOM.btnImagen);
-        console.log('📷 Botón imagen SIEMPRE ACTIVADO');
+        logger.debug('📷 Botón imagen SIEMPRE ACTIVADO');
     }
 
     // 🛰️ GPS: Para TRAMOS usa tolerancia dinámica, para PARADAS usa 5-20m
@@ -1141,7 +1136,7 @@ function actualizarEstadoBotones() {
         
         if (modo === 'casa') {
             desactivarBoton(elementosDOM.btnGps);
-            console.log('🛰️ Botón GPS DESACTIVADO: modo casa');
+            logger.debug('🛰️ Botón GPS DESACTIVADO: modo casa');
         } else if (modo === 'aventura') {
             let rangoMinimo = 5;
             let rangoMaximo = esTramo ? toleranciaGPS : 20; // TRAMOS: tolerancia dinámica, PARADAS: 20m fijo
@@ -1152,13 +1147,12 @@ function actualizarEstadoBotones() {
             
             if (distanciaEnRango) {
                 activarBoton(elementosDOM.btnGps);
-                console.log(`🛰️ Botón GPS ACTIVADO (${esTramo ? 'TRAMO' : 'PARADA'}): distancia ${distanciaAlDestino.toFixed(1)}m en rango ${rangoMinimo}-${rangoMaximo}m`);
+                logger.debug(`🛰️ Botón GPS ACTIVADO (${esTramo ? 'TRAMO' : 'PARADA'}): distancia ${distanciaAlDestino.toFixed(1)}m en rango ${rangoMinimo}-${rangoMaximo}m`);
                 // Enviar mensaje al padre: este ID está en rango, tienes permiso para activar GPS
-                try { logger.info('[hijo2] Enviando NAVEGACION.GPS.PERMITIDO', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', idParada: idParadaActual, distancia: distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.GPS.PERMITIDO', CONFIG_HIJO.IFRAME_ID, 'padre', idParadaActual); }
                 enviarMensaje({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.PERMITIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: 'padre',
+                    destino: getPadreId(),
                     datos: {
                         idParada: idParadaActual,
                         distancia: distanciaAlDestino,
@@ -1169,13 +1163,12 @@ function actualizarEstadoBotones() {
                 });
             } else {
                 desactivarBoton(elementosDOM.btnGps);
-                console.log(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango ${rangoMinimo}-${rangoMaximo}m`);
+                logger.debug(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango ${rangoMinimo}-${rangoMaximo}m`);
                 // Enviar mensaje: fuera de rango, solo imagen disponible
-                try { logger.info('[hijo2] Enviando NAVEGACION.GPS.RESTRINGIDO', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', idParada: idParadaActual, distancia: distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.GPS.RESTRINGIDO', CONFIG_HIJO.IFRAME_ID, 'padre', idParadaActual); }
                 enviarMensaje({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: 'padre',
+                    destino: getPadreId(),
                     datos: {
                         idParada: idParadaActual,
                         distancia: distanciaAlDestino,
@@ -1190,15 +1183,20 @@ function actualizarEstadoBotones() {
     if (elementosDOM.btnUbicacion) {
         if (modo === 'casa') {
             desactivarBoton(elementosDOM.btnUbicacion);
-            console.log('🧭 Botón ubicación DESACTIVADO: modo casa');
+            logger.debug('🧭 Botón ubicación DESACTIVADO: modo casa');
         } else if (distanciaAlDestino !== null && distanciaAlDestino > 10.50) {
-            activarBoton(elementosDOM.btnUbicacion);
-            console.log(`🧭 Botón ubicación ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (>10.50m)`);
+            if (!estadoComponente.paradaPendiente) {
+                activarBoton(elementosDOM.btnUbicacion);
+            } else {
+                desactivarBoton(elementosDOM.btnUbicacion);
+                logger.debug(`[hijo2] Botón ubicación deshabilitado por pendiente activo`);
+            }
+            logger.debug(`🧭 Botón ubicación ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (>10.50m)`);
             // Enviar mensaje: parada actual finalizada, siguiente en array
             enviarMensaje({
                 tipo: TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA,
                 origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: {
                     idParadaActual: idParadaActual,
                     distancia: distanciaAlDestino,
@@ -1207,7 +1205,7 @@ function actualizarEstadoBotones() {
             });
         } else {
             desactivarBoton(elementosDOM.btnUbicacion);
-            console.log(`🧭 Botón ubicación DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m (≤10.50m)`);
+            logger.debug(`🧭 Botón ubicación DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m (≤10.50m)`);
         }
     }
 
@@ -1247,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: {
                 activar: estadoComponente.gpsActivo,
                 idParada: estadoComponente.idParadaActual,
@@ -1329,7 +1327,7 @@ elementosDOM.btnImagen?.addEventListener('click', async () => {
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: {
                 accion: 'mostrar-imagen',
                 paradaActual: estadoComponente.idParadaActual,
@@ -1423,7 +1421,7 @@ elementosDOM.btnVideo?.addEventListener('click', async () => {
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
                 origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: {
                     accion: 'reproducir-video',
                     paradaActual: estadoComponente.idParadaActual,
@@ -1462,11 +1460,10 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
         setBotonActivo('btnUbicacion');
 
         // Enviar mensaje al padre para centrar en ubicación
-        try { logger.info('[hijo2] Enviando NAVEGACION.CENTRAR_EN_UBICACION', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre', paradaActual: estadoComponente.idParadaActual, distancia: estadoComponente.distanciaAlDestino }); } catch (e) { console.log('[hijo2] Enviando NAVEGACION.CENTRAR_EN_UBICACION'); }
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: {
                 centrar: true,
                 paradaActual: estadoComponente.idParadaActual,
@@ -1486,16 +1483,18 @@ elementosDOM.btnMapaCompleto?.addEventListener('click', async () => {
     try {
         setBotonActivo('btnMapaCompleto');
 
-        // Diagnóstico: confirmar intento de envío
-        try { logger.info('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-completo', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre' }); } catch (e) { console.log('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-completo'); }
-
-        // Enviar mensaje al padre para mostrar mapa completo (usar wrapper UI.ACCION_USUARIO)
+        // Enviar mensaje al padre para mostrar mapa completo
+        // NOTE: Request payload normalized to 'mostrar-mapa-jpg' so parent uses the
+        // same overlay handler (image OR iframe depending on URL extension).
+        const urlMapaCompleto = 'Av1_mapa_completo.html';
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: {
-                accion: 'mostrar-mapa-completo',
+                accion: 'mostrar-mapa-jpg',
+                formato: 'jpg',
+                url: urlMapaCompleto,
                 mostrarTodo: true
             }
         });
@@ -1512,17 +1511,19 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
     try {
         setBotonActivo('btnMapaJpg');
 
-        // Diagnóstico: confirmar intento de envío
-        try { logger.info('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-jpg', { origen: CONFIG_HIJO.IFRAME_ID, destino: 'padre' }); } catch (e) { console.log('[hijo2] Enviando UI.ACCION_USUARIO -> mostrar-mapa-jpg'); }
+        // Determinar url del JPG (fallback a referencia general si no existe)
+        const urlJpg = (estadoComponente.arrayParadasLocal?.find(p => p.id === estadoComponente.idParadaActual)?.imagen)
+            || 'mapas/Av1_mapa.jpg';
 
-        // Enviar mensaje al padre para mostrar mapa JPG (usar wrapper UI.ACCION_USUARIO)
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: {
                 accion: 'mostrar-mapa-jpg',
-                formato: 'jpg'
+                formato: 'jpg',
+                url: urlJpg,
+                paradaActual: estadoComponente.idParadaActual || null
             }
         });
 
@@ -2306,12 +2307,15 @@ try {
         const logPrefix = `[hijo2][CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
         
         try {
-            const { paradaId, parada, nombre, imagen, video, coordenadas } = mensaje.datos;
+            const resolved = resolverIdsParada(mensaje.datos || {});
+            const paradaId = resolved.paradaId || mensaje.datos?.paradaId;
+            const paradaIdLegacy = mensaje.datos?.parada_id || mensaje.datos?.parada || mensaje.datos?.id || null;
+            const { parada, nombre, imagen, video, coordenadas } = mensaje.datos;
             
             logger.debug(`${logPrefix} Recibido:`, { paradaId, parada, nombre, imagen, video, coordenadas });
             
             // ✅ LIMPIAR ID si viene con prefijo (ej: "padre-P-1" → "P-1")
-            const idLimpio = paradaId?.replace(/^padre-/, '') || paradaId;
+            const idLimpio = (paradaId || paradaIdLegacy)?.toString().replace(/^padre-/, '') || paradaId || paradaIdLegacy;
             
             logger.debug(`${logPrefix} ID limpio: "${idLimpio}" (original: "${paradaId}")`);
             
@@ -2410,6 +2414,32 @@ try {
         }
     });
 
+    // Controlador: SISTEMA.HEARTBEAT.START (activar comportamiento local de heartbeat)
+    registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+        const logPrefix = `[hijo2][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
+        try {
+            estadoComponente.heartbeatActivo = true;
+            logger.info(`${logPrefix} Activado heartbeat local`);
+            return { started: true };
+        } catch (error) {
+            logger.error(`${logPrefix} Error procesando HEARTBEAT_START:`, error);
+            return { started: false, error: error && error.message };
+        }
+    });
+
+    // Controlador: SISTEMA.HEARTBEAT.PAUSE (desactivar comportamiento local de heartbeat)
+    registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+        const logPrefix = `[hijo2][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
+        try {
+            estadoComponente.heartbeatActivo = false;
+            logger.info(`${logPrefix} Pausado heartbeat local`);
+            return { paused: true };
+        } catch (error) {
+            logger.error(`${logPrefix} Error procesando HEARTBEAT_PAUSE:`, error);
+            return { paused: false, error: error && error.message };
+        }
+    });
+
     // Controlador para respuesta de datos de paradas del padre
     registrarControlador(TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS, async (mensaje) => {
         const logPrefix = `[hijo2][NAVEGACION.RESPUESTA_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
@@ -2460,7 +2490,7 @@ try {
             
             // Confirmar recepción al padre
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: {
@@ -2533,7 +2563,7 @@ try {
             
             // Responder al padre con información completa
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_COORDENADAS,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: informacionCompleta
@@ -2558,7 +2588,7 @@ try {
             
             // Responder al ACK
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.ACK,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: {
@@ -2620,10 +2650,22 @@ try {
 
     registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
         try {
-            console.warn(`[hijo2][GPS.ERROR] Error GPS recibido (no-op):`, mensaje?.datos || {});
+            const datos = mensaje?.datos || {};
+            const { codigo } = datos;
+            const errorMensaje = datos.mensaje || datos.message || null;
+            const contexto = datos.contexto || datos.context || 'desconocido';
+            const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+            const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
+            let details;
+            try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
+            logger.error(`[hijo2][GPS.ERROR] Error GPS recibido: ${details}`);
+            // Telemetría: incrementar contador por código de error GPS en hijo2
+            try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+            // Enviar métrica a monitoreo (si mensajería disponible)
+            try { if (typeof enviarMensaje === 'function') { enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo2', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {}); } } catch (ignore) { /* ignore */ }
             return { exito: true };
         } catch (e) {
-            console.error('[hijo2][GPS.ERROR] Error en handler no-op:', e);
+            logger.error('[hijo2][GPS.ERROR] Error en handler no-op:', e);
             return { exito: false, error: e.message };
         }
     });
@@ -2634,12 +2676,13 @@ try {
     } catch (e) { /* ignore */ }
 
     await enviarMensaje({
-        destino: 'padre',
+        destino: getPadreId(),
         tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
         origen: CONFIG_HIJO.IFRAME_ID,
         datos: { 
             componenteId: CONFIG_HIJO.COMPONENTE_ID,
-            coordenadasDisponibles: CoordenadasParadas.length
+            coordenadasDisponibles: CoordenadasParadas.length,
+            capacidades: ['navegacion', 'coordenadas']
         }
     });
 
@@ -2653,7 +2696,7 @@ try {
     
     try {
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
             origen: CONFIG_HIJO.IFRAME_ID,
             datos: { 
@@ -2671,6 +2714,45 @@ window.addEventListener('pagehide', () => {
     logger.info(`[hijo2] Limpiando recursos en pagehide`);
     estadoComponente.inicializado = false;
 });
+
+    // CONTROLADOR: SISTEMA.NOTIFICACION - manejar PENDING_CANCELADO
+    registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
+        const logPrefix = `[hijo2][NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
+        try {
+            const evento = mensaje.datos?.evento;
+            if (!evento) return;
+            if (evento === 'PENDING_CANCELADO') {
+                const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                const motivo = mensaje.datos?.motivo || 'sin_motivo';
+                logger.info(`${logPrefix} Pendiente cancelado: ${padreId} motivo: ${motivo}`);
+                // Si corresponde a la parada actual, actualizar UI
+                if (padreId && (padreId === estadoComponente.idParadaActual || padreId === (`padre-${estadoComponente.idParadaActual}`))) {
+                    try {
+                        estadoComponente.paradaPendiente = false;
+                        // Deshabilitar botones relacionados (ubicación/controles de completado)
+                        if (elementosDOM.btnUbicacion) { desactivarBoton(elementosDOM.btnUbicacion); estadoComponente.botonesActivos.ubicacion = false; }
+                        // Informar al usuario
+                        actualizarEstado(`Parada cancelada por: ${motivo}`, 'warn');
+                    } catch (err) {}
+                }
+                // Acknowledge to padre
+                try { await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_CANCELADO recibido', padreId, motivo } }); } catch (e) { /* ignore */ }
+            }
+            if (evento === 'PENDING_INICIADO') {
+                const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                const ttlMs = mensaje.datos?.ttlMs || null;
+                const motivo = mensaje.datos?.motivo || 'iniciado';
+                logger.info(`${logPrefix} PENDING_INICIADO para ${padreId} ttl=${ttlMs}`);
+                if (padreId && (padreId === estadoComponente.idParadaActual || padreId === (`padre-${estadoComponente.idParadaActual}`))) {
+                    estadoComponente.paradaPendiente = true;
+                    if (elementosDOM.btnUbicacion) { desactivarBoton(elementosDOM.btnUbicacion); estadoComponente.botonesActivos.ubicacion = false; }
+                    actualizarEstado('Pendiente creado: esperando condiciones', 'info');
+                }
+            }
+        } catch (err) {
+            logger.warn(`${logPrefix} Error procesando NOTIFICACION:`, err);
+        }
+    });
     </script>
 </body>
 </html>
