@@ -180,9 +180,32 @@
         #mapa { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 500; background-color: #e0f7fa; /* Azul claro para ver si está visible antes de cargar tiles */ }
         #map-debug { position: fixed; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.9); padding: 5px 8px; border-radius: 5px; z-index: 5000; font-size: 12px; font-family: monospace; display: none; transition: opacity 0.5s; }
         
-        /* Logo styling with exact positioning */
-        #logo-aventura { position: fixed; top: -13px; left: 50%; transform: translateX(-50%); width: 190px; height: 140px; z-index: 3000; object-fit: contain; }
-        #fondo-blanco { position: fixed; top: -24px; left: 50%; transform: translateX(-50%); width: 210px; height: 150px; z-index: 2999; background: white; border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; }
+        /* Logo styling with exact positioning (responsive) */
+        #logo-aventura {
+            position: fixed;
+            top: -13px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 85vw; /* ~85% of the viewport width as requested */
+            height: 18vh; /* responsive height */
+            z-index: 3000;
+            object-fit: contain;
+        }
+        /* Background panel behind the logo: now full-width and semi-transparent */
+        #fondo-blanco {
+            position: fixed;
+            top: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100vw; /* full viewport width */
+            height: 19vh;    /* responsive height */
+            max-height: 240px; /* avoid extremely tall on very large viewports */
+            z-index: 2999;
+            background: rgba(255,255,255,0.85); /* semi-transparent */
+            border-bottom-left-radius: 24px;
+            border-bottom-right-radius: 24px;
+            pointer-events: none; /* decorative only; let interactions pass to map */
+        }
         
         #info-parada { font-weight: bold; margin: 0; padding: 7px 12px; background-color: rgba(255, 255, 255, 0.9); border-radius: 7px; position: fixed; left: 50%; transform: translateX(-50%); z-index: 1201; display: none; color: #333; font-family: sans-serif; text-align: center; bottom: 325px; min-width: 220px; max-width: 90vw; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10); }
         
@@ -312,19 +335,22 @@
                other children, and allow the secondary dialog to float above it.
             */
             #gps-out-of-range-overlay {
-                /* reuse media-overlay full-screen behavior */
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                z-index: 1000040 !important; /* Above other hijo overlays (media uses 1000010) */
-                background: rgba(0, 0, 0, 0.95);
-                display: none;
-                justify-content: center;
-                align-items: center;
-                opacity: 0;
-                transition: opacity 0.4s ease-in-out;
+                /* reuse media-overlay full-screen behavior but WITHOUT heavy black backdrop
+                   The inner box (.gps-inner) will be centered and sized to 60% of viewport. */
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    bottom: auto; /* clear any previous bottom:20px declarations */
+                    transform: none !important; /* ensure no stray translate shifts the overlay left */
+                    z-index: 1000040 !important; /* Above other hijo overlays (media uses 1000010) */
+                    background: transparent; /* removed heavy black backdrop as requested */
+                    display: none;
+                    justify-content: center;
+                    align-items: center;
+                    opacity: 0;
+                    transition: opacity 0.24s ease-in-out;
             }
 
             /* Map the existing 'show' toggles to the same visual behavior as .media-overlay.visible */
@@ -334,16 +360,18 @@
                 animation: fadeInMedia 0.4s ease-out;
             }
 
-            /* Inner container should match .media-contenedor style (white with green 5px border) */
+            /* Inner container: centered box occupying 80% of viewport (adjusted per request) */
             #gps-out-of-range-overlay .gps-inner {
                 position: relative;
-                width: 90vw;
-                height: 90vh;
-                background: white;
-                border: 5px solid #00ff00; /* Marco verde de 5px */
-                border-radius: 15px;
-                box-shadow: 0 15px 50px rgba(0, 0, 0, 0.7);
-                overflow: visible;
+                width: 80vw;
+                height: 80vh;
+                max-width: 96vw;
+                max-height: 96vh;
+                background: #ffffff;
+                border: none; /* remove heavy colored border */
+                border-radius: 12px;
+                box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+                overflow: hidden;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -352,21 +380,21 @@
                 box-sizing: border-box;
             }
 
-            /* Reuse the same X button styling as media overlays */
+            /* Reuse the same X button styling as media overlays but placed inside the box */
             #gps-out-of-range-overlay .btn-cerrar-overlay {
                 position: absolute;
-                top: -10px;
-                right: -10px;
-                width: 60px;
-                height: 60px;
+                top: 8px;
+                right: 8px;
+                width: 44px;
+                height: 44px;
                 background: #ff8c00;
-                border: 5px solid #ff0000;
+                border: 3px solid #ff0000;
                 border-radius: 50%;
-                font-size: 36px;
+                font-size: 22px;
                 font-weight: bold;
                 color: white;
                 cursor: pointer;
-                z-index: 1000050 !important;
+                z-index: 1000070 !important;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -400,28 +428,52 @@
         }
 
         #gps-error-img {
-            width: 320px;
-            max-width: 86vw;
-            height: auto;
+            /* Make the image fill the inner box completely */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* cover to fill while preserving aspect */
             border-radius: 8px;
             display: block;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
             background: #222;
+            z-index: 1000; /* behind controls */
         }
+            /* Responsive adjustments for smaller viewports */
+            @media (max-width: 600px) {
+                #gps-out-of-range-overlay .gps-inner {
+                    width: 90vw;
+                    height: 55vh;
+                    padding: 10px;
+                    border-radius: 10px;
+                }
+                #gps-next-entity-overlay {
+                    width: 80% !important;
+                    height: auto !important;
+                    top: 6px !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                }
+            }
 
         #gps-error-action {
-            position: relative;
-            margin-top: 12px;
-            background: rgba(0,0,0,0.85);
-            color: #fff;
-            border: none;
-            padding: 10px 18px;
-            border-radius: 8px;
-            font-size: 15px;
-            cursor: pointer;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.35);
-            display: inline-block;
-            text-align: center;
+            /* Larger action button, positioned bottom-right inside the inner box (slightly bigger) */
+            position: absolute !important;
+            right: 16px;
+            bottom: 16px;
+            background: rgba(0,0,0,0.95) !important;
+            color: #fff !important;
+            border: none !important;
+            padding: 26px 30px !important; /* increased for larger clickable area */
+            border-radius: 14px !important;
+            font-size: 20px !important;
+            cursor: pointer !important;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.5) !important;
+            display: inline-block !important;
+            text-align: center !important;
+            z-index: 1020 !important; /* above the image */
         }
 
         #gps-error-action:active { transform: scale(0.98); }
@@ -2653,6 +2705,11 @@
                 const el = document.getElementById('gps-out-of-range-overlay');
                 if (!el) return;
                 el.classList.remove('show');
+                // Also ensure the next-entity overlay is hidden to avoid orphaned dialogs
+                try {
+                    const next = document.getElementById('gps-next-entity-overlay');
+                    if (next) next.style.display = 'none';
+                } catch (e) { /* ignore */ }
             } catch (e) {
                 console.warn('[PADRE][GPS][OVERLAY] Error ocultando overlay:', e && e.message);
             }
@@ -2697,19 +2754,24 @@
                     if (document.getElementById('gps-next-entity-overlay')) return;
                     const el = document.createElement('div');
                     el.id = 'gps-next-entity-overlay';
-                    el.style.position = 'fixed';
+                    // Attach inside the gps overlay inner box when available so sizing is relative
+                    el.style.position = 'absolute';
                     el.style.left = '50%';
-                    el.style.top = '40%';
-                    el.style.transform = 'translate(-50%, -50%)';
-                    // Ensure this secondary dialog floats above GPS overlay
-                    el.style.zIndex = 1000060;
-                    el.style.background = '#ffffff';
-                    el.style.color = '#111';
-                    el.style.padding = '16px';
-                    el.style.borderRadius = '10px';
-                    el.style.boxShadow = '0 12px 40px rgba(0,0,0,0.45)';
-                    el.style.maxWidth = '90vw';
+                    // Pegado a 2px del borde superior de la caja padre
+                    el.style.top = '2px';
+                    el.style.transform = 'translateX(-50%)';
+                    // Ensure this secondary dialog floats above GPS overlay inner box
+                    el.style.zIndex = 1000050;
+                    // occupy ~52% of the parent box (increased ~30% from previous 40%)
+                    el.style.width = '52%';
+                    el.style.height = '52%';
                     el.style.minWidth = '260px';
+                    // Slightly more transparent to let underlying map be more visible
+                    el.style.background = 'rgba(255,255,255,0.72)';
+                    el.style.color = '#111';
+                    el.style.padding = '12px';
+                    el.style.borderRadius = '8px';
+                    el.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
                     el.style.display = 'none';
                     el.setAttribute('role', 'dialog');
 
@@ -2747,27 +2809,35 @@
                     btnShowMap.type = 'button';
                     btnShowMap.setAttribute('aria-label', 'Mostrar en mapa');
                     btnShowMap.title = 'Mostrar en mapa';
-                    // Icon-only large map pin (📍)
-                    btnShowMap.innerHTML = '<span style="font-size:24px;line-height:1">📍</span>';
-                    btnShowMap.style.padding = '10px';
-                    btnShowMap.style.borderRadius = '10px';
+                    // Icon-only large map pin (📍) - larger and soft green background
+                    btnShowMap.innerHTML = '<span style="font-size:36px;line-height:1">📍</span>';
+                    btnShowMap.style.padding = '14px';
+                    btnShowMap.style.borderRadius = '12px';
                     btnShowMap.style.border = 'none';
-                    btnShowMap.style.background = '#1976d2';
-                    btnShowMap.style.color = '#fff';
+                    btnShowMap.style.background = 'linear-gradient(135deg, #daf5e0, #bfeecf)';
+                    btnShowMap.style.color = '#0b5f3a';
                     btnShowMap.style.cursor = 'pointer';
+                    btnShowMap.style.boxShadow = '0 6px 18px rgba(11,95,58,0.12)';
 
                     const btnCopy = document.createElement('button');
                     btnCopy.id = 'gps-next-entity-copy';
                     btnCopy.type = 'button';
-                    btnCopy.setAttribute('aria-label', 'Copiar coordenadas');
-                    btnCopy.title = 'Copiar coordenadas';
-                    // Icon-only clipboard
-                    btnCopy.innerHTML = '<span style="font-size:18px;line-height:1">📋</span>';
-                    btnCopy.style.padding = '8px';
-                    btnCopy.style.borderRadius = '8px';
-                    btnCopy.style.border = '1px solid #ddd';
-                    btnCopy.style.background = '#fff';
+                    btnCopy.setAttribute('aria-label', 'Copiar coordenadas (lat/lon)');
+                    btnCopy.title = 'Copiar coordenadas (lat/lon)';
+                    // Icon + label clipboard: emoji with centered "lat/lon" text below
+                    // make copy button visually consistent with others (soft green background)
+                    btnCopy.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"><span style="font-size:36px;line-height:1">📋</span><span style="font-size:12px;line-height:1;color:#0b5f3a">lat/lon</span></div>';
+                    btnCopy.style.padding = '8px 6px';
+                    btnCopy.style.borderRadius = '12px';
+                    btnCopy.style.border = '1px solid rgba(11,95,58,0.08)';
+                    btnCopy.style.background = 'linear-gradient(135deg, #f0fbf2, #e0f8e8)';
                     btnCopy.style.cursor = 'pointer';
+                    btnCopy.style.width = '64px';
+                    btnCopy.style.height = '72px';
+                    btnCopy.style.display = 'inline-flex';
+                    btnCopy.style.alignItems = 'center';
+                    btnCopy.style.justifyContent = 'center';
+                    btnCopy.style.zIndex = '1015';
 
                     const btnClose = document.createElement('button');
                     btnClose.id = 'gps-next-entity-close';
@@ -2775,15 +2845,21 @@
                     btnClose.setAttribute('aria-label', 'Cerrar');
                     btnClose.title = 'Cerrar';
                     btnClose.innerHTML = '✖';
-                    btnClose.style.marginTop = '10px';
+                    // Make close button larger and in soft green palette
+                    btnClose.style.marginTop = '12px';
                     btnClose.style.display = 'block';
                     btnClose.style.marginLeft = 'auto';
                     btnClose.style.marginRight = 'auto';
-                    btnClose.style.padding = '6px 8px';
-                    btnClose.style.borderRadius = '6px';
+                    btnClose.style.padding = '12px 14px';
+                    btnClose.style.width = '64px';
+                    btnClose.style.height = '64px';
+                    btnClose.style.borderRadius = '12px';
                     btnClose.style.border = 'none';
-                    btnClose.style.background = '#eee';
+                    btnClose.style.background = 'linear-gradient(135deg, #e6fbef, #cff5df)';
+                    btnClose.style.color = '#0b5f3a';
+                    btnClose.style.fontSize = '20px';
                     btnClose.style.cursor = 'pointer';
+                    btnClose.style.boxShadow = '0 8px 24px rgba(11,95,58,0.12)';
 
                     btnRow.appendChild(btnShowMap);
                     btnRow.appendChild(btnCopy);
@@ -2795,7 +2871,9 @@
                     el.appendChild(btnRow);
                     el.appendChild(btnClose);
 
-                    document.body.appendChild(el);
+                    // Append to gps inner box if available, otherwise fallback to body
+                    const gpsInner = document.querySelector('#gps-out-of-range-overlay .gps-inner');
+                    if (gpsInner) gpsInner.appendChild(el); else document.body.appendChild(el);
 
                     // Attach handlers
                     btnClose.addEventListener('click', () => {
@@ -2871,8 +2949,15 @@
 
                 function showNextEntityOverlay(entity) {
                     try {
-                        _ensureNextEntityOverlay();
+                            // Ensure GPS overlay exists (we want the next-entity dialog inside it)
+                            _ensureGpsOverlay();
+                            _ensureNextEntityOverlay();
                         const el = document.getElementById('gps-next-entity-overlay');
+                            // If the gps inner box is present, ensure the dialog is its child
+                            const gpsInner = document.querySelector('#gps-out-of-range-overlay .gps-inner');
+                            if (gpsInner && el && el.parentNode !== gpsInner) {
+                                try { gpsInner.appendChild(el); } catch (e) { /* ignore */ }
+                            }
                         if (!el) return;
                         const title = document.getElementById('gps-next-entity-title');
                         const name = document.getElementById('gps-next-entity-name');
