@@ -7,6 +7,7 @@
   <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
+    import { getPadreId } from './js/utils.js';
     import logger from './js/logger.js';
 
     // ============================================================
@@ -80,7 +81,7 @@
 
             // 5. Enviar HIJO_LISTO al padre
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: {
@@ -101,7 +102,7 @@
             // Enviar HIJO_FALLIDO al padre
             try {
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -153,7 +154,7 @@
                     // 3. Enviar HIJO_LISTO al padre para confirmar que estamos listos
                     try {
                         await enviarMensaje({
-                            destino: 'padre',
+                            destino: getPadreId(),
                             tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
                             origen: CONFIG_HIJO.IFRAME_ID,
                             datos: {
@@ -180,7 +181,7 @@
                     // Notificar error al padre
                     try {
                         await enviarMensaje({
-                            destino: 'padre',
+                            destino: getPadreId(),
                             tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                             origen: CONFIG_HIJO.IFRAME_ID,
                             datos: { 
@@ -236,7 +237,7 @@
                     // Notificar error al padre
                     try {
                         await enviarMensaje({
-                            destino: 'padre',
+                            destino: getPadreId(),
                             tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                             origen: CONFIG_HIJO.IFRAME_ID,
                             datos: {
@@ -392,7 +393,7 @@
 
                     // 3. Enviar respuesta
                     await enviarMensaje({
-                        destino: 'padre',
+                        destino: getPadreId(),
                         tipo: TIPOS_MENSAJE.SISTEMA.ACK,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         datos: datosRespuesta
@@ -468,7 +469,7 @@
                     
                     try {
                         await enviarMensaje({
-                            destino: 'padre',
+                            destino: getPadreId(),
                             tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                             origen: CONFIG_HIJO.IFRAME_ID,
                             datos: {
@@ -522,7 +523,7 @@
                                     
                                     // Notificar navegación al padre
                                     await enviarMensaje({
-                                        destino: 'padre',
+                                        destino: getPadreId(),
                                         tipo: TIPOS_MENSAJE.UI.NAVEGACION_EXTERNA,
                                         origen: CONFIG_HIJO.IFRAME_ID,
                                         datos: {
@@ -537,7 +538,7 @@
                                     
                                     // Notificar error al padre
                                     await enviarMensaje({
-                                        destino: 'padre',
+                                        destino: getPadreId(),
                                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                                         origen: CONFIG_HIJO.IFRAME_ID,
                                         datos: {
@@ -708,6 +709,10 @@
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ERROR]`;
                 try {
                     logger.warn(`${gPrefix} Error GPS recibido (no-op):`, mensaje?.datos || {});
+                    // Telemetría: incrementar contador por código de error GPS en hijo1-hamburguesa
+                    try { const codigo = mensaje?.datos?.codigo; if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                    // Enviar métrica a monitoreo
+                    try { if (typeof enviarMensaje === 'function') { enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo1-hamburguesa', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {}); } } catch (ignore) { /* ignore */ }
                     return { exito: true };
                 } catch (e) {
                     logger.error(`${gPrefix} Error en handler no-op:`, e);
@@ -838,7 +843,7 @@
             // 1. Notificar al padre para cerrar otros menús
             try {
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.UI.CLOSE_MENUS,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: { 
