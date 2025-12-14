@@ -203,7 +203,90 @@
             max-width: 90vw;
             text-align: center;
         }
-        #gps-out-of-range-overlay.show { display: block; }
+            /* Overlay shown when GPS positions are discarded due to low accuracy
+               This overlay should visually match the media/image overlays used
+               by hijo2 (same borders, close X, button sizes), appear above
+               other children, and allow the secondary dialog to float above it.
+            */
+            #gps-out-of-range-overlay {
+                /* reuse media-overlay full-screen behavior */
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 1000040 !important; /* Above other hijo overlays (media uses 1000010) */
+                background: rgba(0, 0, 0, 0.95);
+                display: none;
+                justify-content: center;
+                align-items: center;
+                opacity: 0;
+                transition: opacity 0.4s ease-in-out;
+            }
+
+            /* Map the existing 'show' toggles to the same visual behavior as .media-overlay.visible */
+            #gps-out-of-range-overlay.show {
+                display: flex;
+                opacity: 1;
+                animation: fadeInMedia 0.4s ease-out;
+            }
+
+            /* Inner container should match .media-contenedor style (white with green 5px border) */
+            #gps-out-of-range-overlay .gps-inner {
+                position: relative;
+                width: 90vw;
+                height: 90vh;
+                background: white;
+                border: 5px solid #00ff00; /* Marco verde de 5px */
+                border-radius: 15px;
+                box-shadow: 0 15px 50px rgba(0, 0, 0, 0.7);
+                overflow: visible;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 12px;
+                box-sizing: border-box;
+            }
+
+            /* Reuse the same X button styling as media overlays */
+            #gps-out-of-range-overlay .btn-cerrar-overlay {
+                position: absolute;
+                top: -10px;
+                right: -10px;
+                width: 60px;
+                height: 60px;
+                background: #ff8c00;
+                border: 5px solid #ff0000;
+                border-radius: 50%;
+                font-size: 36px;
+                font-weight: bold;
+                color: white;
+                cursor: pointer;
+                z-index: 1000050 !important;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                transition: all 0.2s ease;
+                touch-action: manipulation;
+                user-select: none;
+            }
+
+            #gps-out-of-range-overlay .btn-cerrar-overlay:hover {
+                background: #ff6600;
+                border-color: #cc0000;
+                transform: scale(1.1);
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+            }
+
+            #gps-error-img {
+                width: auto;
+                max-width: calc(100% - 24px);
+                max-height: calc(100% - 24px);
+                object-fit: contain;
+                border-radius: 8px;
+            }
         /* Inner layout: image + button overlay */
         #gps-out-of-range-overlay .gps-inner {
             position: relative;
@@ -1978,11 +2061,11 @@
 
                                     const controladorTemporal = async (mensaje) => {
                                         clearTimeout(timeout);
-                                        window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                        desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                         resolve(mensaje.datos);
                                     };
 
-                                    window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                     enviarMensajePadre({
                                         tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -2395,7 +2478,10 @@
             const btn = document.createElement('button');
             btn.id = 'gps-error-action';
             btn.type = 'button';
-            btn.innerText = 'Reintentar ubicación';
+            btn.setAttribute('aria-label', 'Reintentar ubicación');
+            btn.title = 'Reintentar ubicación';
+            // Use icon-only label for universal understanding (🛰️🔄)
+            btn.innerHTML = '<span style="font-size:20px;line-height:1">🛰️🔄</span>';
             btn.addEventListener('click', (ev) => {
                 try {
                     logger.info('[PADRE][GPS][OVERLAY] Botón pulsado por el usuario');
@@ -2420,8 +2506,20 @@
                 }
             });
 
+            // Close (X) button for overlay principal (use shared media style)
+            const closeBtnMain = document.createElement('button');
+            closeBtnMain.className = 'btn-cerrar-overlay';
+            closeBtnMain.type = 'button';
+            closeBtnMain.setAttribute('aria-label', 'Cerrar overlay GPS');
+            closeBtnMain.title = 'Cerrar';
+            closeBtnMain.innerHTML = '✖';
+            closeBtnMain.addEventListener('click', () => {
+                try { hideGpsOutOfRangeOverlay(); } catch (e) {}
+            });
+
             inner.appendChild(img);
             inner.appendChild(btn);
+            inner.appendChild(closeBtnMain);
             el.appendChild(inner);
             document.body.appendChild(el);
         }
@@ -2495,7 +2593,8 @@
                     el.style.left = '50%';
                     el.style.top = '40%';
                     el.style.transform = 'translate(-50%, -50%)';
-                    el.style.zIndex = 12000;
+                    // Ensure this secondary dialog floats above GPS overlay
+                    el.style.zIndex = 1000060;
                     el.style.background = '#ffffff';
                     el.style.color = '#111';
                     el.style.padding = '16px';
@@ -2538,9 +2637,12 @@
                     const btnShowMap = document.createElement('button');
                     btnShowMap.id = 'gps-next-entity-showmap';
                     btnShowMap.type = 'button';
-                    btnShowMap.textContent = 'Mostrar en mapa';
-                    btnShowMap.style.padding = '8px 12px';
-                    btnShowMap.style.borderRadius = '8px';
+                    btnShowMap.setAttribute('aria-label', 'Mostrar en mapa');
+                    btnShowMap.title = 'Mostrar en mapa';
+                    // Icon-only large map pin (📍)
+                    btnShowMap.innerHTML = '<span style="font-size:24px;line-height:1">📍</span>';
+                    btnShowMap.style.padding = '10px';
+                    btnShowMap.style.borderRadius = '10px';
                     btnShowMap.style.border = 'none';
                     btnShowMap.style.background = '#1976d2';
                     btnShowMap.style.color = '#fff';
@@ -2549,8 +2651,11 @@
                     const btnCopy = document.createElement('button');
                     btnCopy.id = 'gps-next-entity-copy';
                     btnCopy.type = 'button';
-                    btnCopy.textContent = 'Copiar coordenadas';
-                    btnCopy.style.padding = '8px 12px';
+                    btnCopy.setAttribute('aria-label', 'Copiar coordenadas');
+                    btnCopy.title = 'Copiar coordenadas';
+                    // Icon-only clipboard
+                    btnCopy.innerHTML = '<span style="font-size:18px;line-height:1">📋</span>';
+                    btnCopy.style.padding = '8px';
                     btnCopy.style.borderRadius = '8px';
                     btnCopy.style.border = '1px solid #ddd';
                     btnCopy.style.background = '#fff';
@@ -2559,12 +2664,14 @@
                     const btnClose = document.createElement('button');
                     btnClose.id = 'gps-next-entity-close';
                     btnClose.type = 'button';
-                    btnClose.textContent = 'Cerrar';
+                    btnClose.setAttribute('aria-label', 'Cerrar');
+                    btnClose.title = 'Cerrar';
+                    btnClose.innerHTML = '✖';
                     btnClose.style.marginTop = '10px';
                     btnClose.style.display = 'block';
                     btnClose.style.marginLeft = 'auto';
                     btnClose.style.marginRight = 'auto';
-                    btnClose.style.padding = '6px 10px';
+                    btnClose.style.padding = '6px 8px';
                     btnClose.style.borderRadius = '6px';
                     btnClose.style.border = 'none';
                     btnClose.style.background = '#eee';
@@ -2583,14 +2690,25 @@
                     document.body.appendChild(el);
 
                     // Attach handlers
-                    btnClose.addEventListener('click', hideNextEntityOverlay);
+                    btnClose.addEventListener('click', () => {
+                        hideNextEntityOverlay();
+                        try { hideGpsOutOfRangeOverlay(); } catch (e) {}
+                    });
+
                     btnCopy.addEventListener('click', async () => {
                         try {
-                            const txt = document.getElementById('gps-next-entity-coords')?.textContent || '';
+                            const datos = el._entityData || {};
+                            let txt = '';
+                            if (typeof datos.lat === 'number' && typeof datos.lng === 'number') {
+                                txt = `${datos.lat.toFixed(6)}, ${datos.lng.toFixed(6)}`;
+                            } else {
+                                txt = document.getElementById('gps-next-entity-coords')?.textContent || '';
+                            }
+                            if (!txt) return;
                             if (navigator.clipboard && navigator.clipboard.writeText) {
                                 await navigator.clipboard.writeText(txt);
                                 logger.info('[PADRE][GPS][OVERLAY] Coordenadas copiadas al portapapeles');
-                                registrarEvento && typeof registrarEvento === 'function' && registrarEvento('GPS_NEXT_COPY', { timestamp: Date.now() });
+                                registrarEvento && typeof registrarEvento === 'function' && registrarEvento('GPS_NEXT_COPY', { timestamp: Date.now(), parada: datos.id || null });
                             } else {
                                 // fallback
                                 const dummy = document.createElement('textarea');
@@ -2607,6 +2725,19 @@
                         try {
                             const datos = el._entityData;
                             if (!datos) return;
+
+                            // If we have coordinates, add a marker on the map first
+                            if (typeof datos.lat === 'number' && typeof datos.lng === 'number') {
+                                try {
+                                    await enviarMensajePadre({
+                                        tipo: TIPOS_MENSAJE.MAPA.ADD_MARKER,
+                                        origen: getPadreIdLocal(),
+                                        destino: getPadreIdLocal(),
+                                        datos: { id: `gps_next_${datos.id || Date.now()}`, lat: datos.lat, lng: datos.lng, popup: datos.nombre || 'Objetivo', center: true }
+                                    });
+                                } catch (e) { logger.warn('[PADRE][GPS][OVERLAY] Error añadiendo marcador al mapa:', e); }
+                            }
+
                             // Prefer centrar por parada id si existe
                             if (datos.id) {
                                 await enviarMensajePadre({
@@ -2625,6 +2756,7 @@
                             }
                             registrarEvento && typeof registrarEvento === 'function' && registrarEvento('GPS_NEXT_SHOWMAP', { timestamp: Date.now(), parada: datos.id || null });
                             hideNextEntityOverlay();
+                            try { hideGpsOutOfRangeOverlay(); } catch (e) {}
                         } catch (e) { logger.warn('[PADRE][GPS][OVERLAY] Error mostrando en mapa:', e); }
                     });
                 }
@@ -2678,6 +2810,8 @@
                         const el = document.getElementById('gps-next-entity-overlay');
                         if (!el) return;
                         el.style.display = 'none';
+                        // Also hide main GPS overlay to avoid orphaned overlays
+                        try { hideGpsOutOfRangeOverlay(); } catch (e) {}
                     } catch (e) { logger.warn('[PADRE][GPS][OVERLAY] Error ocultando overlay próxima entidad:', e); }
                 }
 
@@ -3015,6 +3149,9 @@
                         } catch (gpsError) {
                             logger.error(`${logPrefix} ❌ Error desactivando GPS:`, gpsError);
                         }
+                        // Ocultar overlays GPS cuando entramos en modo CASA
+                        try { hideNextEntityOverlay(); } catch (e) {}
+                        try { hideGpsOutOfRangeOverlay(); } catch (e) {}
                     }
 
                     // 🔥 COORDINACIÓN GPS: Si el cambio viene de hijo5-casa, sincronizar GPS con hijo2
@@ -3804,6 +3941,24 @@
             return ms;
         }
         /**
+         * Registrar un controlador de manera segura usando mensajería disponible
+         * Primero intenta usar window.mensajeria.registrarControlador, luego
+         * fallback a registrarControlador global si está disponible.
+         */
+        function registrarControladorSafe(tipo, handler, opciones) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
+                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+            } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSafe error', e && e.message); }
+        }
+
+        function desregistrarControladorSafe(tipo, handler) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.desregistrarControlador === 'function') return window.mensajeria.desregistrarControlador(tipo, handler);
+                if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
+            } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSafe error', e && e.message); }
+        }
+        /**
          * Registra una métrica de rendimiento local
          */
         function registrarMetrica(nombre, valor, unidad = 'ms') {
@@ -3954,17 +4109,18 @@
                 const timeoutMs = (window.Config && window.Config.PENDING && window.Config.PENDING.CLEANUP_INTERVAL_MS) ? Math.max(window.Config.PENDING.CLEANUP_INTERVAL_MS * 0.5, 2000) : 5000;
                 const coordsResponse = await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        try { window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
-                        reject(new Error('Timeout solicitando coordenadas')); }, timeoutMs);
+                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        reject(new Error('Timeout solicitando coordenadas'));
+                    }, timeoutMs);
 
                     const temporal = async (mensaje) => {
                         clearTimeout(timeout);
-                        try { window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
                         resolve(mensaje.datos);
                     };
 
                     try {
-                        window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
+                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
                         // Request coordinates from hijo2, making sure `origen` is set to the local padre ID
                         enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -3972,8 +4128,8 @@
                             destino: 'hijo2',
                             datos: { paradaId: paradaId, padreId }
                         }).catch(() => {});
-                        } catch (e) { clearTimeout(timeout); reject(e); }
-                    }).catch(err => null);
+                    } catch (e) { clearTimeout(timeout); reject(e); }
+                }).catch(err => null);
 
                     if (coordsResponse) {
                     // Normalize: coordsResponse might be array or object
@@ -4960,16 +5116,19 @@
                         logger.warn(`${logPrefix} Parada ${paradaActual} no encontrada o sin coordenadas en padre; solicitando a hijo2...`);
 
                         try {
-                            const coordenadasResponse = await new Promise((resolve, reject) => {
-                                const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2')), ajustarTimeoutPorConexionSafe(5000));
+                                const coordenadasResponse = await new Promise((resolve, reject) => {
+                                const timeout = setTimeout(() => {
+                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    reject(new Error('Timeout solicitando coordenadas a hijo2'));
+                                }, ajustarTimeoutPorConexionSafe(5000));
 
                                 const controladorTemporal = async (mensaje) => {
                                     clearTimeout(timeout);
-                                    window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                     resolve(mensaje.datos);
                                 };
 
-                                window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                 enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -5090,18 +5249,21 @@
                             if (siguienteParada) {
                                 // Solicitar coordenadas de la siguiente parada a hijo2
                                 try {
-                                    const coordenadasResponse = await new Promise((resolve, reject) => {
-                                        const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas')), ajustarTimeoutPorConexionSafe(5000));
-                                        
+                                        const coordenadasResponse = await new Promise((resolve, reject) => {
+                                        const timeout = setTimeout(() => {
+                                            try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                            reject(new Error('Timeout solicitando coordenadas'));
+                                        }, ajustarTimeoutPorConexionSafe(5000));
+
                                         // Controlador temporal para respuesta
                                         const controladorTemporal = async (mensaje) => {
                                             clearTimeout(timeout);
-                                            window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                            desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                             resolve(mensaje.datos);
                                         };
-                                        
-                                        window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-                                        
+
+                                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+
                                         // Enviar solicitud
                                         enviarMensajePadre({
                                             tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
