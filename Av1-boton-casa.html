@@ -198,6 +198,7 @@
     }
 
     import { inicializarMensajeria, registrarControlador, enviarMensaje, enviarMensajeConConfirmacion } from './js/mensajeria.js';
+    import { resolverIdsParada, getPadreId } from './js/utils.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
     import { normalizarParadas } from './js/utils.js';
@@ -401,7 +402,7 @@
                             
                             // Enviar mensaje al padre para cambiar de parada
                             await enviarMensaje({
-                                destino: 'padre',
+                                destino: getPadreId(),
                                 tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
                                 origen: CONFIG_HIJO.IFRAME_ID,
                                 datos: { 
@@ -419,7 +420,7 @@
                             // Notificar error al padre
                             try {
                                 await enviarMensaje({
-                                    destino: 'padre',
+                                    destino: getPadreId(),
                                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                                     origen: CONFIG_HIJO.IFRAME_ID,
                                     datos: {
@@ -497,7 +498,7 @@
             logger.info(`${logPrefix} Notificando cambio de modo al padre: ${modoNuevo}`);
             
             const respuesta = await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: { 
@@ -519,7 +520,7 @@
 
             try {
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: gpsMessageType,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -569,7 +570,7 @@
             // Notificar error al padre
             try {
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -604,7 +605,7 @@
 
             // Enviar solicitud al padre
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: {
@@ -629,7 +630,7 @@
             // Intentar notificar al padre del error
             try {
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -981,6 +982,32 @@
             }
         });
 
+        // Controlador: SISTEMA.HEARTBEAT.START
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, async (mensaje) => {
+            const logPrefix = `[hijo5-casa][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                estado.heartbeatActivo = true;
+                logger.info(`${logPrefix} Activado heartbeat local`);
+                return { started: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_START:`, error);
+                return { started: false, error: error && error.message };
+            }
+        });
+
+        // Controlador: SISTEMA.HEARTBEAT.PAUSE
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, async (mensaje) => {
+            const logPrefix = `[hijo5-casa][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                estado.heartbeatActivo = false;
+                logger.info(`${logPrefix} Pausado heartbeat local`);
+                return { paused: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_PAUSE:`, error);
+                return { paused: false, error: error && error.message };
+            }
+        });
+
         // ============================================
         // CONTROLADOR: DATOS.RESPUESTA_PARADAS
         // ============================================
@@ -1113,7 +1140,7 @@
                 
                 // Confirmar recepción al padre
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -1176,7 +1203,10 @@
                     return;
                 }
                 
-                const { paradaId, exito, paradaActual } = mensaje.datos;
+                const resolved = resolverIdsParada(mensaje.datos || {});
+                const paradaId = resolved.paradaId || mensaje.datos?.paradaId || mensaje.datos?.parada_id || null;
+                const padreId = resolved.padreId || mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                const { exito, paradaActual } = mensaje.datos;
                 
                 // Log de información del cambio
                 if (paradaId) {
@@ -1341,17 +1371,31 @@
                     return;
                 }
 
-                const { codigo, mensaje: errorMensaje, contexto } = mensaje.datos;
+                const { codigo } = mensaje.datos || {};
+                // The property for the text may be 'mensaje' or 'message' depending on origin; support both
+                const errorMensaje = mensaje.datos?.mensaje || mensaje.datos?.message || null;
+                const contexto = mensaje.datos?.contexto || mensaje.datos?.context || 'desconocido';
 
-                // Log del error
-                logger.error(`${logPrefix} Error GPS recibido:`, {
-                    codigo,
-                    mensaje: errorMensaje,
-                    contexto: contexto || 'desconocido'
-                });
+                // Map error codes for readability
+                const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+                const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
 
+                // Log with defensive stringification in case console overrides filter objects
+                let details;
+                try {
+                    details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2);
+                } catch (e) {
+                    // fallback
+                    details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`;
+                }
+
+                logger.error(`${logPrefix} Error GPS recibido: ${details}`);
+
+                // Telemetría: incrementar contador por razón de error en el hijo
+                try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                
                 // Actualizar estado local
-                estado.gpsError = errorMensaje;
+                estado.gpsError = errorMensaje || `GPS error code ${codigo} (${codeDesc})`;
 
                 // Si es error de permisos, actualizar UI
                 if (codigo === 1) { // PERMISSION_DENIED
@@ -1445,7 +1489,11 @@
                     return;
                 }
                 
-                const { paradaId, coordenadas, audio, reto } = mensaje.datos;
+                const resolved = resolverIdsParada(mensaje.datos || {});
+                const paradaId = resolved.paradaId || mensaje.datos?.paradaId || mensaje.datos?.parada_id || mensaje.datos?.padreid || null;
+                const coordenadas = mensaje.datos?.coordenadas || null;
+                const audio = mensaje.datos?.audio || null;
+                const reto = mensaje.datos?.reto || null;
                 
                 logger.info(`${logPrefix} Cambio de parada confirmado: ${paradaId}`);
                 
@@ -1478,7 +1526,7 @@
             try {
                 // Responder automáticamente con ACK para mantener bidireccionalidad
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.ACK,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: { mensajeOriginalId: mensaje.id }
@@ -1495,7 +1543,7 @@
         } catch (e) { /* ignore */ }
 
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
             origen: CONFIG_HIJO.IFRAME_ID,
             datos: {
@@ -1537,9 +1585,9 @@
         });
         
         // Intentar notificar al padre del error crítico
-        try {
+            try {
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 datos: {
