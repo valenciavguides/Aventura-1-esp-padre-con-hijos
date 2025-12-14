@@ -33,6 +33,38 @@
                 window.logger.error(errorMsg, event);
             }
         };
+
+        // Listen for child readiness messages to ensure paradas styling is applied
+        window.addEventListener('message', (ev) => {
+            try {
+                const data = ev && ev.data;
+                if (!data || !data.tipo) return;
+                if (data.tipo === 'VV:PARADAS:READY' || data.tipo === 'VV:PARADAS:SHOWN') {
+                    const iframe = document.getElementById('hijo5-casa');
+                    if (!iframe) return;
+                    try {
+                        // Prefer calling a helper inside the iframe if available
+                        if (iframe.contentWindow && typeof iframe.contentWindow.reapplyParadasStyle === 'function') {
+                            iframe.contentWindow.reapplyParadasStyle();
+                            return;
+                        }
+                    } catch (e) { /* ignore */ }
+
+                    // Fallback: directly inject styles into the iframe document
+                    try {
+                        const doc = iframe.contentDocument;
+                        if (!doc) return;
+                        const styleId = 'vv-hijo5-paradas-fix-style';
+                        if (!doc.getElementById(styleId)) {
+                            const s = doc.createElement('style');
+                            s.id = styleId;
+                            s.textContent = '\nhtml, body { background: transparent !important; }\n#paradas-window { background: rgba(255,255,255,0.92) !important; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); pointer-events: auto !important; border: 2px solid rgba(0,123,255,0.6) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important; }\n#lista-paradas { background: transparent !important; pointer-events: auto !important; }\n.parada-tramo-btn { pointer-events: auto !important; }\n';
+                            doc.head && doc.head.appendChild(s);
+                        }
+                    } catch (e) { console.warn('[PADRE] Error applying hijo5 paradas fallback styles', e); }
+                }
+            } catch (e) { /* ignore message handling errors */ }
+        });
         
         window.handleIframeLoad = function(iframeId) {
             const msg = `${iframeId} loaded successfully`;
@@ -40,6 +72,77 @@
             if (window.logger?.debug) {
                 window.logger.debug(msg);
             }
+            try {
+                // Special handling for hijo5-casa: make iframe background transparent
+                // while ensuring the internal "paradas" / horizontal scroll container
+                // remains opaque and interactive. We inject a small CSS/script into
+                // the iframe document (same-origin) to achieve this safely.
+                if (iframeId === 'hijo5-casa') {
+                    const iframe = document.getElementById('hijo5-casa');
+                    if (iframe && iframe.contentDocument) {
+                        const doc = iframe.contentDocument;
+                        // Make the iframe document background transparent
+                        try {
+                            const style = doc.createElement('style');
+                            style.type = 'text/css';
+                            style.appendChild(doc.createTextNode('\nhtml, body { background: transparent !important; }\n* { -webkit-tap-highlight-color: rgba(0,0,0,0); }\n'));
+                            doc.head && doc.head.appendChild(style);
+                        } catch (e) { /* ignore */ }
+
+                        // Inject a script to find the horizontal scroll / buttons container(s)
+                        // and make sure they have an opaque background so buttons remain visible
+                        try {
+                            const script = doc.createElement('script');
+                            script.type = 'text/javascript';
+                            script.appendChild(doc.createTextNode(`(function(){
+                                function applyStylingOnce() {
+                                    try {
+                                        var els = Array.prototype.slice.call(document.querySelectorAll('*'));
+                                        var candidates = els.filter(function(el){
+                                            var st = getComputedStyle(el);
+                                            return (st.overflowX === 'auto' || st.overflowX === 'scroll') && el.clientWidth > 40 && el.clientHeight > 20;
+                                        });
+                                        if (candidates.length === 0) {
+                                            var alt = document.querySelector('[id*=\"parad\"],[class*=\"parad\"],[id*=\"lista\"],[class*=\"lista\"],[id*=\"stop\"],[class*=\"stop\"],[id*=\"btn\"],[class*=\"btn\"]');
+                                            if (alt) candidates.push(alt);
+                                        }
+                                        if (candidates.length === 0) return false;
+                                        candidates.forEach(function(el){
+                                            try{
+                                                el.style.background = el.style.background || 'white';
+                                                el.style.zIndex = '10000';
+                                                el.style.position = el.style.position || 'relative';
+                                                el.style.pointerEvents = 'auto';
+                                                el.style.boxShadow = el.style.boxShadow || '0 2px 10px rgba(0,0,0,0.12)';
+                                            }catch(e){}
+                                        });
+                                        Array.prototype.slice.call(document.querySelectorAll('button,a,[role=\"button\"]')).forEach(function(b){ try{ b.style.pointerEvents = 'auto'; }catch(e){} });
+                                        return true;
+                                    } catch (e) { return false; }
+                                }
+
+                                // Try immediately and then set up a MutationObserver to catch dynamic renderings
+                                try { if (applyStylingOnce()) { return; } } catch (e) {}
+
+                                var attempts = 0;
+                                var intervalId = setInterval(function(){ attempts++; try { if (applyStylingOnce()) { clearInterval(intervalId); } } catch(e){} if (attempts > 8) clearInterval(intervalId); }, 500);
+
+                                try {
+                                    var observer = new MutationObserver(function(mutations){
+                                        try { if (applyStylingOnce()) { observer.disconnect(); } } catch(e){}
+                                    });
+                                    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+                                } catch (e) {}
+
+                                // Expose a manual reapply helper for debugging from parent
+                                try { window.reapplyParadasStyle = applyStylingOnce; } catch(e){}
+
+                            })();`));
+                            doc.body && doc.body.appendChild(script);
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            } catch (err) { console.warn('[PADRE] handleIframeLoad post-load injection error', err); }
         };
     </script>
         <script>
@@ -1263,14 +1366,19 @@
     <iframe id="hijo5-casa" src=""
         title="Botón Casa"
         aria-label="Botón para cambiar entre modo Casa y Aventura"
-        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:block;"
+        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:block; background: transparent;"
         onload="handleIframeLoad('hijo5-casa')" onerror="handleIframeError('hijo5-casa', event)"></iframe>
     
-        <!-- Optional: sistema-ui for monitoring / important notifications -->
+        <!-- Optional: sistema-ui for monitoring / important notifications
+             NOTE: kept in DOM to continue receiving postMessage events, but
+             intentionally hidden under the map so it doesn't block UI or
+             appear to users. pointer-events is disabled and aria-hidden
+             set to true per user preference. -->
         <iframe id="sistema-ui"
             title="Sistema UI - Notificaciones"
             aria-label="Sistema de notificaciones y logs"
-            style="position:fixed; right:1vw; top:2vh; height:120px; width:320px; z-index:1000002; pointer-events:auto; display:block;"
+            aria-hidden="true"
+            style="position:fixed; right:1vw; top:2vh; height:120px; width:320px; z-index:400; pointer-events:none; display:block; visibility:visible;"
             onload="handleIframeLoad('sistema-ui')" onerror="handleIframeError('sistema-ui', event)"
             srcdoc="<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Sistema UI - Notificaciones</title><style>body{font-family:Arial,sans-serif;font-size:14px;margin:0;padding:8px;}#notificaciones{max-height:100%;overflow-y:auto;} .notif{border-radius:6px;padding:8px;margin-bottom:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.1);} .notif.info{border-left:6px solid #2196F3;} .notif.warn{border-left:6px solid #FFC107;} .notif.error{border-left:6px solid #F44336;}</style></head><body><h3>Notificaciones</h3><div id=\"notificaciones\"></div><script>window.addEventListener('message',function(event){try{var data=event.data||{};if(!data||!data.tipo)return;if(data.tipo!=='SISTEMA.NOTIFICACION'&&data.tipo!=='TIPO_UI_NOTIFICACION')return;var n=document.getElementById('notificaciones');var d=document.createElement('div');d.className='notif '+(data.datos&&data.datos.tipo||'info');var t=data.datos&&data.datos.titulo||'Notificación';var m=data.datos&&data.datos.mensaje||'';d.innerHTML='<strong>'+t+'</strong><div>'+m+'</div><small><em>'+data.origen+'</em></small>';n.insertBefore(d,n.firstChild);}catch(e){console.warn('sistema-ui error parsing message',e);}});</script></body></html>"></iframe>
     
