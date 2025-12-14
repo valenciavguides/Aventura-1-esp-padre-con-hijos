@@ -8,6 +8,54 @@ import logger from './logger.js';
 import { CSS_CLASES, MODOS, ERRORES, TIPOS_MENSAJE } from './constants.js';
 import { promesasPendientes } from './monitoreo.js';
 
+/**
+ * Resolves the best UI destination for notifications/modals/alerts.
+ * Prefer explicit monitoring recipients if available (window resolver from monitoreo),
+ * otherwise check DOM for known iframe IDs and fall back to 'broadcast'.
+ * @returns {string} destination id or 'broadcast'
+ */
+export function resolverUIDestino() {
+    try {
+        // Prefer a runtime-provided resolver from monitoreo if available
+        if (typeof window.resolverDestinatariosNotificacion === 'function') {
+            try {
+                const list = window.resolverDestinatariosNotificacion();
+                if (Array.isArray(list) && list.length > 0 && list[0]) return list[0];
+            } catch (e) {
+                // ignore and continue to DOM checks
+            }
+        }
+
+        // Prefer legacy 'sistema-notificaciones' if present (legacy alias), else prefer 'sistema-ui'
+        if (document.getElementById('sistema-notificaciones')) return 'sistema-notificaciones';
+        if (document.getElementById('sistema-ui')) return 'sistema-ui';
+        // Prefer options or hamburger components
+        if (document.getElementById('hijo1-opciones')) return 'hijo1-opciones';
+        if (document.getElementById('hijo1-hamburguesa')) return 'hijo1-hamburguesa';
+        // Prefer casa button
+        if (document.getElementById('hijo5-casa')) return 'hijo5-casa';
+
+    } catch (err) {
+        // Nothing we can do — fall back to broadcast
+    }
+    return 'broadcast';
+}
+
+/**
+ * Check whether the destination resolves to a known recipient (iframe exists) or is broadcast
+ * @param {string} destino
+ * @returns {boolean}
+ */
+export function esDestinoValido(destino) {
+    if (!destino) return false;
+    if (destino === 'broadcast') return true;
+    try {
+        return !!document.getElementById(destino);
+    } catch (e) {
+        return false;
+    }
+}
+
 // Proveer un fallback seguro para `registrarControlador` durante la
 // evaluación del módulo. Algunos módulos registran controladores en
 // top-level antes de que `mensajeria.js` esté totalmente inicializado
@@ -358,8 +406,23 @@ export function normalizarParada(item) {
         // Normalizar coordenadas si se encuentran en campos latitud/longitud
         const salida = Object.assign({}, item);
         salida.id = id;
+        // Ensure both canonical ids are present for children: padreid and paradaId
+        // Keep existing padreid if provided, otherwise generate one with prefix
+        if (typeof salida.padreid !== 'string' || salida.padreid.trim() === '') {
+            salida.padreid = `padre-${id}`;
+        }
+        // Provide a consistent camelCase paradaId if available
+        if (!salida.paradaId && typeof item.parada_id === 'string') {
+            salida.paradaId = item.parada_id;
+        } else if (!salida.paradaId && typeof item.paradaId === 'string') {
+            salida.paradaId = item.paradaId;
+        } else if (!salida.paradaId) {
+            // Derive from id if nothing else
+            salida.paradaId = salida.id;
+        }
         if (!salida.tipo && tipo) salida.tipo = tipo;
 
+        // Normalize lat/long fields into lat/lng and a standard ubicacion object
         if ((salida.latitud !== undefined && salida.longitud !== undefined) &&
             (!salida.lat || !salida.lng)) {
             const lat = Number(salida.latitud);
@@ -367,6 +430,55 @@ export function normalizarParada(item) {
             if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
                 salida.lat = lat;
                 salida.lng = lng;
+            }
+        }
+        // If lat/lng present but no ubicacion, create it for consistency
+        if ((salida.lat !== undefined && salida.lng !== undefined) && !salida.ubicacion) {
+            salida.ubicacion = { lat: Number(salida.lat), lng: Number(salida.lng) };
+        }
+
+        // Normalize waypoints if present (convert latitud/longitud -> lat/lng)
+        if (Array.isArray(salida.waypoints) && salida.waypoints.length > 0) {
+            salida.waypoints = salida.waypoints.map(wp => {
+                const out = Object.assign({}, wp);
+                if (out.latitud !== undefined && out.longitud !== undefined && (out.lat === undefined || out.lng === undefined)) {
+                    const lat = Number(out.latitud);
+                    const lng = Number(out.longitud);
+                    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                        out.lat = lat;
+                        out.lng = lng;
+                    } else {
+                        logger.warn('[UTILS] normalizarParada: waypoint con coordenadas inválidas', out);
+                    }
+                }
+                // Normalize nested coordenadas object as well
+                if (out.coordenadas && out.coordenadas.lat !== undefined && out.coordenadas.lng !== undefined) {
+                    out.lat = Number(out.coordenadas.lat);
+                    out.lng = Number(out.coordenadas.lng);
+                }
+                return out;
+            });
+        }
+
+        // Ensure ubicacion.inicio/fin normalized for tramos
+        if (salida.inicio && typeof salida.inicio === 'object') {
+            if (salida.inicio.latitud !== undefined && salida.inicio.longitud !== undefined) {
+                salida.inicio.lat = Number(salida.inicio.latitud);
+                salida.inicio.lng = Number(salida.inicio.longitud);
+            }
+            if (salida.inicio.coordenadas && salida.inicio.coordenadas.lat !== undefined) {
+                salida.inicio.lat = Number(salida.inicio.coordenadas.lat);
+                salida.inicio.lng = Number(salida.inicio.coordenadas.lng);
+            }
+        }
+        if (salida.fin && typeof salida.fin === 'object') {
+            if (salida.fin.latitud !== undefined && salida.fin.longitud !== undefined) {
+                salida.fin.lat = Number(salida.fin.latitud);
+                salida.fin.lng = Number(salida.fin.longitud);
+            }
+            if (salida.fin.coordenadas && salida.fin.coordenadas.lat !== undefined) {
+                salida.fin.lat = Number(salida.fin.coordenadas.lat);
+                salida.fin.lng = Number(salida.fin.coordenadas.lng);
             }
         }
 
@@ -425,6 +537,38 @@ export function normalizarParadas(arr) {
         return [];
     }
 }
+    /**
+     * Devuelve el ID canónico del padre (runtime-safe)
+     * - Intenta, en orden: window.CONFIG_PADRE.ID, window.Config.ID_PADRE, window.CONFIG_PADRE_LOCAL.ID
+     * - Fallback: 'padre'
+     * @returns {string}
+     */
+    export function getPadreId() {
+        try {
+            if (typeof window !== 'undefined') {
+                if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
+                // Do not rely on CONFIG_PADRE_LOCAL alias; prefer canonical CONFIG_PADRE
+                if (window.Config && window.Config.ID_PADRE) return window.Config.ID_PADRE;
+            }
+        } catch (e) {
+            // ignore
+        }
+        return 'padre';
+    }
+
+    /**
+     * Devuelve un ID local de hijo si está disponible (runtime-safe)
+     * @returns {string|null}
+     */
+    export function getLocalHijoId() {
+        try {
+            if (typeof window !== 'undefined') {
+                if (window.CONFIG_HIJO && window.CONFIG_HIJO.IFRAME_ID) return window.CONFIG_HIJO.IFRAME_ID;
+                if (window.CONFIG_HIJO && window.CONFIG_HIJO.id) return window.CONFIG_HIJO.id;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
 
 // ============================================================
 // CONTROLADORES DE MENSAJERÍA UI
@@ -451,6 +595,7 @@ export function normalizarParadas(arr) {
  */
 registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
     const logPrefix = `[UI.NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
+        
     const timestamp = Date.now();
     const mensajeId = mensaje.mensajeId || generarIdUnico();
     
@@ -479,6 +624,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             logger.warn(`${logPrefix} ${errorMsg}`);
             
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -504,6 +650,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
             
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -571,12 +718,17 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             tieneAcciones: accionesValidadas.length > 0
         });
 
-        // 7. Enviar notificación al sistema de UI (hijo1)
+        // 7. Enviar notificación al sistema de UI (resolver dinámico)
         try {
             // 7.1. Verificar si ya existe una notificación con el mismo ID
+            const destinoUiNoti = resolverUIDestino();
+            const destinoUsableNoti = esDestinoValido(destinoUiNoti) ? destinoUiNoti : 'broadcast';
+            if (destinoUsableNoti === 'broadcast') {
+                try { typeof window.incrementarContador === 'function' && window.incrementarContador('notificacion.fallback_broadcast'); } catch (e) { /* ignore */ }
+            }
             if (reemplazar) {
                 await enviarMensaje({
-                    destino: 'hijo1',
+                    destino: destinoUsableNoti,
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     origen: 'sistema',
                     mensajeId: generarIdUnico(),
@@ -590,7 +742,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
                 });
             } else {
                 await enviarMensaje({
-                    destino: 'hijo1',
+                    destino: destinoUsableNoti,
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     origen: 'sistema',
                     mensajeId: generarIdUnico(),
@@ -603,8 +755,9 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
                 });
             }
 
-            // 7.2. Confirmación al emisor original
+            // 7.2. Confirmación al emisor original — incluir siempre 'origen' para evitar errores
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                 mensajeId: generarIdUnico(),
@@ -633,6 +786,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             
             // Notificar el error al emisor original
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -656,6 +810,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             // Notificar el error al emisor original si es posible
             if (mensaje?.origen) {
                 await enviarMensaje({
+                    origen: 'sistema',
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     mensajeId: generarIdUnico(),
@@ -720,6 +875,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             logger.warn(`${logPrefix} ${errorMsg}`);
             
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -745,6 +901,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
             
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -826,10 +983,12 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             config: configuracion
         });
 
-        // 8. Enviar comando para mostrar el modal al sistema de UI (hijo1)
+        // 8. Enviar comando para mostrar el modal al sistema de UI (resolver dinámico)
         try {
+            const destinoUiModal = resolverUIDestino();
+            const destinoUsableModal = esDestinoValido(destinoUiModal) ? destinoUiModal : 'broadcast';
             await enviarMensaje({
-                destino: 'hijo1',
+                destino: destinoUsableModal,
                 tipo: TIPOS_MENSAJE.UI.MODAL,
                 origen: 'sistema',
                 mensajeId: generarIdUnico(),
@@ -843,6 +1002,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
 
             // 9. Confirmación al emisor original
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                 mensajeId: generarIdUnico(),
@@ -873,6 +1033,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             
             // Notificar el error al emisor original
             await enviarMensaje({
+                origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -961,6 +1122,16 @@ async function manejarInteraccionModal(interaccion) {
     } catch (error) {
         logger.error(`${logPrefix} Error al procesar interacción: ${error.message}`, error);
     }
+}
+
+// Exponer helpers críticos en window para compatibilidad con scripts no-modulares
+try {
+    if (typeof window !== 'undefined') {
+        if (typeof window.getPadreId === 'undefined') window.getPadreId = getPadreId;
+        if (typeof window.getLocalHijoId === 'undefined') window.getLocalHijoId = getLocalHijoId;
+    }
+} catch (err) {
+    // Silently ignore environments without window or permission issues
 }
 
 // Mantén solo la limpieza de utilidades propias
@@ -1120,16 +1291,28 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
             case 'mostrar-mapa-jpg':
                 console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-jpg');
                 try {
-                    const url = 'mapas/Av1_mapa.jpg';
-                    if (typeof window.mostrarImagenOverlay === 'function') {
-                        window.mostrarImagenOverlay(url, 'Mapa');
-                        const overlay = document.getElementById('imagen-overlay');
-                        if (overlay) {
-                            const cont = overlay.querySelector('.media-contenedor');
-                            if (cont) { cont.style.width = '85vw'; cont.style.height = '85vh'; }
+                    // Accept a dynamic URL from the child. If none provided, fallback to a default JPG.
+                    const url = (mensaje.datos && mensaje.datos.url) || 'mapas/Av1_mapa.jpg';
+                    const titulo = (mensaje.datos && mensaje.datos.titulo) || 'Mapa';
+
+                    // If the URL points to an HTML page, show it in an iframe overlay. Otherwise show as image.
+                    if (typeof url === 'string' && url.trim().toLowerCase().endsWith('.html')) {
+                        if (typeof window.mostrarIframeOverlay === 'function') {
+                            window.mostrarIframeOverlay(url, titulo);
+                        } else {
+                            console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarIframeOverlay no está disponible');
                         }
                     } else {
-                        console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
+                        if (typeof window.mostrarImagenOverlay === 'function') {
+                            window.mostrarImagenOverlay(url, titulo);
+                            const overlay = document.getElementById('imagen-overlay');
+                            if (overlay) {
+                                const cont = overlay.querySelector('.media-contenedor');
+                                if (cont) { cont.style.width = '85vw'; cont.style.height = '85vh'; }
+                            }
+                        } else {
+                            console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
+                        }
                     }
                 } catch (err) {
                     console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error:', err);
@@ -1373,10 +1556,12 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             timeout: alerta.timeout
         });
 
-        // 7. Enviar comando para mostrar la alerta al sistema de UI (hijo1)
+        // 7. Enviar comando para mostrar la alerta al sistema de UI (resolver dinámico)
         try {
+            const destinoUiAlerta = resolverUIDestino();
+            const destinoUsableAlerta = esDestinoValido(destinoUiAlerta) ? destinoUiAlerta : 'broadcast';
             await enviarMensaje({
-                destino: 'hijo1',
+                destino: destinoUsableAlerta,
                 tipo: TIPOS_MENSAJE.UI.ALERTA,
                 origen: 'sistema',
                 mensajeId: generarIdUnico(),
@@ -1393,7 +1578,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
                 setTimeout(async () => {
                     try {
                         await enviarMensaje({
-                            destino: 'hijo1',
+                            destino: destinoUsableAlerta,
                             tipo: TIPOS_MENSAJE.UI.ALERTA,
                             origen: 'sistema',
                             mensajeId: generarIdUnico(),
@@ -1918,17 +2103,18 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
                     throw new Error('Ubicación de parada inválida o faltante');
                 }
 
-                // 4.2. Preparar datos de la parada
+                // 4.2. Preparar datos de la parada - usando normalizador para consistencia
+                const n = normalizarParada(parada);
                 const datosParada = {
-                    id: parada.paradaId,
-                    nombre: parada.nombre || `Parada ${parada.paradaId}`,
-                    ubicacion: {
-                        lat: Number(parada.ubicacion.lat.toFixed(6)),
-                        lng: Number(parada.ubicacion.lng.toFixed(6))
-                    },
-                    rutas: Array.isArray(parada.rutas) ? parada.rutas : [],
-                    metadatos: { ...(parada.metadatos || {}) },
-                    estado: parada.estado || 'activa',
+                    id: n.id,
+                    paradaId: n.paradaId || n.id,
+                    padreid: n.padreid || `padre-${n.id}`,
+                    nombre: n.nombre || `Parada ${n.id}`,
+                    ubicacion: n.ubicacion || (n.lat !== undefined && n.lng !== undefined ? { lat: n.lat, lng: n.lng } : undefined),
+                    rutas: n.rutas || [],
+                    waypoints: Array.isArray(n.waypoints) ? n.waypoints.map(w => ({ lat: w.lat, lng: w.lng })) : undefined,
+                    metadatos: { ...(n.metadatos || {}) },
+                    estado: n.estado || 'activa',
                     ultimaActualizacion: ahora,
                     origen: mensaje.origen
                 };
@@ -1974,6 +2160,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         if (notificarSistema && paradasProcesadas.length > 0) {
             try {
                 await enviarMensaje({
+                    origen: 'sistema',
                     tipo: TIPOS_MENSAJE.DATOS.ACTUALIZACION_PARADAS,
                     datos: {
                         total: paradasProcesadas.length,
@@ -1997,6 +2184,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         if (requiereConfirmacion && mensajeOriginalId) {
             try {
                 await enviarMensaje({
+                    origen: 'sistema',
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                     datos: {
@@ -2113,3 +2301,39 @@ export async function registrarControladoresUtils() {
         logger.warn('[UTILS][registrarControladores] No se pudo migrar controladores:', error.message);
     }
 }
+
+/**
+ * Resolver IDs de parada para normalizar variaciones del payload.
+ * Acepta un objeto con `padreId`, `padreid`, `paradaId`, `parada_id`, `id`,
+ * o `origen` y devuelve { padreId, paradaId } con ambos valores o nulls.
+ * Esto ayuda a que mensajes legacy con `padreid: 'padre-P-0'` o `parada_id: 'P-0'`
+ * siguán siendo compatibles.
+ * @param {Object} datos
+ * @returns {{padreId: string|null, paradaId: string|null}}
+ */
+export function resolverIdsParada(datos = {}) {
+    if (!datos || typeof datos !== 'object') return { padreId: null, paradaId: null };
+    const padreId = datos.padreId || datos.padreid || datos.padre || datos.origen || null;
+    const paradaId = datos.paradaId || datos.parada_id || datos.parada || datos.id || null;
+
+    // Derivar paradaId de padreId si es algo como 'padre-P-0'
+    let derivedParadaId = paradaId;
+    if (!derivedParadaId && typeof padreId === 'string' && padreId.startsWith('padre-')) {
+        derivedParadaId = padreId.replace(/^padre-/, '');
+    }
+
+    // Derivar padreId de paradaId si solo tenemos 'P-0'
+    let derivedPadreId = padreId;
+    if (!derivedPadreId && typeof derivedParadaId === 'string') {
+        derivedPadreId = `padre-${derivedParadaId}`;
+    }
+
+    return { padreId: derivedPadreId || null, paradaId: derivedParadaId || null };
+}
+
+// If a legacy global helper is expected, expose getPadreId as window.getPadreIdLocal
+try {
+    if (typeof window !== 'undefined' && typeof window.getPadreIdLocal === 'undefined') {
+        window.getPadreIdLocal = getPadreId;
+    }
+} catch (e) { /* ignore non-browser env */ }
