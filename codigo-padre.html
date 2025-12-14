@@ -42,6 +42,33 @@
             }
         };
     </script>
+        <script>
+            // Proveer un stub global para persistProgressState ante llamadas tempranas desde otros scripts
+            try {
+                if (typeof window !== 'undefined' && typeof window.persistProgressState === 'undefined') {
+                    window.persistProgressState = function() {
+                        // Stub temporario: será sustituido por la implementación real en Script 1.
+                        try { console.debug('[PADRE] persistProgressState stub invoked (early)'); } catch (e) {}
+                    };
+                }
+            } catch (e) {
+                // No fatal: ignorar si no se puede crear
+            }
+        </script>
+        <script>
+            // Proveer un stub global para getPadreId si se necesita antes de importar utils
+            try {
+                if (typeof window !== 'undefined' && typeof window.getPadreId === 'undefined') {
+                    window.getPadreId = function() {
+                        try {
+                            if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
+                            if (window.Config && window.Config.ID_PADRE) return window.Config.ID_PADRE;
+                        } catch (e) { /* ignore */ }
+                        return 'padre';
+                    };
+                }
+            } catch (e) { /* ignore */ }
+        </script>
 
     <style>
         /* Estilos generales, mapa, debug, logo, iframes, etc. */
@@ -403,6 +430,11 @@
             cursor: grab;
             cursor: -webkit-grab; /* Safari */
             cursor: -moz-grab; /* Firefox */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px; /* espacio interior para que la imagen no pegue con el borde */
+            box-sizing: border-box;
         }
         
         #imagen-overlay .imagen-contenedor:active {
@@ -412,10 +444,11 @@
         }
         
         #imagen-overlay img {
-            width: 100%;
-            height: 100%;
-            max-width: none;
-            max-height: none;
+            display: block;
+            width: auto; /* allow natural width but constrained by max-width */
+            height: auto; /* allow natural height but constrained by max-height */
+            max-width: calc(100% - 24px); /* respect container padding */
+            max-height: calc(100% - 24px);
             object-fit: contain;
             -o-object-fit: contain; /* Opera */
             user-select: none;
@@ -616,8 +649,25 @@
             
             // Configurar imagen
             imagenActual = document.getElementById('imagen-zoom');
-            imagenActual.src = urlImagen;
             imagenActual.alt = titulo || 'Imagen de la parada';
+            // Reset styles to ensure natural size and responsive constraints
+            imagenActual.style.maxWidth = 'calc(100% - 24px)';
+            imagenActual.style.maxHeight = 'calc(100% - 24px)';
+            imagenActual.style.width = 'auto';
+            imagenActual.style.height = 'auto';
+            imagenActual.style.display = 'block';
+            imagenActual.style.margin = '0 auto';
+            // Wait for load so we can adjust transform and container if needed
+            imagenActual.onload = function() {
+                // Reset zoom/pan and transform after load to calculate boundaries correctly
+                zoom = 1;
+                panX = 0;
+                panY = 0;
+                imagenActual.style.transform = 'scale(1) translate(0px, 0px)';
+                actualizarTransformImagen();
+                console.log('Imagen cargada y adaptada al overlay:', urlImagen);
+            };
+            imagenActual.src = urlImagen;
             
             // Manejar error de carga de imagen - Sin acción, mantener ventana abierta
             imagenActual.onerror = function() {
@@ -625,12 +675,13 @@
                 // No cerrar overlay - mantener ventana flotante visible como en video
             };
             
-            // Reset zoom y pan (FORZADO - garantiza 90% consistente)
-            zoom = 1;
-            panX = 0;
-            panY = 0;
-            // Forzar reset inmediato para evitar persistencia entre imágenes
-            if (imagenActual) {
+            // If image is already cached and onload won't fire, ensure transform reset anyway
+            if (!imagenActual.complete) {
+                // load will reset transform in onload handler
+            } else {
+                zoom = 1;
+                panX = 0;
+                panY = 0;
                 imagenActual.style.transform = 'scale(1) translate(0px, 0px)';
             }
             // Aplicar transform después de un breve delay para asegurar que se ejecute
@@ -660,6 +711,13 @@
             imagenActual = null;
             console.log('Imagen overlay cerrado');
         };
+
+        // Ajustar transform al cambiar tamaño de ventana para mantener la adaptación
+        window.addEventListener('resize', () => {
+            if (document.getElementById('imagen-overlay')?.classList.contains('visible')) {
+                actualizarTransformImagen();
+            }
+        });
         
         function inicializarZoomImagen() {
             if (!imagenActual) return;
@@ -760,9 +818,24 @@
         }
         
         function actualizarTransformImagen() {
-            if (imagenActual) {
-                imagenActual.style.transform = `scale(${zoom}) translate(${panX/zoom}px, ${panY/zoom}px)`;
-            }
+            if (!imagenActual) return;
+            const contenedor = imagenActual.parentElement;
+            const contRect = contenedor.getBoundingClientRect();
+            const baseWidth = imagenActual.offsetWidth || imagenActual.clientWidth || contRect.width;
+            const baseHeight = imagenActual.offsetHeight || imagenActual.clientHeight || contRect.height;
+            const scaledWidth = baseWidth * zoom;
+            const scaledHeight = baseHeight * zoom;
+
+            // Calcular límites de pan (para que la imagen no desaparezca fuera del contenedor)
+            const maxPanX = Math.max(0, (scaledWidth - contRect.width) / 2);
+            const maxPanY = Math.max(0, (scaledHeight - contRect.height) / 2);
+
+            // Clampeo de pan
+            panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+            panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
+
+            imagenActual.style.transformOrigin = 'center center';
+            imagenActual.style.transform = `scale(${zoom}) translate(${panX/zoom}px, ${panY/zoom}px)`;
         }
         
         // ============================================================
@@ -851,7 +924,7 @@
         
         // Cerrar overlays con tecla Escape
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
+                if (e.key === 'Escape') {
                 if (document.getElementById('imagen-overlay')?.classList.contains('visible')) {
                     cerrarImagenOverlay();
                 }
@@ -860,6 +933,9 @@
                 }
                 if (document.getElementById('error-overlay')?.classList.contains('visible')) {
                     cerrarErrorOverlay();
+                    }
+                    if (document.getElementById('iframe-overlay')?.classList.contains('visible')) {
+                        cerrarIframeOverlay();
                 }
             }
         });
@@ -908,6 +984,51 @@
                 }, 400);
             }
             console.log('Error overlay cerrado');
+        };
+
+        // ============================================================
+        // SISTEMA DE OVERLAY PARA IFRAMES (p. ej. mapas completos HTML)
+        // ============================================================
+        window.mostrarIframeOverlay = function(urlIframe, titulo = '') {
+            if (!urlIframe || typeof urlIframe !== 'string') {
+                console.warn('URL iframe inválida:', urlIframe);
+                mostrarErrorOverlay('No se pudo cargar el contenido HTML: URL inválida', 'iframe');
+                return;
+            }
+
+            // Crear overlay si no existe
+            let overlay = document.getElementById('iframe-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'iframe-overlay';
+                overlay.className = 'media-overlay';
+                overlay.innerHTML = `
+                    <div class="media-contenedor iframe-contenedor">
+                        <button class="btn-cerrar-overlay" onclick="cerrarIframeOverlay()" title="Cerrar">×</button>
+                        <iframe src="${urlIframe}" frameborder="0" allowfullscreen style="width:100%; height:100%"></iframe>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            } else {
+                const iframe = overlay.querySelector('iframe');
+                if (iframe) iframe.src = urlIframe;
+            }
+
+            overlay.classList.add('visible');
+            console.log('Iframe mostrado en overlay:', urlIframe);
+        };
+
+        window.cerrarIframeOverlay = function() {
+            const overlay = document.getElementById('iframe-overlay');
+            if (overlay) {
+                overlay.classList.remove('visible');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.parentNode.removeChild(overlay);
+                    }
+                }, 400);
+            }
+            console.log('Iframe overlay cerrado');
         };
     </script>
 
@@ -1062,6 +1183,14 @@
         style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:block;"
         onload="handleIframeLoad('hijo5-casa')" onerror="handleIframeError('hijo5-casa', event)"></iframe>
     
+        <!-- Optional: sistema-ui for monitoring / important notifications -->
+        <iframe id="sistema-ui"
+            title="Sistema UI - Notificaciones"
+            aria-label="Sistema de notificaciones y logs"
+            style="position:fixed; right:1vw; top:2vh; height:120px; width:320px; z-index:1000002; pointer-events:auto; display:block;"
+            onload="handleIframeLoad('sistema-ui')" onerror="handleIframeError('sistema-ui', event)"
+            srcdoc="<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Sistema UI - Notificaciones</title><style>body{font-family:Arial,sans-serif;font-size:14px;margin:0;padding:8px;}#notificaciones{max-height:100%;overflow-y:auto;} .notif{border-radius:6px;padding:8px;margin-bottom:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.1);} .notif.info{border-left:6px solid #2196F3;} .notif.warn{border-left:6px solid #FFC107;} .notif.error{border-left:6px solid #F44336;}</style></head><body><h3>Notificaciones</h3><div id=\"notificaciones\"></div><script>window.addEventListener('message',function(event){try{var data=event.data||{};if(!data||!data.tipo)return;if(data.tipo!=='SISTEMA.NOTIFICACION'&&data.tipo!=='TIPO_UI_NOTIFICACION')return;var n=document.getElementById('notificaciones');var d=document.createElement('div');d.className='notif '+(data.datos&&data.datos.tipo||'info');var t=data.datos&&data.datos.titulo||'Notificación';var m=data.datos&&data.datos.mensaje||'';d.innerHTML='<strong>'+t+'</strong><div>'+m+'</div><small><em>'+data.origen+'</em></small>';n.insertBefore(d,n.firstChild);}catch(e){console.warn('sistema-ui error parsing message',e);}});</script></body></html>"></iframe>
+    
     <!-- Trapezoid-shaped audio component -->
     <iframe id="hijo3" src=""
         title="Audio de la aventura"
@@ -1089,6 +1218,7 @@
 
     <!-- Error handling and map initialization -->
     <script type="module">
+        import { resolverIdsParada } from './js/utils.js';
         // AVENTURA_PARADAS is now defined globally in the regular script above
 
         // Initialize map after Leaflet is loaded
@@ -1185,7 +1315,7 @@
 
           { TIPOS_MENSAJE: TIPOS_MENSAJE_S1, MODOS: MODOS_S1 },
 
-          { generarIdUnico: generarIdUnico_S1, ajustarTimeoutPorConexion: ajustarTimeoutPorConexion_S1, normalizarParadas: normalizarParadas_S1 },
+          { generarIdUnico: generarIdUnico_S1, ajustarTimeoutPorConexion: ajustarTimeoutPorConexion_S1, normalizarParadas: normalizarParadas_S1, getPadreId: getPadreId_S1 },
 
           { esMovil: esMovil_S1 },
 
@@ -1238,6 +1368,7 @@
         const TIPOS_MENSAJE = TIPOS_MENSAJE_S1;
         const MODOS = MODOS_S1;
         const generarIdUnico = generarIdUnico_S1;
+        const getPadreId = getPadreId_S1;
 
         // Asegurar que la mensajería se inicialice en el padre antes de usar funciones
         try {
@@ -1296,7 +1427,33 @@
                 const hbFn = (typeof iniciarHeartbeat === 'function' && iniciarHeartbeat) || (typeof iniciarHeartbeat_S1 === 'function' && iniciarHeartbeat_S1) || window.iniciarHeartbeat;
                 if (typeof hbFn === 'function') {
                     try {
-                        hbFn(typeof ajustarTimeoutPorConexion_S1 === 'function' ? ajustarTimeoutPorConexion_S1(5000) : 5000);
+                        // Only auto-start heartbeat if we have a known estadoPadre and it's AVENTURA.
+                        const modoActual = (window.estadoPadre && window.estadoPadre.modo && window.estadoPadre.modo.actual) ? window.estadoPadre.modo.actual : null;
+                        if (modoActual && modoActual === MODOS.CASA) {
+                            (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Heartbeat not auto-started because initial mode is CASA`);
+                        } else if (!modoActual) {
+                            // Estado not yet initialized; skip and allow a later script to decide
+                            (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Heartbeat auto-start postponed (estado not yet initialized)`);
+                        } else {
+                            // Prefer to start heartbeat via messaging so all logic goes through mensajería
+                            try {
+                                if (typeof enviarMensaje_S1 === 'function') {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: CONFIG_PADRE.ID,
+                                        datos: { intervalo: (typeof ajustarTimeoutPorConexion_S1 === 'function') ? ajustarTimeoutPorConexion_S1(5000) : 5000 }
+                                    });
+                                } else {
+                                    hbFn(typeof ajustarTimeoutPorConexion_S1 === 'function' ? ajustarTimeoutPorConexion_S1(5000) : 5000);
+                                }
+                            } catch (e) {
+                                // Fallback: attempt direct function call
+                                try { hbFn(typeof ajustarTimeoutPorConexion_S1 === 'function' ? ajustarTimeoutPorConexion_S1(5000) : 5000); } catch (err) { /* ignore */ }
+                            }
+                            window.__HEARTBEAT_INICIADO = true;
+                            (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Heartbeat iniciado (Script1)`);
+                        }
                         window.__HEARTBEAT_INICIADO = true;
                         (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Heartbeat iniciado (Script1)`);
                     } catch (e) {
@@ -1310,15 +1467,30 @@
         // CONFIGURACIÓN DEL COMPONENTE PADRE (compartida con Script 2)
         // ============================================================
         window.CONFIG_PADRE = {
-            ID: 'padre',
+            ID: (typeof window !== 'undefined' && window.Config && window.Config.ID_PADRE) ? window.Config.ID_PADRE : 'padre',
             COMPONENTE_ID: 'PADRE-PRINCIPAL',
             VERSION: '3.0.0',
             DEBUG: true,
             LOG_PREFIX: '[PADRE]'
         };
 
-        // Alias local
-        const CONFIG_PADRE = window.CONFIG_PADRE;
+        // Alias local (use var to avoid redeclaration in multiple module scripts)
+        var CONFIG_PADRE = window.CONFIG_PADRE;
+
+        // Exponer getPadreId temprano en window para evitar ReferenceErrors en scripts no-modulares
+        try {
+            if (typeof window !== 'undefined' && typeof window.getPadreId === 'undefined') {
+                window.getPadreId = function() {
+                    try {
+                        if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
+                        if (window.Config && window.Config.ID_PADRE) return window.Config.ID_PADRE;
+                    } catch (e) { /* ignore */ }
+                    return 'padre';
+                };
+            }
+        } catch (e) {
+            // Ignore - can't expose in this environment
+        }
 
         // ============================================================
         // DETECCIÓN DE DISPOSITIVO MÓVIL
@@ -1389,7 +1561,8 @@
             estadoHijos: new Map(),
             
             // Estado de progreso de aventura
-            indiceProgreso: 0,
+            // indiceProgreso: integer index into AVENTURA_PARADAS array or null if unknown
+            indiceProgreso: null,
             elementoActual: null,
             audioActual: {
                 id: null,
@@ -1402,11 +1575,160 @@
                 completado: false
             },
             retosCompletados: new Map()
+            ,
+            // Pendientes por elemento (padreId): { llegada: bool, audio: bool, reto: bool, timestamp }
+            pendingCompleciones: {}
         };
 
         // Alias global para compatibilidad (sin const para evitar redeclaración en Script 2)
         // eslint-disable-next-line no-undef
         var estado = window.estadoPadre;
+
+        // Persistencia del progreso de la aventura
+        function persistProgressState() {
+            try {
+                const payload = {
+                    indiceProgreso: typeof estado.indiceProgreso === 'number' ? estado.indiceProgreso : null,
+                    paradaActual: estado.paradaActual || null,
+                    elementoActualId: estado.elementoActual ? (estado.elementoActual.parada_id || estado.elementoActual.tramo_id || estado.elementoActual.padreid) : null,
+                    audioActual: estado.audioActual || null,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('vv_progreso', JSON.stringify(payload));
+                logger.debug('[PADRE][PROGRESO] Estado de progreso persistido', payload);
+            } catch (e) {
+                logger.warn('[PADRE][PROGRESO] No se pudo persistir vv_progreso', e);
+            }
+        }
+
+        // Exponer persistProgressState en window para compatibilidad con scripts
+        try {
+            if (typeof window !== 'undefined' && typeof window.persistProgressState === 'undefined') {
+                window.persistProgressState = persistProgressState;
+            }
+        } catch (e) {
+            // Ignorar si no se puede exponer (por ejemplo CSP estrictos)
+        }
+
+        function restoreProgressFromStorage() {
+            const logPrefix = '[PADRE][PROGRESO][RESTORE]';
+            try {
+                const raw = localStorage.getItem('vv_progreso');
+                if (!raw) {
+                    logger.debug(`${logPrefix} No hay progreso persistido`);
+                    return null;
+                }
+                const obj = JSON.parse(raw);
+                if (!obj) return null;
+
+                if (typeof obj.indiceProgreso === 'number') {
+                    estado.indiceProgreso = obj.indiceProgreso;
+                    logger.info(`${logPrefix} indiceProgreso restaurado: ${estado.indiceProgreso}`);
+                }
+                if (obj.paradaActual) {
+                    estado.paradaActual = obj.paradaActual;
+                    logger.info(`${logPrefix} paradaActual restaurada: ${estado.paradaActual}`);
+                }
+                if (obj.elementoActualId && Array.isArray(window.AVENTURA_PARADAS)) {
+                    const found = window.AVENTURA_PARADAS.find(p => p.parada_id === obj.elementoActualId || p.tramo_id === obj.elementoActualId || p.padreid === obj.elementoActualId);
+                    if (found) estado.elementoActual = found;
+                }
+
+                // After we restore, broadcast to children so they also sync UI
+                try {
+                    // NOTE: Using a minimal critical set for system readiness. The UI menu children
+                    // 'hijo1-hamburguesa' and 'hijo1-opciones' are purposefully excluded here.
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                    for (const h of hijosCriticos) {
+                        try {
+                            const padreIdRest = estado.elementoActual?.padreid || (estado.paradaActual ? `padre-${estado.paradaActual}` : null);
+                            // Debug: store last Cambio Parada payload for diagnostics
+                            window._lastCambioParada = { paradaId: estado.paradaActual || null, parada_id: estado.paradaActual || null, padreId: padreIdRest, padreid: padreIdRest, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), restaurado: true };
+                            enviarMensaje_S1({
+                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                                origen: CONFIG_PADRE.ID,
+                                destino: h,
+                                datos: { 
+                                    paradaId: estado.paradaActual || null, 
+                                    parada_id: estado.paradaActual || null,
+                                    padreId: padreIdRest, 
+                                    padreid: padreIdRest,
+                                    indiceProgreso: estado.indiceProgreso, 
+                                    timestamp: Date.now(), 
+                                    restaurado: true 
+                                }
+                            });
+                        } catch (err) { /* ignore */ }
+                    }
+                } catch (e) {}
+
+                return obj;
+            } catch (e) {
+                logger.warn(`${logPrefix} Error restaurando vv_progreso`, e);
+                return null;
+            }
+        }
+
+        // Buscador de índice por id en AVENTURA_PARADAS
+        function findIndexByPadreIdOrId(id) {
+            if (!id || !Array.isArray(window.AVENTURA_PARADAS)) return -1;
+            return window.AVENTURA_PARADAS.findIndex(p => p.padreid === id || p.parada_id === id || p.tramo_id === id);
+        }
+
+        // Asegurar parada por defecto: usar P-0, primer inicio o primer parada
+        async function ensureDefaultParada() {
+            const logPrefix = '[PADRE][PROGRESO][DEFAULT]';
+            try {
+                if (estado.paradaActual) {
+                    logger.debug(`${logPrefix} Ya existe paradaActual: ${estado.paradaActual}`);
+                    return;
+                }
+
+                let defaultIndex = -1;
+                const paradas = Array.isArray(window.AVENTURA_PARADAS) ? window.AVENTURA_PARADAS : [];
+                if (paradas.length === 0) return; // nothing to do
+
+                // Prefer explicit P-0 matching if available
+                defaultIndex = findIndexByPadreIdOrId('P-0');
+                if (defaultIndex === -1) {
+                    defaultIndex = paradas.findIndex(p => p.tipo === 'inicio');
+                }
+                if (defaultIndex === -1) {
+                    defaultIndex = paradas.findIndex(p => p.tipo === 'parada');
+                }
+                if (defaultIndex === -1) defaultIndex = 0; // fallback to first element
+
+                // Set the estado
+                estado.indiceProgreso = defaultIndex;
+                const ped = paradas[defaultIndex];
+                estado.paradaActual = ped.parada_id || ped.tramo_id || ped.padreid || null;
+                const padreIdDefault = ped.padreid || (estado.paradaActual ? `padre-${estado.paradaActual}` : null);
+                estado.elementoActual = ped;
+
+                // Persist and notify children
+                persistProgressState();
+                try {
+                    // NOTE: Minimal set of critical children; UI helper frames (hijo1-*) are not required for readiness.
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                    for (const h of hijosCriticos) {
+                            try {
+                                // Debug: store last Cambio Parada payload for diagnostics
+                                window._lastCambioParada = { paradaId: estado.paradaActual, parada_id: estado.paradaActual, padreId: padreIdDefault, padreid: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' };
+                            await enviarMensaje_S1({
+                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                                origen: CONFIG_PADRE.ID,
+                                destino: h,
+                                datos: { paradaId: estado.paradaActual, padreId: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' }
+                            });
+                        } catch (err) { logger.debug(`${logPrefix} no se pudo notificar a ${h}`); }
+                    }
+                } catch (e) { logger.warn(`${logPrefix} Error notificando a hijos`); }
+                logger.info(`${logPrefix} Parada por defecto establecida: ${estado.paradaActual} (indice ${estado.indiceProgreso})`);
+
+            } catch (e) {
+                logger.warn(`${logPrefix} Error asegurando parada por defecto`, e);
+            }
+        }
 
         // === INICIALIZACIONES ADICIONALES DE SEGURIDAD Y CORRELACIÓN ===
         // Garantizar mapas/sets compartidos antes de que otros scripts los usen
@@ -1604,6 +1926,101 @@
 
                 logger.debug(`${logPrefix} Iniciando watchPosition...`);
 
+                // Try several quick high-accuracy getCurrentPosition attempts (with backoff) to obtain an immediate usable fix
+                try {
+                    if (navigator.geolocation && typeof navigator.geolocation.getCurrentPosition === 'function') {
+                        const gpsCfg = (window.Config && window.Config.GPS) ? window.Config.GPS : {};
+                        const maxAttempts = Number(gpsCfg.HIGH_ACC_INIT_ATTEMPTS || 2);
+                        const baseTimeout = Number(gpsCfg.INIT_ATTEMPT_TIMEOUT_MS || 5000);
+
+                        const getCurrentPositionAsync = (opts) => new Promise((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+                        });
+
+                        let initialAccepted = false;
+                        for (let i = 0; i < maxAttempts; i++) {
+                            const timeoutMs = Math.round(baseTimeout * Math.pow(1.8, i)); // mild exponential backoff
+                            try {
+                                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos'); } catch (e) { /* ignore */ }
+                                const fresh = await getCurrentPositionAsync({ enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 });
+                                const a2 = fresh.coords && fresh.coords.accuracy;
+                                logger.info(`${logPrefix} getCurrentPosition inicial intento ${i + 1}/${maxAttempts}: [${fresh.coords.latitude.toFixed(6)}, ${fresh.coords.longitude.toFixed(6)}] (±${Math.round(a2)}m)`);
+
+                                if (typeof a2 === 'number' && (!gpsCfg.REJECT_ACCURACY_M || a2 < gpsCfg.REJECT_ACCURACY_M)) {
+                                    // Accept this initial position
+                                    const fLat = fresh.coords.latitude;
+                                    const fLng = fresh.coords.longitude;
+                                    estado.gps.posicionUsuario = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
+                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
+                                    estado.gps.precision = a2;
+                                    estado.gps.permisos = true;
+                                    initialAccepted = true;
+                                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos_exitosos'); } catch (e) { /* ignore */ }
+                                    logger.debug(`${logPrefix} ✅ Posición inicial de alta precisión aceptada (±${Math.round(a2)}m)`);
+                                    break;
+                                } else {
+                                    logger.warn(`${logPrefix} Posición inicial obtenida pero precisión insuficiente: ±${Math.round(a2)}m`);
+                                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos_precision_insuficiente'); } catch (e) { /* ignore */ }
+                                }
+                            } catch (errAttempt) {
+                                logger.debug(`${logPrefix} getCurrentPosition intento ${i + 1} falló:`, errAttempt && errAttempt.message ? errAttempt.message : errAttempt);
+                                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos_fallidos'); } catch (e) { /* ignore */ }
+                            }
+                        }
+
+                        // If after attempts we still don't have an acceptable position, try to obtain safe fallback coords (P-0) from hijo2
+                        if (!initialAccepted) {
+                            logger.warn(`${logPrefix} No se obtuvo posición inicial aceptable tras ${maxAttempts} intentos; intentando fallback a coordenadas de inicio (P-0)`);
+                            try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_intento_hijo2'); } catch (e) { /* ignore */ }
+                            try {
+                                const coordenadasResponse = await new Promise((resolve, reject) => {
+                                    const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2 (fallback)')), ajustarTimeoutPorConexionSafe(5000));
+
+                                    const controladorTemporal = async (mensaje) => {
+                                        clearTimeout(timeout);
+                                        window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                        resolve(mensaje.datos);
+                                    };
+
+                                    window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+
+                                    enviarMensajePadre({
+                                        tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                                        origen: getPadreId(),
+                                        destino: 'hijo2',
+                                        datos: { paradaId: 'P-0', incluirMetadatos: false, contexto: 'gps_fallback' }
+                                    });
+                                });
+
+                                if (coordenadasResponse && coordenadasResponse.length > 0 && coordenadasResponse[0].coordenadas) {
+                                    const c = coordenadasResponse[0].coordenadas;
+                                    estado.gps.posicionUsuario = { lat: c.lat || c[0], lng: c.lng || c[1], accuracy: 1000, timestamp: Date.now() };
+                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
+                                    estado.gps.precision = 1000;
+                                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_hijo2_ok'); } catch (e) { /* ignore */ }
+                                    logger.info(`${logPrefix} Coordenadas de fallback obtenidas de hijo2 y aplicadas: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
+                                } else {
+                                    // Fallback a coordenadas por defecto P-0 si hijo2 no responde correctamente
+                                    estado.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
+                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
+                                    estado.gps.precision = 1000;
+                                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
+                                    logger.info(`${logPrefix} Fallback a inicio (P-0) aplicado: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
+                                }
+                            } catch (err) {
+                                // En caso de timeout o error al solicitar a hijo2, fallback a P-0
+                                estado.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
+                                estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
+                                estado.gps.precision = 1000;
+                                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
+                                logger.warn(`${logPrefix} Error solicitando coordenadas a hijo2 para fallback (${err.message}); fallback a inicio (P-0)`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    logger.debug(`${logPrefix} getCurrentPosition iniciales fallaron:`, e);
+                }
+
                 // Iniciar watchPosition
                 estado.gps.watchId = navigator.geolocation.watchPosition(
                     // Success callback
@@ -1616,6 +2033,8 @@
                         estado.gps.precision = accuracy;
                         estado.gps.error = null;
                         estado.gps.activo = true;
+                        // Reset retries after successful update
+                        estado.gps.retries = 0;
                         estado.gps.permisos = true;
 
                         logger.debug(`${logPrefix} 📍 Ubicación GPS: [${lat.toFixed(6)}, ${lng.toFixed(6)}] (±${Math.round(accuracy)}m)`);
@@ -1624,7 +2043,8 @@
                         try {
                             const gpsCfg = (window.Config && window.Config.GPS) ? window.Config.GPS : null;
                             if (gpsCfg && typeof accuracy === 'number' && accuracy >= gpsCfg.REJECT_ACCURACY_M) {
-                                        logger.warn(`${logPrefix} Posición descartada por precisión (±${Math.round(accuracy)}m >= REJECT ${gpsCfg.REJECT_ACCURACY_M}m)`);
+                                            logger.warn(`${logPrefix} Posición descartada por precisión (±${Math.round(accuracy)}m >= REJECT ${gpsCfg.REJECT_ACCURACY_M}m)`);
+                                            try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.posicion_descartada'); } catch (e) { /* ignore */ }
                                         try {
                                             // Telemetría: GPS descartado por baja precisión
                                             registrarEvento && typeof registrarEvento === 'function' && registrarEvento('GPS_DESCARTADO', {
@@ -1644,6 +2064,7 @@
 
                                 // Intentar obtener una posición puntual más precisa
                                 try {
+                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.diagnostico_iniciado'); } catch (e) { /* ignore */ }
                                     navigator.geolocation.getCurrentPosition(
                                         (fresh) => {
                                             const a2 = fresh?.coords?.accuracy;
@@ -1663,12 +2084,15 @@
                                                 } catch (procErr) {
                                                     logger.warn(`${logPrefix} Error procesando posición fresca:`, procErr);
                                                 }
+                                                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.diagnostico_ok'); } catch (e) { /* ignore */ }
                                             } else {
                                                 logger.warn(`${logPrefix} getCurrentPosition tampoco mejoró precisión: ±${Math.round(a2)}m`);
+                                                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.diagnostico_no_mejoro'); } catch (e) { /* ignore */ }
                                             }
                                         },
                                         (err) => {
                                             logger.warn(`${logPrefix} getCurrentPosition diagnóstico falló:`, err && err.message ? err.message : err);
+                                            try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.diagnostico_fallo'); } catch (e) { /* ignore */ }
                                         },
                                         { enableHighAccuracy: true, timeout: ajustarTimeoutPorConexion_S1(30000), maximumAge: 0 }
                                     );
@@ -1725,7 +2149,7 @@
                             } else {
                                 const payload = {
                                     tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
-                                    origen: 'padre',
+                                    origen: getPadreId(),
                                     datos: {
                                         lat,
                                         lng,
@@ -1770,30 +2194,69 @@
 
                         logger.error(`${logPrefix} Error GPS: ${errorMsg} (código: ${error.code})`);
 
+                        // Retry strategy for TIMEOUT (code 3): try again with degraded options up to N attempts
+                        try {
+                            const MAX_REINTENTOS_GPS = (window.Config && window.Config.GPS && window.Config.GPS.REINTENTOS) || 3;
+                            estado.gps.retries = estado.gps.retries || 0;
+                            if (error.code === error.TIMEOUT && estado.gps.retries < MAX_REINTENTOS_GPS) {
+                                estado.gps.retries += 1;
+                                const gpsCfg = (window.Config && window.Config.GPS) ? window.Config.GPS : { ENABLE_HIGH_ACCURACY: true, TIMEOUT_MS: 15000 };
+                                const newOptions = {
+                                    enableHighAccuracy: false, // disable high accuracy to improve chance of success
+                                    timeout: Math.min((gpsCfg.TIMEOUT_MS || 15000) * Math.pow(2, estado.gps.retries - 1), 60000),
+                                    maximumAge: gpsCfg.MAXIMUM_AGE_MS || 0
+                                };
+                                logger.info(`${logPrefix} Reintentando watchPosition (intento ${estado.gps.retries}/${MAX_REINTENTOS_GPS}) con opciones:`, newOptions);
+                                // Clear previous watch if any
+                                try { if (estado.gps.watchId !== null) navigator.geolocation.clearWatch(estado.gps.watchId); } catch (e) { /* ignore */ }
+                                setTimeout(() => {
+                                    try {
+                                        // Re-invoke watchPosition with fallback options
+                                        estado.gps.watchId = navigator.geolocation.watchPosition(
+                                            (position) => {
+                                                // Reuse existing success handler code by calling activarGPS again? Simple approach: directly update state.
+                                                const { latitude: lat, longitude: lng, accuracy } = position.coords;
+                                                estado.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
+                                                estado.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
+                                                estado.gps.precision = accuracy;
+                                                estado.gps.error = null;
+                                                estado.gps.activo = true;
+                                                logger.info(`${logPrefix} watchPosition reintento exitoso (intento ${estado.gps.retries})`);
+                                                try { if (window.funcionesMapa && typeof window.funcionesMapa.procesarPosicionGPSParaAventura === 'function') window.funcionesMapa.procesarPosicionGPSParaAventura(position); } catch (e) { logger.warn(`${logPrefix} Error procesando posición tras reintento:`, e); }
+                                            },
+                                            (e2) => {
+                                                logger.warn(`${logPrefix} Reintento watchPosition falló (intento ${estado.gps.retries}):`, e2 && e2.message ? e2.message : e2);
+                                            },
+                                            newOptions
+                                        );
+                                    } catch (retryErr) {
+                                        logger.warn(`${logPrefix} Error al reintentar watchPosition:`, retryErr);
+                                    }
+                                }, 500 * estado.gps.retries);
+                            }
+                        } catch (retryErr) {
+                            logger.warn(`${logPrefix} Error gestionando reintento GPS:`, retryErr);
+                        }
+
                         // Notificar error a hijos con capability 'gps' (si existen)
                         try {
+                            const payload = {
+                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ERROR,
+                                origen: getPadreId(),
+                                datos: {
+                                    codigo: error.code,
+                                    mensaje: errorMsg,
+                                    contexto: 'watchPosition'
+                                }
+                            };
                             if (typeof broadcastToCapability === 'function') {
-                                const r = broadcastToCapability('gps', {
-                                    tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ERROR,
-                                    origen: 'padre',
-                                    datos: {
-                                        codigo: error.code,
-                                        mensaje: errorMsg,
-                                        contexto: 'watchPosition'
-                                    }
-                                });
+                                logger.debug(`${logPrefix} Preparando broadcast GPS.ERROR payload:`, payload);
+                                const r = broadcastToCapability('gps', payload);
                                 logger.debug(`${logPrefix} BroadcastToCapability(error) enviados:`, r);
                             } else {
-                                const r = enviarMensaje_S1({
-                                    tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ERROR,
-                                    origen: 'padre',
-                                    destino: 'todos',
-                                    datos: {
-                                        codigo: error.code,
-                                        mensaje: errorMsg,
-                                        contexto: 'watchPosition'
-                                    }
-                                });
+                                const payload2 = Object.assign({}, payload, { destino: 'todos' });
+                                logger.debug(`${logPrefix} Preparando enviarMensaje_S1 GPS.ERROR payload:`, payload2);
+                                const r = enviarMensaje_S1(payload2);
                                 if (r && typeof r.then === 'function') r.catch(error => logger.error(`${logPrefix} Error notificando error GPS:`, error));
                             }
                         } catch (error) {
@@ -1839,7 +2302,7 @@
                     if (typeof broadcastToCapability === 'function') {
                         const r = broadcastToCapability('gps', {
                             tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
-                            origen: 'padre',
+                            origen: getPadreId(),
                             datos: {
                                 activo: true,
                                 permisos: true,
@@ -1851,7 +2314,7 @@
                     } else {
                         const r = enviarMensaje_S1({
                             tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
-                            origen: 'padre',
+                            origen: getPadreId(),
                             destino: 'todos',
                             datos: {
                                 activo: true,
@@ -2146,17 +2609,17 @@
                             if (!datos) return;
                             // Prefer centrar por parada id si existe
                             if (datos.id) {
-                                await enviarMensaje({
+                                await enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
-                                    origen: CONFIG_PADRE_LOCAL.ID,
-                                    destino: CONFIG_PADRE_LOCAL.ID,
+                                    origen: getPadreIdLocal(),
+                                    destino: getPadreIdLocal(),
                                     datos: { paradaActual: datos.id, zoom: 16 }
                                 });
                             } else if (datos.lat && datos.lng) {
-                                await enviarMensaje({
+                                await enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
-                                    origen: CONFIG_PADRE_LOCAL.ID,
-                                    destino: CONFIG_PADRE_LOCAL.ID,
+                                    origen: getPadreIdLocal(),
+                                    destino: getPadreIdLocal(),
                                     datos: { posicion: { lat: datos.lat, lng: datos.lng }, zoom: 16 }
                                 });
                             }
@@ -2321,7 +2784,7 @@
                     await enviarMensaje_S1({
                         tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
                         destino: hijoId,
-                        origen: 'padre',
+                        origen: getPadreId(),
                         datos: {
                             modoInicial: modoInicial,
                             timestamp: Date.now()
@@ -2341,7 +2804,7 @@
                         await enviarMensaje_S1({
                             destino: 'hijo2',
                             tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
-                            origen: 'padre',
+                            origen: getPadreId(),
                             datos: {
                                 paradas: paradasNormalizadas,
                                 timestamp: Date.now()
@@ -2353,7 +2816,10 @@
                     }
                 }
 
-                const hijosCriticos = ['hijo1-hamburguesa', 'hijo1-opciones', 'hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                // NOTE: hijo1-hamburguesa and hijo1-opciones are non-critical UI components.
+                // They are still loaded sequentially via cargarIframeSecuencial() but
+                // they are not required for `todosHijosListos` or for the system to mark initial sync.
+                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
                 const todosListos = hijosCriticos.every(id => estado.hijosInicializados.has(id));
 
                 if (todosListos && !estado.todosHijosListos) {
@@ -2371,24 +2837,33 @@
                         const modoActual = estado.modo.actual;
                         logger.info(`${logPrefix} Enviando sincronización inicial de modo: ${modoActual}`);
                         
-                        const hijosCriticos = ['hijo2', 'hijo3', 'hijo4'];
+                        const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
                         for (const hijoId of hijosCriticos) {
-                            await enviarMensaje_S1({
-                                tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
-                                origen: CONFIG_PADRE.ID,
-                                destino: hijoId,
-                                datos: {
-                                    modo: modoActual,
-                                    timestamp: Date.now(),
-                                    razon: 'sincronizacion_inicial',
-                                    secuenciaCompleta: true
-                                }
-                            });
-                            logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${hijoId}`);
+                            try {
+                                await enviarMensaje_S1({
+                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
+                                    origen: CONFIG_PADRE.ID,
+                                    destino: hijoId,
+                                    datos: {
+                                        modo: modoActual,
+                                        timestamp: Date.now(),
+                                        razon: 'sincronizacion_inicial',
+                                        secuenciaCompleta: true
+                                    }
+                                });
+                                logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${hijoId}`);
+                            } catch (error) {
+                                logger.error(`${logPrefix} Error enviando CAMBIO_MODO inicial a ${hijoId}:`, error);
+                            }
                         }
                     } catch (error) {
                         logger.error(`${logPrefix} Error en sincronización inicial de modo:`, error);
                     }
+
+                    // Después de la sincronización inicial de modo, actualizar distancias de pendings
+                    try {
+                        if (estado.gps && estado.gps.posicionUsuario) updatePendingDistances(estado.gps.posicionUsuario);
+                    } catch (err) { logger.warn('[PADRE][PENDING] updatePendingDistances error:', err); }
                     
                     // Solicitar coordenadas iniciales según el modo
                     try {
@@ -2434,7 +2909,7 @@
 
                     // 🔥 PROPAGACIÓN DEL CAMBIO DE MODO A HIJOS CRÍTICOS
                     const { origen, modo } = mensaje.datos || {};
-                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4'];
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
 
                     logger.info(`${logPrefix} Propagando cambio de modo ${modo} a hijos críticos: ${hijosCriticos.join(', ')}`);
 
@@ -2457,6 +2932,69 @@
                         } catch (error) {
                             logger.error(`${logPrefix} Error enviando SISTEMA.CAMBIO_MODO a ${hijoId}:`, error);
                         }
+                    }
+
+                    // 🔁 También notificar explícitamente sobre heartbeat según modo
+                    try {
+                        if (modo === 'aventura') {
+                            // Iniciar heartbeat en el padre: preferir envío de mensaje al propio mensajería
+                            try {
+                                if (typeof enviarMensaje_S1 === 'function') {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: CONFIG_PADRE.ID,
+                                        datos: { intervalo: (typeof ajustarTimeoutPorConexion_S1 === 'function') ? ajustarTimeoutPorConexion_S1(5000) : 5000 }
+                                    });
+                                } else {
+                                    // Fallback: si mensajería no está disponible, invocar la función directa si está disponible
+                                    try { (typeof window.iniciarHeartbeat === 'function') ? window.iniciarHeartbeat() : null; } catch (e) { logger.error(`${logPrefix} Error iniciando heartbeat local (fallback):`, e); }
+                                }
+                            } catch (e) { logger.error(`${logPrefix} Error iniciando heartbeat local via messaging:`, e); }
+                            for (const h of hijosCriticos) {
+                                try {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: h,
+                                        datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
+                                    });
+                                } catch (error) {
+                                    logger.warn(`${logPrefix} Error enviando HEARTBEAT_START a ${h}:`, error);
+                                }
+                            }
+                            // Ensure default parada if none set
+                            try { await ensureDefaultParada(); } catch (err) { logger.warn('[CAMBIO_MODO] ensureDefaultParada error', err); }
+                        } else if (modo === 'casa') {
+                            // Pausar heartbeat en el padre localmente
+                            try {
+                                if (typeof enviarMensaje_S1 === 'function') {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_PAUSE,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: CONFIG_PADRE.ID,
+                                        datos: { timestamp: Date.now(), razon: 'cambio_modo_casa' }
+                                    });
+                                } else {
+                                    try { (typeof window.pausarHeartbeat === 'function') ? window.pausarHeartbeat() : null; } catch (e) { logger.error(`${logPrefix} Error pausando heartbeat local (fallback):`, e); }
+                                }
+                            } catch (e) { logger.error(`${logPrefix} Error pausando heartbeat local via messaging:`, e); }
+
+                            for (const h of hijosCriticos) {
+                                try {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_PAUSE,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: h,
+                                        datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
+                                    });
+                                } catch (error) {
+                                    logger.warn(`${logPrefix} Error enviando HEARTBEAT_PAUSE a ${h}:`, error);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        logger.error(`${logPrefix} Error propagando heartbeat control a hijos criticos:`, error);
                     }
 
                     // ✅ GESTIÓN GPS SEGÚN MODO (PADRE COMO ORQUESTADOR)
@@ -2489,7 +3027,7 @@
 
                         try {
                             // Enviar comando GPS a hijo2 (sin esperar respuesta)
-                            await enviarMensaje({
+                            await enviarMensajePadre({
                                 tipo: gpsMessageType,
                                 origen: CONFIG_PADRE.ID,
                                 destino: 'hijo2',
@@ -2661,7 +3199,7 @@
                     try {
                         await enviarMensaje_S1({
                             tipo: TIPOS_MENSAJE_S1.SISTEMA.NOTIFICACION,
-                            origen: CONFIG_PADRE.ID,
+                            origen: window.CONFIG_PADRE && window.CONFIG_PADRE.ID ? window.CONFIG_PADRE.ID : 'padre',
                             destino: hijoId,
                             datos: {
                                 evento: 'aplicacion_lista',
@@ -2684,8 +3222,17 @@
                     logger.info(`${logPrefix} Inicializando aventura...`);
                     
                     // Inicializar estado de progreso
-                    estado.indiceProgreso = 0;
-                    estado.elementoActual = obtenerElementoActual();
+                        const restored = restoreProgressFromStorage();
+                        if (restored && typeof restored.indiceProgreso === 'number') {
+                            // Already restored a known index
+                            estado.indiceProgreso = restored.indiceProgreso;
+                            estado.elementoActual = obtenerElementoActual();
+                        } else {
+                            // No persisted progress: ensure default parada (P-0, inicio or first parada)
+                            estado.indiceProgreso = null;
+                            estado.elementoActual = obtenerElementoActual();
+                            await ensureDefaultParada();
+                        }
                     
                     if (estado.elementoActual) {
                         logger.info(`${logPrefix} Primer elemento cargado: ${estado.elementoActual.tipo} ${estado.elementoActual.parada_id || estado.elementoActual.tramo_id}`);
@@ -3097,6 +3644,41 @@
                 }
             }
         };
+
+        // Debug helper: register allowed origin dynamically at runtime
+        window.debugRegisterAllowedOrigin = function(origin) {
+            try {
+                if (!origin || typeof origin !== 'string') return false;
+                if (typeof window.registerAllowedOrigin === 'function') {
+                    const res = window.registerAllowedOrigin(origin);
+                    console.info('[DEBUG] registerAllowedOrigin called result:', res);
+                    return true;
+                }
+                console.warn('[DEBUG] registerAllowedOrigin API not available in this context');
+                return false;
+            } catch (e) {
+                console.error('[DEBUG] Error calling registerAllowedOrigin:', e);
+                return false;
+            }
+        };
+    </script>
+
+    <script>
+        // Global image fallback to avoid 404 console spam
+        try {
+            document.addEventListener('error', function (ev) {
+                try {
+                    const tgt = ev && ev.target;
+                    if (tgt && tgt.tagName === 'IMG') {
+                        // Preserve original src in data attribute
+                        if (!tgt.dataset.originalSrc) tgt.dataset.originalSrc = tgt.src || '';
+                        // Use a small inline placeholder (transparent SVG) to avoid network 404s
+                        tgt.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32"%3E%3Crect width="100%25" height="100%25" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" font-size="8" text-anchor="middle" dominant-baseline="middle" fill="%23888"%3Eimg%3C/text%3E%3C/svg%3E';
+                        tgt.classList.add('img-fallback');
+                    }
+                } catch (e) { /* ignore errors in fallback code */ }
+            }, true);
+        } catch (e) { /* ignore if document not ready */ }
     </script>
 
     <!-- ============================================================ -->
@@ -3108,7 +3690,7 @@
         // ============================================================
         // Importación de módulos
         const { TIPOS_MENSAJE: TIPOS_MENSAJE_S2, MODOS: MODOS_S2 } = await import('./js/constants.js');
-        const { generarIdUnico: generarIdUnico_S2, ajustarTimeoutPorConexion: ajustarTimeoutPorConexion_S2, normalizarParadas: normalizarParadas_S2 } = await import('./js/utils.js');
+        const { generarIdUnico: generarIdUnico_S2, ajustarTimeoutPorConexion: ajustarTimeoutPorConexion_S2, normalizarParadas: normalizarParadas_S2, resolverIdsParada: resolverIdsParada_S2 } = await import('./js/utils.js');
         const { esMovil: esMovil_S2 } = await import('./js/device-detection.js');
         const { validarDato: validarDato_S2 } = await import('./js/validacion.js');
         await import('./js/suppress-warnings.js');
@@ -3127,12 +3709,15 @@
         // CONFIG_PADRE, estado, y registrarEvento están definidos en Script 1
         // Crear referencias con nombres diferentes para evitar conflicto del linter
         const estadoGlobal = window.estadoPadre;
+        // Make resolverIdsParada available under the simple name used in handlers
+        const resolverIdsParada = resolverIdsParada_S2;
         const configGlobal = window.CONFIG_PADRE;
         const registrarEventoGlobal = window.registrarEvento;
         
         // Aliases locales que no chocan con Script 1
         const estadoScript2 = estadoGlobal;
-        const CONFIG_PADRE_LOCAL = configGlobal;
+        // NOTE: CONFIG_PADRE_LOCAL alias intentionally avoided; use getPadreId()/CONFIG_PADRE where possible
+        // const CONFIG_PADRE_LOCAL = configGlobal;
         const registrarEventoScript2 = registrarEventoGlobal;
         
         // Aliases adicionales para mantener compatibilidad con código que usa nombres cortos
@@ -3142,6 +3727,16 @@
         const registrarEvento = registrarEventoScript2;
         let logger = loggerScript2;
 
+        // SAFETY: helper para obtener el ID del padre guardando contra ReferenceErrors
+        function getPadreIdLocal() {
+            try {
+                // Prefer the canonical helper if available
+                if (typeof getPadreId === 'function') return getPadreId();
+                if (window && window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
+            } catch (e) { /* ignore - we'll fallback */ }
+            return 'padre';
+        }
+
         // Safe aliases for common messaging symbols in Script 2 (only define if not already present on window)
         if (typeof window.TIPOS_MENSAJE === 'undefined') { window.TIPOS_MENSAJE = TIPOS_MENSAJE_S2; }
         if (typeof window.MODOS === 'undefined') { window.MODOS = MODOS_S2; }
@@ -3149,10 +3744,65 @@
         if (typeof window.enviarMensaje === 'undefined') { window.enviarMensaje = enviarMensaje_S2 || window.enviarMensaje; }
         if (typeof window.ajustarTimeoutPorConexion === 'undefined') { window.ajustarTimeoutPorConexion = ajustarTimeoutPorConexion_S2 || window.ajustarTimeoutPorConexion; }
 
+        // Helper: enviarMensajePadre
+        // Ensures all messages originating from the padre include a valid origen (PADRE ID)
+        // Handles both object-style and legacy signature (destino, tipo, datos)
+        function enviarMensajePadre(...args) {
+            try {
+                // Object-style: enviarMensaje({ tipo, origen, destino, datos })
+                if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+                    const payload = Object.assign({}, args[0]);
+                    // Prefer explicit CONFIG_PADRE_LOCAL.ID but fall back to global helper
+                    try {
+                        const padreId = (typeof getPadreIdLocal === 'function' ? getPadreIdLocal() : (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) || 'padre');
+                        // If the payload has no origen or uses placeholder values like 'sistema' or 'mensaje.origen', override it
+                        // Avoid referencing an in-scope 'mensaje' variable (which may not exist) to prevent ReferenceErrors.
+                        const origenVal = typeof payload.origen === 'undefined' ? '' : payload.origen;
+                        const looksLikePlaceholder = (typeof origenVal === 'string' && (
+                            origenVal.trim() === '' ||
+                            origenVal === 'sistema' ||
+                            origenVal === 'undefined' ||
+                            origenVal === 'mensaje.origen' ||
+                            origenVal === 'mensaje?.origen' ||
+                            origenVal.includes('mensaje.origen')
+                        ));
+                        if (!origenVal || looksLikePlaceholder) {
+                            payload.origen = padreId;
+                        }
+                        return enviarMensaje(payload);
+                    } catch (e) {
+                        // Fallback to adding a safe padre origin
+                        payload.origen = payload.origen || ((window.CONFIG_PADRE && window.CONFIG_PADRE.ID) || 'padre');
+                        return enviarMensaje(payload);
+                    }
+                }
+                // Legacy signature: enviarMensaje(destino, tipo, datos)
+                return enviarMensaje(...args);
+            } catch (e) {
+                // If enviarMensaje is not available, rethrow or fail silently depending on context
+                try { return enviarMensaje(...args); } catch (err) { console.warn('[PADRE][ENVIAR_PADRE] enviarMensaje not available:', err); }
+            }
+        }
+        if (typeof window.enviarMensajePadre === 'undefined') window.enviarMensajePadre = enviarMensajePadre;
+
         // ============================================================
         // FUNCIONES AUXILIARES (ya definidas en Script 1)
         // ============================================================
         
+        /**
+         * Safe wrapper to obtain an adjusted timeout for cross-frame connections.
+         * Some helpers are defined later (in Script 2) and exposed as
+         * `window.ajustarTimeoutPorConexion`. Calling the function directly
+         * (e.g. ajustarTimeoutPorConexion_S2) from Script 1 can produce
+         * ReferenceError if the symbol is not yet defined. Use this wrapper
+         * to avoid runtime errors and to provide a sensible default.
+         */
+        function ajustarTimeoutPorConexionSafe(ms) {
+            try {
+                if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
+            } catch (e) { /* ignore and fall back to default */ }
+            return ms;
+        }
         /**
          * Registra una métrica de rendimiento local
          */
@@ -3212,12 +3862,219 @@
                 return null;
             }
             
-            if (estado.indiceProgreso >= window.AVENTURA_PARADAS.length) {
+            const idx = (typeof estado.indiceProgreso === 'number') ? estado.indiceProgreso : 0;
+            if (idx >= window.AVENTURA_PARADAS.length) {
                 logger.info('[PADRE][PROGRESION] Aventura completada');
                 return null;
             }
             
-            return window.AVENTURA_PARADAS[estado.indiceProgreso];
+            return window.AVENTURA_PARADAS[idx];
+        }
+
+        // Busca un elemento por audio_id
+        function findElementoPorAudio(audioId) {
+            if (!audioId || !window.AVENTURA_PARADAS) return null;
+            return window.AVENTURA_PARADAS.find(e => e.audio_id === audioId || (`audio-${e.parada_id || e.tramo_id}`) === audioId || e.padreid === audioId || e.parada_id === audioId || e.tramo_id === audioId);
+        }
+
+        // Busca un elemento por reto_id
+        function findElementoPorReto(retoId) {
+            if (!retoId || !window.AVENTURA_PARADAS) return null;
+            return window.AVENTURA_PARADAS.find(e => e.reto_id === retoId || e.padreid === retoId || e.parada_id === retoId || e.tramo_id === retoId);
+        }
+
+        function findElementoPorPadreId(padreIdOrParadaId) {
+            if (!padreIdOrParadaId || !window.AVENTURA_PARADAS) return null;
+            const idClean = String(padreIdOrParadaId).replace(/^padre-/, '');
+            return window.AVENTURA_PARADAS.find(e => e.padreid === padreIdOrParadaId || e.padreid === `padre-${idClean}` || e.parada_id === padreIdOrParadaId || e.parada_id === idClean || e.tramo_id === padreIdOrParadaId || e.tramo_id === idClean);
+        }
+
+        function ensurePending(padreId, tipo) {
+            const key = String(padreId || '').trim();
+            if (!key) return null;
+            if (!estado.pendingCompleciones) estado.pendingCompleciones = {};
+            if (!estado.pendingCompleciones[key]) {
+                // Determine per-element pending configuration if available
+                const elemento = findElementoPorPadreId(key) || window.AVENTURA_PARADAS && window.AVENTURA_PARADAS.find(p => p.padreid === key || p.parada_id === key || p.tramo_id === key) || {};
+                const globalPendingCfg = (window.Config && window.Config.PENDING) ? window.Config.PENDING : {};
+                const elementPendingCfg = elemento.pending || elemento.pendingConfig || {};
+                const ttlMs = typeof elementPendingCfg.TTL_MS === 'number' ? elementPendingCfg.TTL_MS : (globalPendingCfg.TTL_MS || 10 * 60 * 1000);
+                const outOfRangeM = typeof elementPendingCfg.OUT_OF_RANGE_M === 'number' ? elementPendingCfg.OUT_OF_RANGE_M : (globalPendingCfg.OUT_OF_RANGE_M || 53);
+                const outOfRangeGrace = typeof elementPendingCfg.OUT_OF_RANGE_GRACE_MS === 'number' ? elementPendingCfg.OUT_OF_RANGE_GRACE_MS : (globalPendingCfg.OUT_OF_RANGE_GRACE_MS || 5 * 60 * 1000);
+                const arrivalRequired = (typeof elementPendingCfg.arrivalRequired === 'boolean') ? elementPendingCfg.arrivalRequired : (elemento.arrivalRequired === true ? true : (elemento.tipo === 'tramo'));
+                estado.pendingCompleciones[key] = { tipo: tipo || 'parada', llegada: false, audio: false, reto: false, timestamp: Date.now(), _lastDistance: null, _outOfRangeAt: null, destinoCoords: null, ttlMs, outOfRangeM, outOfRangeGrace, arrivalRequired };
+                // Kick off async populate of destination coords for out-of-range checks
+                (async () => {
+                    try {
+                        await populatePendingCoords(key);
+                    } catch (err) {
+                        logger.debug('[PADRE][PENDING] populatePendingCoords failed:', err);
+                    }
+                })();
+                // Notify children about new pending so they can update UI
+                try {
+                    const notifyData = { evento: 'PENDING_INICIADO', padreId: key, ttlMs: estado.pendingCompleciones[key].ttlMs, outOfRangeM: estado.pendingCompleciones[key].outOfRangeM, arrivalRequired: estado.pendingCompleciones[key].arrivalRequired };
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo2', datos: notifyData }).catch(() => {});
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo3', datos: notifyData }).catch(() => {});
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo4', datos: notifyData }).catch(() => {});
+                } catch (err) { /* ignore */ }
+            }
+            return estado.pendingCompleciones[key];
+        }
+
+        async function populatePendingCoords(pendKey) {
+            try {
+                if (!pendKey) return null;
+                if (!estado.pendingCompleciones || !estado.pendingCompleciones[pendKey]) return null;
+                const pending = estado.pendingCompleciones[pendKey];
+                if (pending.destinoCoords) return pending.destinoCoords;
+
+                // Try to obtain coordinates from the elemento in AVENTURA_PARADAS
+                const elemento = findElementoPorPadreId(pendKey) || window.AVENTURA_PARADAS.find(p => p.padreid === pendKey || p.parada_id === pendKey || p.tramo_id === pendKey);
+                if (elemento) {
+                    // If element contains coordinates already
+                    if (elemento.coordenadas && elemento.coordenadas.lat && elemento.coordenadas.lng) {
+                        pending.destinoCoords = { lat: elemento.coordenadas.lat, lng: elemento.coordenadas.lng };
+                        return pending.destinoCoords;
+                    }
+                    // If element contains markers/waypoints (common for tramo), take the first coordinate
+                    if (elemento.coordinates && elemento.coordinates.length > 0) {
+                        const c = elemento.coordinates[0];
+                        if (c && c.lat && c.lng) {
+                            pending.destinoCoords = { lat: c.lat, lng: c.lng };
+                            return pending.destinoCoords;
+                        }
+                    }
+                }
+
+                // Otherwise, request from hijo2 via DATOS.COORDENADAS_PARADAS_REQUEST and parse the response
+                // We reuse the existing messaging mechanism with a temporary controller for the response
+                const padreId = pendKey;
+                const paradaId = (elemento && (elemento.parada_id || elemento.tramo_id)) || String(pendKey).replace(/^padre-/, '');
+                const timeoutMs = (window.Config && window.Config.PENDING && window.Config.PENDING.CLEANUP_INTERVAL_MS) ? Math.max(window.Config.PENDING.CLEANUP_INTERVAL_MS * 0.5, 2000) : 5000;
+                const coordsResponse = await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        try { window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        reject(new Error('Timeout solicitando coordenadas')); }, timeoutMs);
+
+                    const temporal = async (mensaje) => {
+                        clearTimeout(timeout);
+                        try { window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        resolve(mensaje.datos);
+                    };
+
+                    try {
+                        window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
+                        // Request coordinates from hijo2, making sure `origen` is set to the local padre ID
+                        enviarMensajePadre({
+                            tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                            origen: getPadreId(),
+                            destino: 'hijo2',
+                            datos: { paradaId: paradaId, padreId }
+                        }).catch(() => {});
+                        } catch (e) { clearTimeout(timeout); reject(e); }
+                    }).catch(err => null);
+
+                    if (coordsResponse) {
+                    // Normalize: coordsResponse might be array or object
+                    let coordsObj = null;
+                    if (Array.isArray(coordsResponse) && coordsResponse.length > 0) coordsObj = coordsResponse[0].coordenadas || coordsResponse[0];
+                    else if (coordsResponse && coordsResponse.coordenadas) coordsObj = coordsResponse.coordenadas;
+                    else coordsObj = coordsResponse;
+                    if (coordsObj && coordsObj.lat && coordsObj.lng) {
+                        pending.destinoCoords = { lat: coordsObj.lat, lng: coordsObj.lng };
+                        return pending.destinoCoords;
+                    }
+            }
+
+                return null;
+            } catch (error) {
+                logger.warn('[PADRE][PENDING] Error populating pending coords:', error);
+                return null;
+            }
+        }
+
+        function cancelarPending(clave, motivo = 'cancelado') {
+            try {
+                if (!clave || !estado.pendingCompleciones || !estado.pendingCompleciones[clave]) return false;
+                const pending = estado.pendingCompleciones[clave];
+                delete estado.pendingCompleciones[clave];
+                logger.warn(`[PADRE][PENDING] Cancelado pending ${clave} por motivo=${motivo}`);
+                // Notificar a hijos interesados (hijo2/hijo3/hijo4) para que limpien UI
+                try {
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo2', datos: { evento: 'PENDING_CANCELADO', padreId: clave, motivo } }).catch(e => {});
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo3', datos: { evento: 'PENDING_CANCELADO', padreId: clave, motivo } }).catch(e => {});
+                    enviarMensajePadre({ tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION, origen: getPadreId(), destino: 'hijo4', datos: { evento: 'PENDING_CANCELADO', padreId: clave, motivo } }).catch(e => {});
+                } catch (errNotif) { /* ignore */ }
+                return true;
+            } catch (e) {
+                logger.warn('[PADRE][PENDING] Error cancelando pending:', e);
+                return false;
+            }
+        }
+
+        function updatePendingDistances(posicionUsuario) {
+            try {
+                if (!posicionUsuario || !estado.pendingCompleciones) return;
+                const pendingCfg = (window.Config && window.Config.PENDING) ? window.Config.PENDING : null;
+                const now = Date.now();
+                for (const [clave, pending] of Object.entries(estado.pendingCompleciones)) {
+                    if (!pending) continue;
+                    // Only consider pending entries with destino coords
+                    if (!pending.destinoCoords) continue;
+                    const dist = calcularDistancia(posicionUsuario.lat, posicionUsuario.lng, pending.destinoCoords.lat, pending.destinoCoords.lng);
+                    pending._lastDistance = dist;
+                        const outOfRangeThreshold = (typeof pending.outOfRangeM === 'number') ? pending.outOfRangeM : (pendingCfg && typeof pendingCfg.OUT_OF_RANGE_M === 'number' ? pendingCfg.OUT_OF_RANGE_M : 53);
+                        const gracePeriod = (typeof pending.outOfRangeGrace === 'number') ? pending.outOfRangeGrace : (pendingCfg && typeof pendingCfg.OUT_OF_RANGE_GRACE_MS === 'number' ? pendingCfg.OUT_OF_RANGE_GRACE_MS : (5 * 60 * 1000));
+                        if (typeof outOfRangeThreshold === 'number') {
+                            if (dist > outOfRangeThreshold) {
+                                if (!pending._outOfRangeAt) pending._outOfRangeAt = now;
+                                else if (pending._outOfRangeAt && (now - pending._outOfRangeAt) >= gracePeriod) {
+                                    // Cancelar el pending por out-of-range persistente
+                                    cancelarPending(clave, 'out_of_range_expirado');
+                                    continue; // canceled, skip rest
+                                }
+                            } else {
+                                // If it's back in range, reset outOfRangeAt
+                                pending._outOfRangeAt = null;
+                            }
+                        }
+                }
+            } catch (e) {
+                logger.warn('[PADRE][PENDING] Error actualizando distancias pendings:', e);
+            }
+        }
+
+        async function intentarCompletarElemento(padreId) {
+            try {
+                if (!padreId) return;
+                const key = String(padreId).trim();
+                const pending = estado.pendingCompleciones?.[key];
+                if (!pending) return;
+
+                const elemento = findElementoPorPadreId(padreId) || window.AVENTURA_PARADAS.find(p => p.parada_id === key || p.tramo_id === key || p.padreid === padreId);
+                if (!elemento) return;
+
+                const tipo = elemento.tipo;
+                if (tipo === 'parada' || tipo === 'inicio') {
+                    const necesitaReto = !!elemento.reto_id;
+                    // Requiere audio && (no reto o reto completado)
+                    if (pending.audio && (!necesitaReto || pending.reto === true)) {
+                        logger.info(`[PADRE][PENDINGS] Parada listada completa por condiciones: audio && reto(ok) => ${elemento.parada_id}`);
+                        await marcarParadaCompletada({ paradaId: elemento.parada_id || elemento.tramo_id || elemento.padreid, origen: 'padre-pending', causa: 'audio_reto' });
+                        delete estado.pendingCompleciones[key];
+                    }
+                } else if (tipo === 'tramo') {
+                    // Requiere llegada && audio
+                    if (pending.audio && pending.llegada) {
+                        logger.info(`[PADRE][PENDINGS] Tramo completado por condiciones: audio && llegada => ${elemento.tramo_id}`);
+                        await marcarParadaCompletada({ paradaId: elemento.tramo_id || elemento.parada_id || elemento.padreid, origen: 'padre-pending', causa: 'audio_llegada_tramo' });
+                        delete estado.pendingCompleciones[key];
+                    }
+                }
+            } catch (e) {
+                logger.warn('[PADRE][PENDINGS] Error en intentarCompletarElemento:', e);
+            }
         }
 
         /**
@@ -3227,6 +4084,16 @@
             const logPrefix = '[PADRE][PROGRESION]';
             
             try {
+                // Limpieza: eliminar pendientes de elemento anterior si existían
+                const elementoAnterior = obtenerElementoActual();
+                if (elementoAnterior && estado.pendingCompleciones) {
+                    const keyPrev = elementoAnterior.padreid || (`padre-${elementoAnterior.parada_id || elementoAnterior.tramo_id}`);
+                    if (estado.pendingCompleciones[keyPrev]) {
+                        delete estado.pendingCompleciones[keyPrev];
+                        logger.debug('[PADRE][PROGRESION] Limpiando pendingCompleciones para elemento anterior:', keyPrev);
+                    }
+                }
+
                 // Incrementar índice de progreso
                 estado.indiceProgreso++;
                 
@@ -3251,15 +4118,21 @@
                 
                 // Usar NAVEGACION.CAMBIO_PARADA para coordinar el cambio de manera consistente
                 // Esto asegura que todos los hijos reciban la información correcta en el orden adecuado
-                const paradaId = siguienteElemento.parada_id || siguienteElemento.tramo_id || siguienteElemento.padreid;
+                const paradaId = siguienteElemento.parada_id || siguienteElemento.tramo_id || (typeof siguienteElemento.padreid === 'string' ? siguienteElemento.padreid.replace(/^padre-/, '') : undefined);
+                const padreId = siguienteElemento.padreid || (paradaId ? `padre-${paradaId}` : undefined);
                 
                 if (paradaId) {
-                    await enviarMensaje({
+                    // Debug: store last Cambio Parada payload for diagnostics
+                    window._lastCambioParada = { paradaId, parada_id: paradaId, padreId: padreId, padreid: padreId, contexto: 'progresion_aventura', timestamp: Date.now() };
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
-                        origen: CONFIG_PADRE_LOCAL.ID,
-                        destino: CONFIG_PADRE_LOCAL.ID, // El padre se envía el mensaje a sí mismo para activar el controlador
-                        datos: {
+                        origen: getPadreId(),
+                        destino: getPadreId(), // El padre se envía el mensaje a sí mismo para activar el controlador
+                            datos: {
                             paradaId: paradaId,
+                            parada_id: paradaId,
+                            padreId: padreId,
+                            padreid: padreId,
                             contexto: 'progresion_aventura',
                             timestamp: Date.now()
                         }
@@ -3301,6 +4174,7 @@
                     // Registrar en memoria
                     const registro = {
                         paradaId: idLimpio,
+                        padreId: `padre-${idLimpio}`,
                         origen,
                         coordenadas,
                         distancia,
@@ -3319,13 +4193,25 @@
                         logger.warn(`${logPrefix} No se pudo persistir en localStorage`, persistError);
                     }
 
+                    // Persistir además el índice de progreso si está definido
+                    try { persistProgressState(); } catch (e) { logger.warn(`${logPrefix} No se pudo persistir vv_progreso`, e); }
+
+                    // Limpiar cualquier pending para la parada completada
+                    try {
+                        const clavePend = `padre-${idLimpio}`;
+                        if (estado.pendingCompleciones && estado.pendingCompleciones[clavePend]) {
+                            delete estado.pendingCompleciones[clavePend];
+                            logger.debug(`${logPrefix} Limpiado pendingCompleciones para ${clavePend}`);
+                        }
+                    } catch (errPendingCleanup) { /* ignore */ }
+
                     // Notificar a módulos interesados (mapa para capas/estadísticas, hijo2 para UI)
                     try {
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.NAVEGACION.ENVIAR_PARADA_COMPLETADA,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'mapa',
-                            datos: { paradaCompletada: idLimpio, registro }
+                            datos: { paradaCompletada: idLimpio, padreId: `padre-${idLimpio}`, registro }
                         });
                         logger.debug(`${logPrefix} Notificado a 'mapa'`);
                     } catch (err) {
@@ -3333,11 +4219,11 @@
                     }
 
                     try {
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'hijo2',
-                            datos: { evento: 'PARADA_COMPLETADA', paradaId: idLimpio, causa, timestamp: Date.now() }
+                            datos: { evento: 'PARADA_COMPLETADA', paradaId: idLimpio, padreId: `padre-${idLimpio}`, causa, timestamp: Date.now() }
                         });
                         logger.debug(`${logPrefix} Notificado a 'hijo2'`);
                     } catch (err) {
@@ -3379,10 +4265,11 @@
                 
                 await enviarMensaje_S2({
                     tipo: TIPOS_MENSAJE_S2.DATOS.COORDENADAS_PARADAS_REQUEST,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo2',
                     datos: {
                         paradaId: destinoId,
+                        padreId: elemento.padreid || `padre-${destinoId}`,
                         tipo: elemento.tipo,
                         contexto: 'progresion_aventura'
                     }
@@ -3402,9 +4289,9 @@
             try {
                 logger.info(`${logPrefix} Solicitando reproducción de audio ${audioId}`);
                 
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo3',
                     datos: {
                         audioId: audioId,
@@ -3427,7 +4314,7 @@
         // El padre decide qué reto mostrar basado en su estado y array AVENTURA_PARADAS
         // ============================================================
         registrarControlador_S2(TIPOS_MENSAJE_S2.RETO.SOLICITAR_RETO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[RETO.SOLICITAR_RETO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.SOLICITAR_RETO]`;
 
             try {
                 logger.info(`${logPrefix} Solicitud de reto recibida de ${mensaje.origen}`);
@@ -3438,9 +4325,9 @@
 
                 if (!estado.paradaActual || !retoIdToUsar) {
                     logger.warn(`${logPrefix} No hay parada actual (${estado.paradaActual}) o reto_id definido para parada encontrada: ${paradaEncontrada ? JSON.stringify(paradaEncontrada) : 'null'}`);
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: {
                             error: 'No hay reto disponible',
@@ -3469,9 +4356,9 @@
                     
                     if (!estado.hijosInicializados.has('hijo4')) {
                         logger.error(`${logPrefix} Hijo4 no se inicializó después de esperar, abortando`);
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: mensaje.origen,
                             datos: {
                                 error: 'Hijo4 no disponible',
@@ -3484,9 +4371,9 @@
 
                 // Enviar RETO.MOSTRAR a hijo4 con el ID decidido por el padre
                 logger.info(`${logPrefix} Enviando RETO.MOSTRAR a hijo4 con retoId: ${retoIdToUsar}`);
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.RETO.MOSTRAR,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo4',
                     datos: {
                         retoId: retoIdToUsar,
@@ -3496,9 +4383,9 @@
                 logger.success(`${logPrefix} RETO.MOSTRAR enviado exitosamente a hijo4`);
 
                 // Deshabilitar botón inmediatamente después de solicitar
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.CONTROL.DESHABILITAR,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo3',
                     datos: {
                         control: 'retosBtn',
@@ -3509,9 +4396,9 @@
 
                 // 📤 Notificar a hijo2 que reto está activo (para deshabilitar botones según reglas)
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo2',
                         datos: {
                             retoActivo: true,
@@ -3538,7 +4425,7 @@
         // Oculta el iframe de retos cuando el usuario hace click en "Continuar"
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[RETO.OCULTAR]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.OCULTAR]`;
             
             try {
                 logger.info(`${logPrefix} Solicitud para ocultar retos recibida de ${mensaje.origen}`);
@@ -3563,17 +4450,17 @@
                     logger.info(`${logPrefix} Reto ${retoId} ocultado correctamente`);
                     
                     // Notificar a hijo2 que el reto se ocultó (rehabilita botones de navegación)
-                    enviarMensaje({
+                    enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.CONTROL.HABILITAR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo2',
                         datos: { motivo: 'reto_cerrado' }
                     });
                     
                     // Notificar a hijo3 que el reto se ocultó (rehabilita botón de retos)
-                    enviarMensaje({
+                    enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.CONTROL.HABILITAR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo3',
                         datos: { control: 'retosBtn', motivo: 'reto_cerrado' }
                     });
@@ -3591,18 +4478,39 @@
         // Responde directamente con datos de AVENTURA_PARADAS
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[DATOS.SOLICITAR_PARADAS][DIRECTO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.SOLICITAR_PARADAS][DIRECTO]`;
 
             try {
                 logger.info(`${logPrefix} Solicitud de paradas recibida de ${mensaje.origen} - respondiendo directamente`);
 
-                // Preparar respuesta con datos de AVENTURA_PARADAS
+                // Preparar respuesta con datos de AVENTURA_PARADAS; normalizar y distribuir ambos ids
+                const { normalizarParadas } = await import('./js/utils.js');
+                const paradasNormalizadas = normalizarParadas(AVENTURA_PARADAS);
+                const paradasParaEnviar = [];
+                for (const p of paradasNormalizadas) {
+                    if (!p.ubicacion && (!p.waypoints || p.waypoints.length === 0)) {
+                        logger.warn(`[PADRE][SOLICITAR_PARADAS] Parada sin ubicación ni waypoints: ${p.id}`);
+                    }
+                    paradasParaEnviar.push({
+                        // include both padreid and paradaId for children's convenience
+                        padreid: p.padreid || `padre-${p.id}`,
+                        paradaId: p.paradaId || p.parada_id || p.id,
+                        id: p.id,
+                        tipo: p.tipo,
+                        nombre: p.nombre || p.nombreCompleto || p.id,
+                        ubicacion: p.ubicacion || ((p.lat !== undefined && p.lng !== undefined) ? { lat: p.lat, lng: p.lng } : undefined),
+                        waypoints: Array.isArray(p.waypoints) ? p.waypoints.map(w => ({ lat: w.lat, lng: w.lng })) : undefined,
+                        rutas: p.rutas || [],
+                        metadatos: p.metadatos || {},
+                        estado: p.estado || 'activa'
+                    });
+                }
                 const respuesta = {
                     tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: mensaje.origen,
                     datos: {
-                        paradas: AVENTURA_PARADAS,
+                        paradas: paradasParaEnviar,
                         total: AVENTURA_PARADAS.length,
                         estadisticas: {
                             paradas: AVENTURA_PARADAS.filter(p => p.tipo === 'parada').length,
@@ -3617,7 +4525,7 @@
                 };
 
                 // Enviar respuesta directamente
-                await enviarMensaje(respuesta);
+                await enviarMensajePadre(respuesta);
 
                 logger.success(`${logPrefix} Respuesta enviada directamente con ${AVENTURA_PARADAS.length} paradas`);
 
@@ -3626,9 +4534,9 @@
 
                 // Intentar notificar error al solicitante original
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: {
                             error: error.message,
@@ -3647,7 +4555,7 @@
         // Recibe respuestas de hijo2 y las reenvía al solicitante original
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[DATOS.RESPUESTA_PARADAS][PROXY]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_PARADAS][PROXY]`;
 
             try {
                 logger.debug(`${logPrefix} Respuesta de paradas recibida de ${mensaje.origen}`);
@@ -3685,9 +4593,9 @@
                 };
 
                 // Reenviar respuesta al solicitante original con el tipo esperado por enviarMensajeConConfirmacion
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: `${TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS}_RESPONSE_${mensajeOriginal.id}`,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: solicitanteOriginal,
                     datos: respuestaParaSolicitante
                 });
@@ -3709,7 +4617,7 @@
         // Origen esperado: hijo2 (funciones-mapa)
         // Respuesta: NAVEGACION.RESPUESTA_DATOS_PARADAS con AVENTURA_PARADAS
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.info(`${logPrefix} Solicitud de datos de paradas recibida`);
@@ -3722,10 +4630,10 @@
                 // Enviar respuesta con datos completos (normalizados)
                 try {
                     const paradasNormalizadas = normalizarParadas_S2(window.AVENTURA_PARADAS || []);
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         destino: mensaje.origen,
                         tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS,
-                        origen: 'padre',
+                        origen: getPadreId(),
                         datos: {
                             paradas: paradasNormalizadas,
                             timestamp: Date.now()
@@ -3751,11 +4659,11 @@
             const hijosListos = Array.from(estado.hijosInicializados || []);
             
             for (const hijoId of hijosListos) {
-                logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Enviando confirmación de controladores listos a ${hijoId}`);
-                await enviarMensaje({
+                logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Enviando confirmación de controladores listos a ${hijoId}`);
+                await enviarMensajePadre({
                     destino: hijoId,
                     tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                    origen: 'padre',
+                    origen: getPadreId(),
                     datos: {
                         controladoresListos: true,
                         timestamp: Date.now(),
@@ -3764,7 +4672,7 @@
                 });
             }
         } catch (error) {
-            logger.error(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Error enviando confirmaciones:`, error);
+            logger.error(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Error enviando confirmaciones:`, error);
         }
 
         // ============================================================
@@ -3778,24 +4686,26 @@
          * Respuesta: Reenvía respuesta al solicitante
          */
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[GPS.ACTIVAR][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.info(`${logPrefix} Solicitud de activación GPS de ${mensaje.origen}`);
+                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.solicitudes_recibidas'); } catch (e) { /* ignore */ }
 
                 // Usar la función GPS centralizada del padre
                 await activarGPS();
 
                 logger.info(`${logPrefix} GPS activado exitosamente`);
+                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.solicitudes_exitosas'); } catch (e) { /* ignore */ }
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando activación GPS:`, error);
 
                 // Notificar error al solicitante
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: {
                             error: error.message,
@@ -3820,7 +4730,7 @@
          * Respuesta: Reenvía respuesta al solicitante
          */
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[GPS.DESACTIVAR][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.DESACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.info(`${logPrefix} Solicitud de desactivación GPS de ${mensaje.origen}`);
@@ -3835,7 +4745,7 @@
                     if (typeof broadcastToCapability === 'function') {
                         const r = broadcastToCapability('gps', {
                             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
-                            origen: 'padre',
+                            origen: getPadreId(),
                             datos: {
                                 activo: false,
                                 permisos: estado.gps.permisos,
@@ -3845,9 +4755,9 @@
                         });
                         logger.debug(`${logPrefix} BroadcastToCapability(estado=false) enviados:`, r);
                     } else {
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
-                            origen: 'padre',
+                            origen: getPadreId(),
                             destino: 'todos',
                             datos: {
                                 activo: false,
@@ -3873,7 +4783,7 @@
          * Respuesta: Reenvía a todos los hijos activos
          */
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[GPS.UBICACION_ACTUALIZADA][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.UBICACION_ACTUALIZADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.debug(`${logPrefix} Actualización de ubicación GPS recibida, reenviando a hijos`);
@@ -3883,18 +4793,20 @@
                     if (typeof broadcastToCapability === 'function') {
                         const r = broadcastToCapability('gps', {
                             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             datos: mensaje.datos
                         });
                         logger.debug(`${logPrefix} BroadcastToCapability(ubicacion) enviados:`, r);
                     } else {
                         // Fallback: reenviar manualmente a la lista conocida (compatibilidad)
-                        const hijosGPS = ['hijo1-hamburguesa', 'hijo1-opciones', 'hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                        // Only broadcast frequent GPS updates to components that consume it.
+                        // Keep lightweight UI control children out of this list to reduce unnecessary churn.
+                        const hijosGPS = ['hijo2'];
                         const promesasReenvio = hijosGPS.map(async (hijoId) => {
                             try {
-                                await enviarMensaje({
+                                await enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
-                                    origen: CONFIG_PADRE_LOCAL.ID,
+                                    origen: getPadreId(),
                                     destino: hijoId,
                                     datos: mensaje.datos
                                 });
@@ -3925,7 +4837,7 @@
          * Respuesta: Reenvía al solicitante original usando correlación
          */
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[GPS.ESTADO_ACTUALIZADO][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ESTADO_ACTUALIZADO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 const { correlationId } = mensaje.datos || {};
@@ -3949,9 +4861,9 @@
                 logger.info(`${logPrefix} Estado GPS correlacionado - reenviando a ${solicitanteOriginal} (${tiempoProcesamiento}ms)`);
 
                 // Reenviar estado al solicitante original
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: solicitanteOriginal,
                     datos: mensaje.datos
                 });
@@ -3973,7 +4885,7 @@
          * Respuesta: Reenvía al solicitante original
          */
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[GPS.ERROR][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ERROR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 const { correlationId } = mensaje.datos || {};
@@ -3984,7 +4896,7 @@
                 }
 
                 // Buscar correlación
-                if (!estado.correlacionesMensajes && estado.correlacionesMensajes.has(correlationId)) {
+                if (!estado.correlacionesMensajes || !estado.correlacionesMensajes.has(correlationId)) {
                     logger.error(`${logPrefix} CorrelationId de error GPS no encontrado: ${correlationId}`);
                     return;
                 }
@@ -3993,11 +4905,13 @@
                 const { solicitanteOriginal } = correlacion;
 
                 logger.warn(`${logPrefix} Error GPS - reenviando a ${solicitanteOriginal}`);
+                // Telemetría: incrementar contador por razón de error
+                try { if (mensaje?.datos?.codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${mensaje.datos.codigo}`); } } catch (err) { /* ignore */ }
 
                 // Reenviar error al solicitante original
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ERROR,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: solicitanteOriginal,
                     datos: mensaje.datos
                 });
@@ -4015,7 +4929,7 @@
         // Centra el mapa en una ubicación específica llamando directamente a funciones-mapa.js
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[CENTRAR_EN_UBICACION][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[CENTRAR_EN_UBICACION][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.debug(`${logPrefix} Solicitud de centrado GPS recibida de ${mensaje.origen}`);
@@ -4042,8 +4956,47 @@
                         coordenadasObjetivo = { lat: parada.lat, lng: parada.lng };
                         logger.debug(`${logPrefix} Centrando en parada ${paradaActual}: [${parada.lat}, ${parada.lng}]`);
                     } else {
-                        logger.warn(`${logPrefix} Parada ${paradaActual} no encontrada o sin coordenadas`);
-                        return;
+                        // Parada no encontrada o sin coords en el padre: solicitar a hijo2
+                        logger.warn(`${logPrefix} Parada ${paradaActual} no encontrada o sin coordenadas en padre; solicitando a hijo2...`);
+
+                        try {
+                            const coordenadasResponse = await new Promise((resolve, reject) => {
+                                const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2')), ajustarTimeoutPorConexionSafe(5000));
+
+                                const controladorTemporal = async (mensaje) => {
+                                    clearTimeout(timeout);
+                                    window.mensajeria.desregistrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    resolve(mensaje.datos);
+                                };
+
+                                window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+
+                                enviarMensajePadre({
+                                    tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                                    origen: getPadreId(),
+                                    destino: 'hijo2',
+                                    datos: {
+                                        paradaId: paradaActual,
+                                        padreId: `padre-${paradaActual}`,
+                                        incluirMetadatos: false
+                                    }
+                                });
+                            });
+
+                            if (coordenadasResponse && coordenadasResponse.length > 0 && coordenadasResponse[0].coordenadas) {
+                                const c = coordenadasResponse[0].coordenadas;
+                                coordenadasObjetivo = { lat: c.lat || c[0], lng: c.lng || c[1] };
+                                logger.info(`${logPrefix} Coordenadas obtenidas de hijo2 para ${paradaActual}: [${coordenadasObjetivo.lat}, ${coordenadasObjetivo.lng}]`);
+                            } else {
+                                // Fallback a P-0 cuando no hay respuesta útil
+                                coordenadasObjetivo = { lat: 39.47876, lng: -0.37626 };
+                                logger.info(`${logPrefix} No se obtuvieron coordenadas de hijo2; fallback a inicio (P-0): [${coordenadasObjetivo.lat}, ${coordenadasObjetivo.lng}]`);
+                            }
+                        } catch (error) {
+                            // En caso de timeout o error, fallback a P-0
+                            coordenadasObjetivo = { lat: 39.47876, lng: -0.37626 };
+                            logger.warn(`${logPrefix} Error solicitando coordenadas a hijo2 (${error.message}); fallback a inicio (P-0)`);
+                        }
                     }
                 }
                 // Caso 3: Centrar en ubicación GPS actual
@@ -4101,9 +5054,9 @@
                 logger.debug(`${logPrefix} Mapa centrado en [${coordenadasObjetivo.lat}, ${coordenadasObjetivo.lng}] con zoom ${zoom}`);
 
                 // Marcar ubicacionActiva = true en hijo2 cuando usuario solicita centrar ubicación
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo2',
                     datos: {
                         ubicacionActiva: true, // Usuario solicitó ubicación, marcar como activa
@@ -4138,7 +5091,7 @@
                                 // Solicitar coordenadas de la siguiente parada a hijo2
                                 try {
                                     const coordenadasResponse = await new Promise((resolve, reject) => {
-                                        const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas')), ajustarTimeoutPorConexion_S2(5000));
+                                        const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas')), ajustarTimeoutPorConexionSafe(5000));
                                         
                                         // Controlador temporal para respuesta
                                         const controladorTemporal = async (mensaje) => {
@@ -4150,12 +5103,13 @@
                                         window.mensajeria.registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                         
                                         // Enviar solicitud
-                                        enviarMensaje({
+                                        enviarMensajePadre({
                                             tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                                            origen: 'padre',
+                                            origen: getPadreId(),
                                             destino: 'hijo2',
                                             datos: {
                                                 paradaId: siguienteParada.parada_id || siguienteParada.tramo_id,
+                                                padreId: siguienteParada.padreid || `padre-${siguienteParada.parada_id || siguienteParada.tramo_id || siguienteParada.id}`,
                                                 incluirMetadatos: false
                                             }
                                         });
@@ -4201,10 +5155,14 @@
         // Coordina cambios de parada solicitando datos a hijos expertos
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[NAVEGACION.CAMBIO_PARADA]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA]`;
             
             try {
-                const { paradaId, timestamp, origen: origenDatos } = mensaje.datos || {};
+                // Normalize IDs from payload to accept both 'padreId'/'padreid' and 'paradaId'/'parada_id'
+                const resolved = resolverIdsParada(mensaje.datos || {});
+                const paradaId = resolved.paradaId || mensaje.datos?.paradaId || mensaje.datos?.parada_id || null;
+                const padreId = resolved.padreId || mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                const { timestamp, origen: origenDatos } = mensaje.datos || {};
                 
                 logger.info(`${logPrefix} Cambio de parada solicitado por ${mensaje.origen}`);
                 logger.debug(`${logPrefix} Datos recibidos:`, { paradaId, timestamp, origen: origenDatos });
@@ -4239,6 +5197,13 @@
                 estado.paradaActual = paradaId;
                 estado.elementoActual = parada; // Actualizar elemento actual con la parada encontrada
                 estado.ultimoCambioParada = Date.now();
+                // Actualizar indice de progreso según AVENTURA_PARADAS
+                try {
+                    const idx = findIndexByPadreIdOrId(paradaId);
+                    if (idx >= 0) estado.indiceProgreso = idx;
+                } catch (e) { /* ignore */ }
+                // Persistir progreso actualizado
+                try { persistProgressState(); } catch (e) { logger.warn('[CAMBIO_PARADA] persistProgressState failed', e); }
 
                 logger.success(`${logPrefix} Estado actualizado: ${paradaAnterior || 'ninguna'} → ${paradaId}`);
 
@@ -4256,10 +5221,11 @@
                     
                     solicitudes.paradaData = Promise.resolve(enviarMensajeConConfirmacion({
                         tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo2',
                         datos: {
                             paradaId: paradaIdSolicitud,
+                            padreId: parada.padreid || `padre-${paradaIdSolicitud}`,
                             incluirRutas: esTramo, // pedir rutas si es tramo para obtener inicio/fin/waypoints
                             incluirHorario: false,
                             incluirEstadisticas: false
@@ -4279,10 +5245,11 @@
                         solicitudes.audio = Promise.resolve(
                             enviarMensajeConConfirmacion({
                                 tipo: TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO,
-                                origen: CONFIG_PADRE_LOCAL.ID,
+                                origen: getPadreId(),
                                 destino: 'hijo3',
                                 datos: {
                                     paradaId: paradaIdSolicitud,
+                                    padreId: parada.padreid || `padre-${paradaIdSolicitud}`,
                                     tipoConsulta: 'AUDIO'
                                 }
                             })
@@ -4293,7 +5260,7 @@
                             const audioIdParaRepro = audioDatos.audioId || audioDatos.url || parada.audio_id;
                             return Promise.resolve(enviarMensajeConConfirmacion({
                                 tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST,
-                                origen: CONFIG_PADRE_LOCAL.ID,
+                                origen: getPadreId(),
                                 destino: 'hijo3',
                                 datos: {
                                         audioId: audioIdParaRepro,
@@ -4316,7 +5283,7 @@
                         logger.debug(`${logPrefix} Solicitando reproducción de audio a hijo3 con ID: ${parada.audio_id}`);
                         solicitudes.audio = Promise.resolve(enviarMensajeConConfirmacion({
                             tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'hijo3',
                             datos: {
                                     audioId: parada.audio_id,
@@ -4341,7 +5308,7 @@
                     
                     solicitudes.reto = Promise.resolve(enviarMensajeConConfirmacion({
                         tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETO,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo4',
                         datos: {
                             retoId: parada.reto_id,
@@ -4401,6 +5368,9 @@
                 // Preparar datos completos de notificación con respuestas de expertos
                 const datosNotificacion = {
                     paradaId,
+                    parada_id: parada.parada_id || parada.tramo_id || parada.id || null,
+                    padreid: parada.padreid || `padre-${parada.parada_id || parada.tramo_id || parada.id}`,
+                    padreId: parada.padreid || `padre-${parada.parada_id || parada.tramo_id || parada.id}`,
                     paradaActual: paradaId,
                     parada: parada.parada_id || parada.tramo_id,
                     tipo: parada.tipo,
@@ -4419,11 +5389,18 @@
                 // Notificar a hijo5-casa (solo si el cambio NO vino de él)
                 if (mensaje.origen !== 'hijo5-casa') {
                     notificaciones.push(
-                        Promise.resolve(enviarMensaje({
+                        Promise.resolve(enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'hijo5-casa',
-                            datos: datosNotificacion
+                            datos: {
+                                ...datosNotificacion,
+                                // keep legacy keys too
+                                paradaId: datosNotificacion.paradaId,
+                                parada_id: datosNotificacion.parada_id,
+                                padreId: datosNotificacion.padreId,
+                                padreid: datosNotificacion.padreid
+                            }
                         })).catch(error => {
                             logger.warn(`${logPrefix} Error notificando a hijo5-casa:`, error);
                             return null;
@@ -4433,12 +5410,15 @@
 
                 // ✅ NOTIFICAR SIEMPRE A HIJO2 para que actualice su estado CON DATOS MULTIMEDIA
                 notificaciones.push(
-                    Promise.resolve(enviarMensaje({
+                    Promise.resolve(enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo2',
                         datos: {
                             paradaId,
+                            parada_id: parada.parada_id || parada.tramo_id || parada.id || null,
+                            padreId: parada.padreid || `padre-${parada.parada_id || parada.tramo_id || parada.id}`,
+                            padreid: parada.padreid || `padre-${parada.parada_id || parada.tramo_id || parada.id}`,
                             parada: parada.parada || parada.tramo,
                             nombre: parada.nombre || parada.title,
                             // ✅ INCLUIR DATOS MULTIMEDIA obtenidos de hijo2 (normalizados)
@@ -4539,12 +5519,13 @@
                         const incluirRutasFlag = (estado.modo?.actual === 'AVENTURA') || esTramoSolicitado;
                         logger.debug(`${logPrefix} DEBUG: Modo actual=${estado.modo?.actual}, esTramoSolicitado=${esTramoSolicitado}, incluirRutas=${incluirRutasFlag}`);
 
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'hijo2',
                             datos: {
                                 paradaId: paradaIdSolicitud,
+                                padreId: parada.padreid || `padre-${paradaIdSolicitud}`,
                                 incluirRutas: incluirRutasFlag, // Pedir rutas si es tramo o modo aventura
                                 incluirMarcadores: true,
                                 actualizarMapa: true,
@@ -4585,14 +5566,43 @@
         });
 
         // ============================================================
+        // CONTROLADOR (nuevo): NAVEGACION.CAMBIO_PARADA_CONFIRMADO
+        // Maneja confirmaciones desde hijos que aceptaron/cambiaron correctamente
+        // ============================================================
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA_CONFIRMADO]`;
+            try {
+                logger.info(`${logPrefix} Confirmación recibida de ${mensaje.origen}`, { datos: mensaje.datos || {} });
+
+                // Manage a local registry with confirmations per padreId
+                try {
+                    const padreId = (mensaje.datos && (mensaje.datos.padreId || mensaje.datos.padreid || mensaje.datos.padre)) || null;
+                    if (padreId) {
+                        estado.paradasConfirmaciones = estado.paradasConfirmaciones || {};
+                        estado.paradasConfirmaciones[padreId] = estado.paradasConfirmaciones[padreId] || [];
+                        estado.paradasConfirmaciones[padreId].push({ origen: mensaje.origen, timestamp: Date.now(), datos: mensaje.datos });
+                    }
+                    // Telemetría: incrementar contador si existe
+                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('confirmaciones_cambio_parada'); } catch (err) { /* ignore */ }
+                } catch (err) {
+                    logger.warn(`${logPrefix} Error gestionando confirmación local:`, err);
+                }
+            } catch (err) {
+                logger.warn(`${logPrefix} Error en handler:`, err);
+            }
+        });
+
+        // ============================================================
         // CONTROLADOR 10.5: NAVEGACION.LLEGADA_DETECTADA
         // Maneja detección de llegada GPS a paradas desde hijo2
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[NAVEGACION.LLEGADA_DETECTADA]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.LLEGADA_DETECTADA]`;
             
             try {
-                const { paradaId, coordenadas, distancia, timestamp } = mensaje.datos || {};
+                const resolved = resolverIdsParada(mensaje.datos || {});
+                const paradaId = resolved.paradaId || mensaje.datos?.paradaId || mensaje.datos?.parada_id || null;
+                const { coordenadas, distancia, timestamp } = mensaje.datos || {};
                 
                 logger.info(`${logPrefix} Llegada detectada por ${mensaje.origen}`, {
                     paradaId,
@@ -4637,9 +5647,9 @@
                 estado.audioActual.timestamp = timestamp || Date.now();
 
                 // Solicitar reproducción de audio a hijo3
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo3',
                     datos: {
                         audioId: estado.elementoActual.audio_id,
@@ -4651,17 +5661,18 @@
 
                 logger.success(`${logPrefix} Audio solicitado para llegada a ${paradaId}`);
                 
-                                // Registrar la llegada como parada completada de forma centralizada
+                                // Registrar la llegada y marcar pending; no completar automáticamente si hay reto
                                 try {
-                                    await marcarParadaCompletada({
-                                        paradaId: paradaId,
-                                        origen: mensaje.origen || 'mapa',
-                                        coordenadas,
-                                        distancia,
-                                        causa: 'llegada_gps'
-                                    });
+                                    const elemento = findElementoPorPadreId(paradaId) || findElementoPorPadreId(`padre-${paradaId}`) || findElementoPorPadreId(paradaId.replace(/^padre-/, ''));
+                                    const key = elemento?.padreid || (`padre-${paradaId}`);
+                                    const pending = ensurePending(key, elemento?.tipo || 'parada');
+                                    pending.llegada = true;
+                                    if (coordenadas && coordenadas.lat && coordenadas.lng) pending.destinoCoords = coordenadas;
+                                    pending.timestamp = Date.now();
+                                    // Intentar completar (reglas: parada -> audio+reto; tramo -> audio+llegada)
+                                    intentarCompletarElemento(key);
                                 } catch (err) {
-                                    logger.warn(`${logPrefix} Error marcando parada desde llegada:`, err);
+                                    logger.warn(`${logPrefix} Error marcando pending por llegada:`, err);
                                 }
                 
             } catch (error) {
@@ -4674,7 +5685,7 @@
         // Recibido usualmente desde hijo2 (botón ubicación o lógica local)
         // ============================================================
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[NAVEGACION.PARADA_COMPLETADA][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.PARADA_COMPLETADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 const { idParada, paradaId, paradaCompletada, distancia, coordenadas } = mensaje.datos || {};
@@ -4683,9 +5694,9 @@
                 if (!pid) {
                     logger.warn(`${logPrefix} Mensaje sin paradaId`, mensaje.datos);
                     // ACK/NACK según política
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: { error: 'paradaId requerido' }
                     });
@@ -4694,18 +5705,31 @@
 
                 logger.info(`${logPrefix} Procesando parada completada: ${pid}`);
 
-                await marcarParadaCompletada({
-                    paradaId: pid,
-                    origen: mensaje.origen,
-                    coordenadas: coordenadas || null,
-                    distancia: distancia || null,
-                    causa: 'hijo2_parada_completada'
-                });
+                // Marcar pending de llegada desde hijo2; no completar inmediatamente si existe reto
+                try {
+                    const elemento = findElementoPorPadreId(pid) || findElementoPorPadreId(`padre-${pid}`) || findElementoPorPadreId(pid.replace(/^padre-/, ''));
+                    const key = elemento?.padreid || `padre-${pid}`;
+                    const pending = ensurePending(key, elemento?.tipo || 'parada');
+                    pending.llegada = true;
+                    if (coordenadas && coordenadas.lat && coordenadas.lng) pending.destinoCoords = coordenadas;
+                    pending.timestamp = Date.now();
+                    // Registrar coordenadas/distancia en pending para debug/registro
+                    pending.coordenadas = coordenadas || null;
+                    if (coordenadas && coordenadas.lat && coordenadas.lng) pending.destinoCoords = coordenadas;
+                    pending.distancia = distancia || null;
+                    // Solicitar audio si existe (cobertura para flows que vienen desde botón de hijo2)
+                    if (elemento?.audio_id) {
+                        try { await solicitarAudioAHijo3(elemento.audio_id); } catch (errReq) { logger.warn(`${logPrefix} No se pudo solicitar audio para ${elemento.audio_id}:`, errReq); }
+                    }
+                    intentarCompletarElemento(key);
+                } catch (err) {
+                    logger.warn(`${logPrefix} Error marcando pending por PARADA_COMPLETADA:`, err);
+                }
 
                 // Confirmación al emisor
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.SISTEMA.ACK,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: mensaje.origen,
                     datos: { mensaje: 'Parada recibida y procesada', paradaId: pid, timestamp: Date.now() }
                 });
@@ -4713,9 +5737,9 @@
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PARADA_COMPLETADA:`, error);
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: { error: error.message }
                     });
@@ -4725,7 +5749,7 @@
             }
         });
 
-        logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} ✅ Controladores del padre inicializados`);
+        logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores del padre inicializados`);
 
         // ============================================================
         // CONTROLADORES MOVIDOS DESDE SCRIPT 1 (para aligerar carga inicial)
@@ -4733,7 +5757,7 @@
 
         // CONTROLADOR 11: RETO.COMPLETADO (Recibe de hijo4)
         registrarControlador(TIPOS_MENSAJE.RETO.COMPLETADO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[RETO.COMPLETADO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.COMPLETADO]`;
             const timestamp = Date.now();
             
             try {
@@ -4769,9 +5793,9 @@
                 
                 // Notificar a hijo3 (audio) para que pueda reanudar o actuar
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo3',
                         datos: {
                             evento: 'reto_completado',
@@ -4789,9 +5813,9 @@
 
                 // 📤 Notificar a hijo2 que reto terminó (para rehabilitar botones)
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: 'hijo2',
                         datos: {
                             retoActivo: false,
@@ -4805,19 +5829,24 @@
                     logger.warn(`${logPrefix} Error notificando fin de reto a hijo2:`, notifError);
                 }
 
-                // Lógica de progresión: si el reto fue correcto, delegar a la función central
+                // Lógica de progresión: si el reto fue correcto, marcar pending.reto y delegar la comprobación
                 if (correcto) {
-                    logger.info(`${logPrefix} Reto completado correctamente -> delegando a marcarParadaCompletada para progresión ordenada`);
-                    // Si el elemento actual está asociado a una parada/tramo, marcarla como completada
-                    const paradaIdActual = estado.elementoActual?.parada_id || estado.elementoActual?.tramo_id || null;
-                    if (paradaIdActual) {
-                        await marcarParadaCompletada({
-                            paradaId: paradaIdActual,
-                            origen: mensaje.origen,
-                            causa: 'reto_completado'
-                        });
-                    } else {
-                        // Fallback: sin ID, progresar directamente
+                    logger.info(`${logPrefix} Reto completado correctamente -> marcando pending.reto y delegando a intentarCompletarElemento`);
+                    // Mapear retoId a elemento
+                    try {
+                        const elementoReto = findElementoPorReto(retoId) || findElementoPorPadreId(estado.elementoActual?.padreid);
+                        const claveR = elementoReto?.padreid || (elementoReto?.parada_id ? `padre-${elementoReto.parada_id}` : null);
+                        if (claveR) {
+                            const pendingR = ensurePending(claveR, elementoReto?.tipo || 'parada');
+                            pendingR.reto = true;
+                            pendingR.timestamp = Date.now();
+                            intentarCompletarElemento(claveR);
+                        } else {
+                            // Fallback: sin ID, progresar directamente
+                            await progresarSiguienteElemento();
+                        }
+                    } catch (errMap) {
+                        logger.warn(`${logPrefix} Error marcando pending por reto completado:`, errMap);
                         await progresarSiguienteElemento();
                     }
                 } else {
@@ -4827,9 +5856,9 @@
                 }
 
                 // Enviar confirmación a hijo4
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.SISTEMA.ACK,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: mensaje.origen,
                     datos: {
                         mensaje: 'Reto completado registrado',
@@ -4844,9 +5873,9 @@
                 logger.error(`${logPrefix} Error procesando reto completado:`, error);
                 
                 try {
-                    await enviarMensaje({
+                    await enviarMensajePadre({
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                        origen: CONFIG_PADRE_LOCAL.ID,
+                        origen: getPadreId(),
                         destino: mensaje.origen,
                         datos: {
                             error: error.message,
@@ -4860,9 +5889,37 @@
             }
         });
 
+        // Iniciar limpieza periódica de pendings (TTL, out-of-range) si no inicializada
+        if (!window.__VV_PENDING_CLEANUP) {
+            const pendingCfg = (window.Config && window.Config.PENDING) ? window.Config.PENDING : { TTL_MS: 10*60*1000, CLEANUP_INTERVAL_MS: 60*1000 };
+            window.__VV_PENDING_CLEANUP = setInterval(() => {
+                try {
+                        const now = Date.now();
+                        if (!estado.pendingCompleciones) return;
+                        for (const [clave, pending] of Object.entries(estado.pendingCompleciones)) {
+                            if (!pending) continue;
+                            // TTL expirado (use per-pending ttlMs if defined)
+                            const ttl = (typeof pending.ttlMs === 'number') ? pending.ttlMs : (pendingCfg && typeof pendingCfg.TTL_MS === 'number' ? pendingCfg.TTL_MS : (10 * 60 * 1000));
+                            if ((now - (pending.timestamp || now)) >= ttl) {
+                                cancelarPending(clave, 'ttl_expirado');
+                                continue;
+                            }
+                            // Out-of-range handled by updatePendingDistances via GPS updates; also enforce if _outOfRangeAt stale
+                            const grace = (typeof pending.outOfRangeGrace === 'number') ? pending.outOfRangeGrace : (pendingCfg && typeof pendingCfg.OUT_OF_RANGE_GRACE_MS === 'number' ? pendingCfg.OUT_OF_RANGE_GRACE_MS : (5 * 60 * 1000));
+                            if (pending._outOfRangeAt && (now - pending._outOfRangeAt >= grace)) {
+                                cancelarPending(clave, 'out_of_range_expirado');
+                                continue;
+                            }
+                        }
+                } catch (e) {
+                    logger.warn('[PADRE][PENDING] Error en limpieza periódica de pendings:', e);
+                }
+            }, pendingCfg.CLEANUP_INTERVAL_MS || 60000);
+        }
+
         // CONTROLADOR 11.5: RETO.MOSTRADO (Recibe de hijo4 cuando muestra un reto)
         registrarControlador(TIPOS_MENSAJE.RETO.MOSTRADO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[RETO.MOSTRADO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.MOSTRADO]`;
             
             try {
                 const { retoId, tipo } = mensaje.datos || {};
@@ -4870,9 +5927,9 @@
                 logger.info(`${logPrefix} Reto mostrado confirmado de ${mensaje.origen}: ${retoId} (${tipo})`);
 
                 // Ahora que el reto está realmente mostrado, deshabilitar botón de retos en hijo3
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.CONTROL.DESHABILITAR,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: 'hijo3',
                     datos: {
                         control: 'retosBtn',
@@ -4890,7 +5947,7 @@
 
         // CONTROLADOR 12: AUDIO.ESTADO_ACTUALIZADO (Recibe de hijo3)
         registrarControlador(TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[AUDIO.ESTADO_ACTUALIZADO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ESTADO_ACTUALIZADO]`;
             
             try {
                 if (!mensaje?.origen) {
@@ -4931,7 +5988,7 @@
 
         // CONTROLADOR 13: AUDIO.FIN_REPRODUCCION (Recibe de hijo3)
         registrarControlador(TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[AUDIO.FIN_REPRODUCCION]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.FIN_REPRODUCCION]`;
             
             try {
                 if (!mensaje?.origen) {
@@ -4959,7 +6016,22 @@
                     timestamp: audioTimestamp
                 }, 'info');
 
-                // Lógica de progresión: verificar si hay reto disponible
+                // Lógica de progresión: marcar audio finalizado en pending y verificar si hay reto disponible
+                try {
+                    // Map audioId -> elemento y marcar pending.audio
+                    const elementoAudio = findElementoPorAudio(audioId);
+                    if (elementoAudio) {
+                        const clave = elementoAudio.padreid || `padre-${elementoAudio.parada_id || elementoAudio.tramo_id}`;
+                        const pendingAudio = ensurePending(clave, elementoAudio.tipo || 'parada');
+                        pendingAudio.audio = true;
+                        pendingAudio.timestamp = Date.now();
+                        intentarCompletarElemento(clave);
+                    }
+                } catch (errPending) {
+                    logger.warn(`${logPrefix} Error al marcar pending por fin de audio:`, errPending);
+                }
+
+                // Luego continuar con la lógica anterior de habilitación/avanzado
                 if (estado.elementoActual && estado.elementoActual.audio_id === audioId) {
                     if (estado.elementoActual.reto_id && estado.modo.actual === MODOS.AVENTURA && estado.hijosInicializados.has('hijo4')) {
                         // Hay reto disponible: habilitar botón de retos (solo en modo aventura y si hijo4 está listo)
@@ -4969,9 +6041,9 @@
                         estado.retoActual.disponible = true;
                         estado.retoActual.completado = false;
                         
-                        await enviarMensaje({
+                        await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.CONTROL.HABILITAR,
-                            origen: CONFIG_PADRE_LOCAL.ID,
+                            origen: getPadreId(),
                             destino: 'hijo3',
                             datos: {
                                 control: 'retosBtn',
@@ -4992,16 +6064,30 @@
                         estado.retoActual.disponible = true;
                         estado.retoActual.completado = false;
                     } else {
-                        // No hay reto o no es modo aventura: progresar automáticamente al siguiente elemento
-                        logger.info(`${logPrefix} Audio finalizado, no hay reto disponible o no es modo aventura, progresando automáticamente`);
-                        await progresarSiguienteElemento();
+                        // No hay reto o no es modo aventura: marcar pending.audio y permitir completar
+                        logger.info(`${logPrefix} Audio finalizado, no hay reto disponible o no es modo aventura, intentando completar elemento`);
+                        try {
+                            const elementoAudio = findElementoPorAudio(audioId) || estado.elementoActual;
+                            const claveA = elementoAudio?.padreid || (elementoAudio?.parada_id ? `padre-${elementoAudio.parada_id}` : null);
+                            if (claveA) {
+                                const p = ensurePending(claveA, elementoAudio?.tipo || 'parada');
+                                p.audio = true;
+                                intentarCompletarElemento(claveA);
+                            } else {
+                                // fallback: progresar
+                                await progresarSiguienteElemento();
+                            }
+                        } catch (errA) {
+                            logger.warn(`${logPrefix} Error intentando completar tras fin de audio:`, errA);
+                            await progresarSiguienteElemento();
+                        }
                     }
                 }
 
                 // Enviar confirmación
-                await enviarMensaje({
+                await enviarMensajePadre({
                     tipo: TIPOS_MENSAJE.SISTEMA.ACK,
-                    origen: CONFIG_PADRE_LOCAL.ID,
+                    origen: getPadreId(),
                     destino: mensaje.origen,
                     datos: {
                         mensaje: 'Fin de reproducción registrado',
@@ -5016,7 +6102,7 @@
 
         // CONTROLADOR 14: AUDIO.ERROR (Recibe de hijo3)
         registrarControlador(TIPOS_MENSAJE.AUDIO.ERROR, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[AUDIO.ERROR]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ERROR]`;
             
             try {
                 if (!mensaje?.origen) {
@@ -5061,7 +6147,7 @@
 
         // CONTROLADOR ADICIONAL: AUDIO.REPRODUCIR_RESPONSE (Respuesta a REPRODUCIR_REQUEST)
         registrarControlador(TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[AUDIO.REPRODUCIR_RESPONSE]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.REPRODUCIR_RESPONSE]`;
             
             try {
                 if (!mensaje?.origen) {
@@ -5103,7 +6189,7 @@
 
         // CONTROLADOR ADICIONAL: DATOS.RESPUESTA_RETO (Respuesta a SOLICITAR_RETO)
         registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE_LOCAL.LOG_PREFIX}[DATOS.RESPUESTA_RETO]`;
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_RETO]`;
             
             try {
                 if (!mensaje?.origen) {
@@ -5137,30 +6223,30 @@
             }
         });
 
-        logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} ✅ Controladores Script 2 registrados`);
+        logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores Script 2 registrados`);
 
         // ============================================================
         // INICIALIZACIÓN DEL MAPA
         // ============================================================
-        logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Esperando inicialización del mapa...`);
+        logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Esperando inicialización del mapa...`);
 
         setTimeout(() => {
             invalidarTamañoMapa().then(success => {
                 if (success) {
-                    logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Tamaño del mapa actualizado`);
+                    logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Tamaño del mapa actualizado`);
                 } else {
-                    logger.warn(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} No se pudo actualizar tamaño del mapa`);
+                    logger.warn(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} No se pudo actualizar tamaño del mapa`);
                 }
             }).catch(error => {
-                logger.error(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Error actualizando mapa:`, error);
+                logger.error(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Error actualizando mapa:`, error);
             });
             
             diagnosticarMapa().then(result => {
-                logger.debug(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} Diagnóstico del mapa completado`);
+                logger.debug(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Diagnóstico del mapa completado`);
             });
         }, 500);
 
-        logger.info(`${CONFIG_PADRE_LOCAL.LOG_PREFIX} ✅ Proceso de inicialización completado`);
+        logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Proceso de inicialización completado`);
         estado.tiempoInicio = Date.now();
     </script>
 
@@ -5371,11 +6457,23 @@
     </script>
 
     <script>
-        // Sobrescribir addEventListener para detectar el uso de 'unload' o 'beforeunload'
+        // Intercept addEventListener to remap 'unload'/'beforeunload' to 'pagehide' for modern policies
         const originalAddEventListener = EventTarget.prototype.addEventListener;
         EventTarget.prototype.addEventListener = function (type, listener, options) {
             if (type === 'unload' || type === 'beforeunload') {
-                console.warn(`Listener registrado para ${type}:`, listener);
+                // Avoid permission policy violation in strict environments (e.g. modern browsers/iframes)
+                try {
+                    console.info(`[PADRE] Remapeando listener '${type}' a 'pagehide' para compatibilidad`);
+                } catch (e) {}
+                // Also register the original to support old behavior in permissive contexts when possible
+                try {
+                    originalAddEventListener.call(this, 'pagehide', listener, options);
+                } catch (e) {
+                    // fallback: try registering 'visibilitychange' as a last resort
+                    try { originalAddEventListener.call(this, 'visibilitychange', listener, options); } catch (e2) {}
+                }
+                // Do not register original 'unload' listener to avoid permissions policy errors
+                return;
             }
             return originalAddEventListener.call(this, type, listener, options);
         };
@@ -5387,8 +6485,10 @@
         // NOTA: inicializarMensajeria ya fue llamada en Script 1
         // ============================================================
         
-        const { iniciarHeartbeat } = await import('./js/mensajeria.js');
+        const { enviarMensaje: enviarMensaje_S4 } = await import('./js/mensajeria.js');
         const { ajustarTimeoutPorConexion } = await import('./js/utils.js');
+        const { TIPOS_MENSAJE: TIPOS_MENSAJE_S4, MODOS: MODOS_S4 } = await import('./js/constants.js');
+        const { CONFIG: CONFIG_PADRE } = await import('./js/config.js');
 
         // Migrar controladores registrados tempranamente en módulos al sistema de mensajería
         try {
@@ -5406,11 +6506,63 @@
             console.warn('No se pudieron migrar algunos controladores:', e.message);
         }
 
-        // Iniciar heartbeat si no se inició en Script 1 y estamos en el padre
-        if (!window.__HEARTBEAT_INICIADO && window.parent === window) {
-            iniciarHeartbeat(ajustarTimeoutPorConexion(10000)); // Intervalo ajustado según conexión
-            window.__HEARTBEAT_INICIADO = true;
-            console.info('[PADRE] Heartbeat iniciado (Script 4)');
+        // Iniciar o pausar heartbeat según el modo inicial (si estamos en el padre)
+        if (window.parent === window && !window.__HEARTBEAT_INICIADO) {
+            const modoInicial = window.estadoPadre?.modo?.actual || MODOS_S4.CASA;
+            try {
+                if (modoInicial === MODOS.AVENTURA) {
+                    // Start heartbeat via messaging (mensajeria.js handler will call iniciarHeartbeat internally)
+                    try {
+                        await enviarMensaje_S4({
+                            tipo: TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START,
+                            origen: CONFIG_PADRE.ID,
+                            destino: CONFIG_PADRE.ID,
+                            datos: { intervalo: (typeof ajustarTimeoutPorConexion === 'function') ? ajustarTimeoutPorConexion(10000) : 10000 }
+                        });
+                    } catch (e) {
+                        try { // Fallback to direct function call in case messaging is not yet running
+                            (typeof window.iniciarHeartbeat === 'function') && window.iniciarHeartbeat(ajustarTimeoutPorConexion(10000));
+                        } catch (err) { /* ignore */ }
+                    }
+                    window.__HEARTBEAT_INICIADO = true;
+                    console.info('[PADRE] Heartbeat iniciado (Script 4) - modo AVENTURA');
+                } else {
+                    // Ensure heartbeat is paused in CASA
+                    try {
+                        await enviarMensaje_S4({
+                            tipo: TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_PAUSE,
+                            origen: CONFIG_PADRE.ID,
+                            destino: CONFIG_PADRE.ID,
+                            datos: { timestamp: Date.now(), razon: 'modo_inicial_casa' }
+                        });
+                    } catch (e) {
+                        try { (typeof window.pausarHeartbeat === 'function') && window.pausarHeartbeat(); } catch (err) { /* ignore */ }
+                    }
+                    console.info('[PADRE] Heartbeat no iniciado por modo CASA (Script 4)');
+                }
+            } catch (e) {
+                console.warn('[PADRE] Error controlando heartbeat en script 4:', e);
+            }
+
+            // Propagar control de heartbeat a hijos críticos según el modo inicial
+            try {
+                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                for (const h of hijosCriticos) {
+                    try {
+                        await enviarMensaje_S4({
+                            tipo: modoInicial === MODOS.AVENTURA ? TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START : TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_PAUSE,
+                            origen: CONFIG_PADRE.ID,
+                            destino: h,
+                            datos: { timestamp: Date.now(), initial: true }
+                        });
+                    } catch (e) {
+                        // If a child isn't ready yet, it's fine; it'll get the mode broadcast later
+                        console.debug('[PADRE] broadcast HEARTBEAT to child failed (maybe not ready):', h, e && e.message);
+                    }
+                }
+            } catch (e) {
+                console.warn('[PADRE] Error propagando heartbeat control inicial:', e);
+            }
         }
         
         // Función de diagnóstico GPS para debugging desde consola
@@ -5434,6 +6586,52 @@
                 if (resultado.permisosActuales) {
                     console.log(`   - Permisos: ${resultado.permisosActuales.estado}`);
                 }
+
+                // Helper: Consultar estado del heartbeat via mensajería
+                window.consultarHeartbeat = async function() {
+                    try {
+                        const respuesta = await enviarMensaje_S4({
+                            tipo: TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_ESTADO,
+                            origen: CONFIG_PADRE.ID,
+                            destino: CONFIG_PADRE.ID,
+                            datos: {}
+                        });
+                        console.info('[PADRE] Estado heartbeat:', respuesta);
+                        return respuesta;
+                    } catch (e) {
+                        console.error('[PADRE] Error consultando estado heartbeat:', e);
+                        throw e;
+                    }
+                };
+
+                // Test helper: Pausar y reanudar heartbeat y comprobar estado
+                window._testHeartbeatPauseResume = async function() {
+                    try {
+                        console.info('[PADRE][TEST] Iniciando prueba pause/restart heartbeat');
+                        // Pausar mediante cambio de modo
+                        await enviarMensaje_S4({ tipo: TIPOS_MENSAJE_S4.SISTEMA.CAMBIO_MODO, origen: CONFIG_PADRE.ID, destino: CONFIG_PADRE.ID, datos: { modo: MODOS_S4.CASA } });
+                        await new Promise(resolve => setTimeout(resolve, 150));
+                        let estado = await window.consultarHeartbeat();
+                        console.assert(estado?.estado?.userPaused === true, 'expected userPaused true after CASA');
+                        console.assert(estado?.estado?.activo === false, 'expected activo false after CASA');
+
+                        // Intentar iniciar: debe ignorarse por userPaused
+                        await enviarMensaje_S4({ tipo: TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START, origen: CONFIG_PADRE.ID, destino: CONFIG_PADRE.ID, datos: { intervalo: 3000 } });
+                        await new Promise(resolve => setTimeout(resolve, 150));
+                        estado = await window.consultarHeartbeat();
+                        console.assert(estado?.estado?.userPaused === true && estado?.estado?.activo === false, 'expected no change when starting while userPaused');
+
+                        // Reanudar mediante cambio de modo a aventura
+                        await enviarMensaje_S4({ tipo: TIPOS_MENSAJE_S4.SISTEMA.CAMBIO_MODO, origen: CONFIG_PADRE.ID, destino: CONFIG_PADRE.ID, datos: { modo: MODOS_S4.AVENTURA } });
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        estado = await window.consultarHeartbeat();
+                        console.assert(estado?.estado?.userPaused === false, 'expected userPaused false after AVENTURA');
+                        console.assert(estado?.estado?.activo === true, 'expected activo true after AVENTURA');
+                        console.info('[PADRE][TEST] Prueba heartbeat pause/restart completada');
+                    } catch (e) {
+                        console.error('[PADRE][TEST] Error durante prueba heartbeat:', e);
+                    }
+                };
                 
                 if (resultado.testUbicacion) {
                     if (resultado.testUbicacion.exito) {
