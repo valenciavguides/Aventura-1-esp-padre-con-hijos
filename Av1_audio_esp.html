@@ -697,7 +697,7 @@
             </button>
         </div>
         <div class="progress-row">
-            <div class="progress-container" id="progressContainer">
+            <div class="progress-container" id="progressContainer" role="slider" aria-label="Barra de progreso de audio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
                 <div id="progressBar"></div>
             </div>
         </div>
@@ -713,6 +713,7 @@
 
     <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    import { resolverIdsParada, getPadreId } from './js/utils.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
 
@@ -722,7 +723,21 @@
         DEBUG: true
     };
 
+    // Exportar CONFIG_HIJO para compatibilidad con mensajeria.js y para que el padre lo consulte
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = CONFIG_HIJO;
+    } else {
+        window.CONFIG_HIJO = CONFIG_HIJO;
+    }
+
     let currentAudioId = null;
+
+    // Estado del componente (homologado con otros hijos)
+    const estado = {
+        inicializado: false,
+        modoActual: 'aventura',
+        pendingCambioModo: null
+    };
 
     // Funciones de reproductor (fusionadas y adaptadas)
     function formatTime(seconds) {
@@ -799,7 +814,7 @@
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.RETO.SOLICITAR_RETO,
                 origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: { 
                     contexto: 'manual',
                     audioId: currentAudioId 
@@ -814,12 +829,43 @@
 
     // Event listener para barra de progreso (seek)
     const progressContainer = document.getElementById('progressContainer');
+    // Allow vertical page scrolling while enabling horizontal drag on the bar
+    // `pan-y` lets vertical scrolling but allows us to intercept horizontal gestures.
+    progressContainer.style.touchAction = 'pan-y';
+    // Internal state for dragging/seeking
+    let isSeeking = false;
+    let activePointerId = null;
+    let initialX = 0;
+    let initialY = 0;
+    let lockedToSeeking = null; // null = undecided, true = seeking (horizontal), false = allow vertical scroll
+    let wasPlayingDuringSeek = false;
+
+    function updateProgressFromClientX(clientX) {
+        try {
+            const rect = progressContainer.getBoundingClientRect();
+            const clickX = clientX - rect.left;
+            const percent = clickX / rect.width;
+            const validPercent = Math.max(0, Math.min(1, percent));
+            // Update progress bar UI
+            if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
+                progressBar.style.width = `${validPercent * 100}%`;
+                // Update accessible attribute
+                progressContainer.setAttribute('aria-valuenow', Math.round(validPercent * 100));
+            } else {
+                // If duration not available, just update visual width temporarily
+                progressBar.style.width = `${validPercent * 100}%`;
+            }
+            return validPercent;
+        } catch (error) {
+            logger.error('[hijo3] updateProgressFromClientX error', error);
+            return 0;
+        }
+    }
+
     progressContainer.addEventListener('click', (e) => {
         try {
             // Calcular posición del click relativa a la barra
-            const rect = progressContainer.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const percent = clickX / rect.width;
+            const percent = updateProgressFromClientX(e.clientX);
             
             // Validar rango (0-100%)
             const validPercent = Math.max(0, Math.min(1, percent));
@@ -839,12 +885,180 @@
         }
     });
 
+    // Pointer/touch drag handlers for seamless mobile and desktop seeking
+    progressContainer.addEventListener('pointerdown', (e) => {
+        try {
+            if (e.pointerType === 'mouse' && e.button !== 0) return; // only left button
+            isSeeking = true;
+            lockedToSeeking = null;
+            initialX = e.clientX;
+            initialY = e.clientY;
+            activePointerId = e.pointerId;
+            // We defer pausing until the user moves horizontally and we lock the gesture to seeking.
+            activePointerId = e.pointerId;
+            // Do not set pointer capture yet to allow normal vertical scrolling unless we lock to seeking.
+            // updateProgressFromClientX(e.clientX); // only set on lock
+        } catch (err) {
+            logger.error('[hijo3] pointerdown error', err);
+        }
+    });
+
+    progressContainer.addEventListener('pointermove', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            // If undecided, check if movement leans horizontal vs vertical to lock behavior
+            if (lockedToSeeking === null) {
+                const dx = Math.abs(e.clientX - initialX);
+                const dy = Math.abs(e.clientY - initialY);
+                const H_LOCK_THRESHOLD = 10; // pixels before locking
+                // If horizontal movement is more pronounced than vertical, lock to seeking
+                if (dx > H_LOCK_THRESHOLD && dx > dy * 1.5) {
+                    lockedToSeeking = true;
+                    // Capture pointer now to receive subsequent pointer events without the page scrolling
+                    try { progressContainer.setPointerCapture(activePointerId); } catch (err) {}
+                    wasPlayingDuringSeek = !audioPlayer.paused && !audioPlayer.ended;
+                    if (wasPlayingDuringSeek) audioPlayer.pause();
+                    e.preventDefault();
+                    updateProgressFromClientX(e.clientX);
+                } else if (dy > H_LOCK_THRESHOLD && dy > dx * 1.5) {
+                    // Lock to vertical scrolling and stop seeking behavior
+                    lockedToSeeking = false;
+                    // Release pointer capture if previously set
+                    try { progressContainer.releasePointerCapture(activePointerId); } catch (err) {}
+                    isSeeking = false; // allow page to scroll vertically
+                } else {
+                    // Not enough movement to decide yet; do nothing
+                }
+            } else if (lockedToSeeking === true) {
+                // We are currently seeking; update progress
+                e.preventDefault();
+                updateProgressFromClientX(e.clientX);
+            } else {
+                // lockedToSeeking === false -> vertical scroll in progress; ignore pointermove
+            }
+        } catch (err) {
+            logger.error('[hijo3] pointermove error', err);
+        }
+    });
+
+    function finalizeSeek(clientX) {
+        try {
+            const percent = updateProgressFromClientX(clientX);
+            if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
+                audioPlayer.currentTime = percent * audioPlayer.duration;
+            }
+            // resume playback if it was playing before seek
+            if (wasPlayingDuringSeek) {
+                audioPlayer.play().catch(err => logger.warn('[hijo3] Unable to resume playback after seek', err));
+            }
+        } catch (err) {
+            logger.error('[hijo3] finalizeSeek error', err);
+        }
+    }
+
+    progressContainer.addEventListener('pointerup', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            if (lockedToSeeking === true) {
+                finalizeSeek(e.clientX);
+            }
+            // Clean up
+            isSeeking = false;
+            lockedToSeeking = null;
+            try { progressContainer.releasePointerCapture(e.pointerId); } catch (_) {}
+            activePointerId = null;
+        } catch (err) {
+            logger.error('[hijo3] pointerup error', err);
+        }
+    });
+
+    progressContainer.addEventListener('pointercancel', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            if (lockedToSeeking === true) finalizeSeek(e.clientX);
+            isSeeking = false;
+            lockedToSeeking = null;
+            try { progressContainer.releasePointerCapture(e.pointerId); } catch(_){}
+            activePointerId = null;
+        } catch (err) {
+            logger.error('[hijo3] pointercancel error', err);
+        }
+    });
+
+    // Fallback for older browsers: touch events (if pointer events unsupported)
+    progressContainer.addEventListener('touchstart', (e) => {
+        try {
+            const touch = e.touches[0];
+            isSeeking = true;
+            lockedToSeeking = null;
+            initialX = touch.clientX;
+            initialY = touch.clientY;
+            // don't update yet until the user moves horizontally enough
+            e.preventDefault();
+        } catch (err) { logger.error('[hijo3] touchstart error', err); }
+    }, { passive: false });
+    progressContainer.addEventListener('touchmove', (e) => {
+        try {
+            if (!isSeeking) return;
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - initialX);
+            const dy = Math.abs(touch.clientY - initialY);
+            const H_LOCK_THRESHOLD = 10;
+            if (lockedToSeeking === null) {
+                if (dx > H_LOCK_THRESHOLD && dx > dy * 1.5) {
+                    lockedToSeeking = true;
+                    wasPlayingDuringSeek = !audioPlayer.paused && !audioPlayer.ended;
+                    if (wasPlayingDuringSeek) audioPlayer.pause();
+                    e.preventDefault();
+                    updateProgressFromClientX(touch.clientX);
+                } else if (dy > H_LOCK_THRESHOLD && dy > dx * 1.5) {
+                    lockedToSeeking = false;
+                    isSeeking = false;
+                    // allow scrolling
+                }
+            } else if (lockedToSeeking === true) {
+                e.preventDefault();
+                updateProgressFromClientX(touch.clientX);
+            } else {
+                // locked to vertical scrolling - ignore
+            }
+        } catch (err) { logger.error('[hijo3] touchmove error', err); }
+    }, { passive: false });
+    progressContainer.addEventListener('touchend', (e) => {
+        try {
+            if (!isSeeking) return;
+            // touchend has no touches, use changedTouches
+            const touch = e.changedTouches[0];
+            if (lockedToSeeking === true) finalizeSeek(touch.clientX);
+            isSeeking = false;
+            lockedToSeeking = null;
+        } catch (err) { logger.error('[hijo3] touchend error', err); }
+    });
+
+    // Keyboard support: seek with left/right arrow while progress container is focused
+    progressContainer.addEventListener('keydown', (e) => {
+        try {
+            const step = 5; // 5 seconds per keypress
+            if (!audioPlayer || !isFinite(audioPlayer.duration)) return;
+            if (e.key === 'ArrowLeft') {
+                audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - step);
+                e.preventDefault();
+            } else if (e.key === 'ArrowRight') {
+                audioPlayer.currentTime = Math.min(audioPlayer.duration, audioPlayer.currentTime + step);
+                e.preventDefault();
+            }
+        } catch (err) {
+            logger.error('[hijo3] keydown error on progressContainer', err);
+        }
+    });
+
     // Event listeners para audio (adaptados para notificar al padre con enviarMensaje)
     audioPlayer.addEventListener('timeupdate', () => {
         // Validar que duration sea finito antes de calcular porcentaje
         if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
             const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
             progressBar.style.width = `${percent}%`;
+            progressContainer.setAttribute('aria-valuenow', Math.round(percent));
             currentTimeElement.textContent = formatTime(audioPlayer.currentTime);
         }
     });
@@ -859,7 +1073,7 @@
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO,
                 origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: { audioId: currentAudioId, estado: 'reproduciendo' }
             });
         }
@@ -881,7 +1095,7 @@
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION,
                 origen: CONFIG_HIJO.IFRAME_ID,
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: { audioId: currentAudioId, estado: 'finalizado' }
             });
         }
@@ -893,8 +1107,40 @@
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.AUDIO.ERROR,
             origen: CONFIG_HIJO.IFRAME_ID,
-            destino: 'padre',
+            destino: getPadreId(),
             datos: { audioId: currentAudioId, error: audioPlayer.error?.message || 'Error desconocido' }
+        });
+
+        // CONTROLADOR: SISTEMA.NOTIFICACION - manejar PENDING_CANCELADO
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
+            const logPrefix = `[hijo3][NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                const evento = mensaje.datos?.evento;
+                if (!evento) return;
+                if (evento === 'PENDING_INICIADO') {
+                    const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                    const ttlMs = mensaje.datos?.ttlMs || null;
+                    logger.info(`${logPrefix} PENDING_INICIADO para ${padreId} ttl=${ttlMs}`);
+                    // Optionally pause playback and prepare UI
+                    try { if (!audioPlayer.paused) { audioPlayer.pause(); logger.debug(`${logPrefix} Audio pausado por PENDING_INICIADO`); } } catch (err) {}
+                    try { if (typeof showAlert === 'function') showAlert('Pendiente creado: esperando condiciones'); } catch (e) {}
+                    // ACK handled below
+                    try { await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_INICIADO procesado', padreId, ttlMs } }); } catch (e) {}
+                } else if (evento === 'PENDING_CANCELADO') {
+                    const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                    const motivo = mensaje.datos?.motivo || 'sin_motivo';
+                    logger.info(`${logPrefix} PENDING_CANCELADO recibido para ${padreId}: ${motivo}`);
+                    // Seguridad: pausar audio si este corresponde al elemento afectado
+                    try {
+                        if (!audioPlayer.paused) { audioPlayer.pause(); logger.debug(`${logPrefix} Audio pausado por PENDING_CANCELADO`); }
+                        try { if (typeof showAlert === 'function') showAlert('La parada ha sido cancelada: ' + motivo); } catch (e) {}
+                        // Enviar ACK al padre
+                        try { await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_CANCELADO procesado', padreId, motivo } }); } catch (e) {}
+                    } catch (errNote) { logger.warn(`${logPrefix} Error procesando PENDING_CANCELADO:`, errNote); }
+                }
+            } catch (err) {
+                logger.warn(`${logPrefix} Error procesando NOTIFICACION:`, err);
+            }
         });
     });
 
@@ -940,10 +1186,11 @@
                     actualizarInterfazModo(modoInicial);
                 }
 
-                // Enviar HIJO_LISTO al padre para confirmar que estamos listos
+                // Marcar inicializado y Enviar HIJO_LISTO al padre para confirmar que estamos listos
+                estado.inicializado = true;
                 try {
                     await enviarMensaje({
-                        destino: 'padre',
+                        destino: getPadreId(),
                         tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
                         origen: 'hijo3',
                         datos: {
@@ -953,7 +1200,7 @@
                             timestamp: Date.now()
                         }
                     });
-                    console.log(`✅ [hijo3] HIJO_LISTO enviado al padre`);
+                    logger.info(`✅ [hijo3] HIJO_LISTO enviado al padre`);
                 } catch (error) {
                     console.error(`❌ [hijo3] Error enviando HIJO_LISTO:`, error);
                 }
@@ -982,7 +1229,7 @@
 
                 // Aplicar cambio de modo encolado si existía
                 try {
-                    if (estado.pendingCambioModo && estado.pendingCambioModo.modo) {
+                    if (estado && estado.pendingCambioModo && estado.pendingCambioModo.modo) {
                         const modoPendiente = estado.pendingCambioModo.modo;
                         logger.info(`${logPrefix} Aplicando modo pendiente: ${modoPendiente}`);
                         actualizarInterfazModo(modoPendiente);
@@ -992,7 +1239,7 @@
                             origen: CONFIG_HIJO.IFRAME_ID,
                             datos: { tipo: 'inicializacion', modo: modoPendiente }
                         });
-                        delete estado.pendingCambioModo;
+                        if (estado) delete estado.pendingCambioModo;
                     }
                 } catch (err) {
                     logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
@@ -1129,13 +1376,12 @@
          */
         registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
             const logPrefix = `[hijo3][CAMBIO_MODO]`;
-            const CONFIG_HIJO = { IFRAME_ID: 'hijo3' };
 
             try {
                 // Paso 1: Validar carga secuencial - esperar permiso del padre
                         if (!mensaje.datos?.secuenciaCompleta) {
                             logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando y notificando padre`);
-                            estado.pendingCambioModo = mensaje.datos || { modo: null };
+                            if (estado) estado.pendingCambioModo = mensaje.datos || { modo: null };
                             await enviarMensaje({
                                 tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                                 origen: CONFIG_HIJO.IFRAME_ID,
@@ -1244,14 +1490,65 @@
             logger.debug(`[hijo3] HEARTBEAT recibido, respuesta enviada.`);
         });
 
+        // Controlador: SISTEMA.HEARTBEAT.START
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+            const logPrefix = `[hijo3][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                window.__HEARTBEAT_ACTIVO = true;
+                logger.info(`${logPrefix} Activado heartbeat local`);
+                return { started: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_START:`, error);
+                return { started: false, error: error && error.message };
+            }
+        });
+
+        // Controlador: SISTEMA.HEARTBEAT.PAUSE
+        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+            const logPrefix = `[hijo3][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                window.__HEARTBEAT_ACTIVO = false;
+                logger.info(`${logPrefix} Pausado heartbeat local`);
+                return { paused: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_PAUSE:`, error);
+                return { paused: false, error: error && error.message };
+            }
+        });
+
+        // Controlador: NAVEGACION.CAMBIO_PARADA (acepta cambio y confirma)
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+            const logPrefix = `[hijo3][NAVEGACION.CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                    const resolved = resolverIdsParada(mensaje.datos || {});
+                    const padreId = resolved.padreId;
+                    const paradaId = resolved.paradaId;
+                    logger.info(`${logPrefix} Cambio de parada recibido: ${padreId || paradaId}`);
+                // Actualizar estado local para audio si corresponde
+                if (paradaId) window.__hijo3_paradaActual = paradaId;
+                // Enviar confirmación al padre
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen || getPadreId(),
+                            datos: { paradaId: paradaId || null, parada_id: paradaId || null, padreId: padreId || null, padreid: padreId || null, timestamp: Date.now() }
+                    });
+                    logger.info(`${logPrefix} Confirmación enviada`);
+                } catch (err) { logger.warn(`${logPrefix} No se pudo enviar confirmación:`, err); }
+            } catch (error) {
+                logger.warn(`${logPrefix} Error procesando CAMBIO_PARADA:`, error);
+            }
+        });
+
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
             origen: CONFIG_HIJO.IFRAME_ID,
             datos: {
                 componenteId: CONFIG_HIJO.COMPONENTE_ID,
                 version: '1.0.0',
-                capacidades: ['audio', 'retos-button'],
+                    capacidades: ['audio', 'retos-button', 'navegacion'],
                 timestamp: Date.now()
             }
         });
@@ -1290,7 +1587,7 @@
                 // Responder al padre (incluir referencia al mensaje original
                 // para que el padre pueda resolver confirmaciones pendientes)
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.AUDIO.RESPUESTA_AUDIO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: Object.assign({}, audioData, {
@@ -1370,7 +1667,7 @@
                 
                 // Responder al ACK
                 await enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.ACK,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
@@ -1432,10 +1729,26 @@
 
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
             try {
-                console.warn(`[hijo3][GPS.ERROR] Error GPS recibido (no-op):`, mensaje?.datos || {});
+                const datos = mensaje?.datos || {};
+                const { codigo } = datos;
+                const errorMensaje = datos.mensaje || datos.message || null;
+                const contexto = datos.contexto || datos.context || 'desconocido';
+                const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+                const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
+                let details;
+                try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
+                logger.error(`[hijo3][GPS.ERROR] Error GPS recibido: ${details}`);
+                // Telemetría: incrementar contador por código de error GPS en hijo3
+                try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                // Enviar métrica a monitoreo (si mensajería disponible)
+                try {
+                    if (typeof enviarMensaje === 'function') {
+                        enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo3', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {});
+                    }
+                } catch (ignore) { /* ignore */ }
                 return { exito: true };
             } catch (e) {
-                console.error('[hijo3][GPS.ERROR] Error en handler no-op:', e);
+                logger.error('[hijo3][GPS.ERROR] Error en handler no-op:', e);
                 return { exito: false, error: e.message };
             }
         });
