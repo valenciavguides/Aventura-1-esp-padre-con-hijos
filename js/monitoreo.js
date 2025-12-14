@@ -30,12 +30,20 @@ export async function registrarControladoresMonitoreo() {
             try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
         }
         console.info('[MONITOREO][registrarControladores] Controladores migrados (si existían)');
+        // Exponer funciones útiles en window para compatibilidad con módulos que no importan monitoreo
+        try {
+            if (typeof window !== 'undefined') {
+                window.incrementarContador = incrementarContador;
+                window.registrarMetrica = registrarMetrica;
+                window.estadoMonitoreo = estadoMonitoreo;
+            }
+        } catch (e) { /* ignore */ }
     } catch (error) {
         console.warn('[MONITOREO][registrarControladores] No se pudo migrar controladores:', error.message);
     }
 }
 import { TIPOS_MENSAJE } from './constants.js';
-import { generarIdUnico } from './utils.js';
+import { generarIdUnico, getPadreId } from './utils.js';
 import logger from './logger.js';
 
 // ==================== Estado del Monitoreo ====================
@@ -63,6 +71,46 @@ export const estadoMonitoreo = {
         }
     }
 };
+
+// Telemetría ligera: contadores de fallback/envío/errores
+estadoMonitoreo.contadores = estadoMonitoreo.contadores || new Map();
+
+/**
+ * Resuelve destinatarios de notificación en base a la configuración y presencia DOM.
+ * Exported for unit testing.
+ * @returns {Array<string>} Lista de destinatarios resueltos o ['broadcast']
+ */
+export function resolverDestinatariosNotificacion() {
+    try {
+        const cfgTargets = window.Config && window.Config.MONITOREO && Array.isArray(window.Config.MONITOREO.DESTINATARIOS_NOTIFICACION)
+            ? window.Config.MONITOREO.DESTINATARIOS_NOTIFICACION
+            : ['sistema-ui', 'hijo1-opciones', 'hijo5-casa', 'broadcast'];
+
+        let destinatarios = cfgTargets.filter(d => {
+            if (!d || typeof d !== 'string') return false;
+            if (d === 'broadcast') return true;
+            try { return document.getElementById(d) !== null; } catch (e) { return false; }
+        });
+
+        if (!destinatarios.length) destinatarios = ['broadcast'];
+
+        // Telemetry: count broadcast fallback
+        if (destinatarios.length === 1 && destinatarios[0] === 'broadcast') {
+            incrementarContador && typeof incrementarContador === 'function' && incrementarContador('monitoreo.notificacion_fallback_broadcast');
+        }
+
+        // Telemetry: count when sistema-ui is not present but configured
+        const configuredHasSistemaUi = Array.isArray(cfgTargets) && cfgTargets.includes('sistema-ui');
+        if (configuredHasSistemaUi && !destinatarios.includes('sistema-ui')) {
+            incrementarContador && typeof incrementarContador === 'function' && incrementarContador('monitoreo.notificacion_no_sistema_ui');
+        }
+
+        return destinatarios;
+    } catch (e) {
+        incrementarContador && typeof incrementarContador === 'function' && incrementarContador('monitoreo.notificacion_fallback_broadcast');
+        return ['broadcast'];
+    }
+}
 
 // ==================== Funciones de Utilidad ====================
 
@@ -1112,7 +1160,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CONFIRMACION, async (mensaje) => {
         await enviarMensaje({
             destino: mensaje.origen,
             tipo: TIPOS_MENSAJE.SISTEMA.ACK,
-            origen: 'padre',
+            origen: getPadreId(),
             mensajeId: generarIdUnico(),
             timestamp,
             datos: {
@@ -1595,7 +1643,22 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
         }
 
         // 4. Determinar destinatarios
-        const destinatarios = ['sistema-ui'];
+        // Prefer configured targets (window.Config.MONITOREO.DESTINATARIOS_NOTIFICACION),
+        // otherwise use sane defaults. Ensure existance of target iframe ids and
+        // fallback to 'broadcast' when nothing matches.
+        let destinatarios = [];
+        try {
+            destinatarios = resolverDestinatariosNotificacion();
+
+            // If nothing found, fallback to broadcast
+            if (!destinatarios.length) {
+                destinatarios = ['broadcast'];
+            }
+        } catch (err) {
+            // Defensive fallback
+            destinatarios = ['broadcast'];
+        }
+        logger.debug(`[SISTEMA.NOTIFICACION][${mensaje?.origen || 'desconocido'}] Destinatarios resueltos:`, destinatarios);
         
         // Si es una notificación importante, asegurarse de que el usuario la vea
         if (importante) {
@@ -1621,6 +1684,8 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
         // 5. Enviar notificación a los componentes relevantes
         const envios = destinatarios.map(async destino => {
             try {
+                // Telemetría: incrementar contador por destino/resultado
+                incrementarContador && typeof incrementarContador === 'function' && incrementarContador(`monitoreo.envio_destino.${destino}`);
                 await enviarMensaje({
                 destino,
                 tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
