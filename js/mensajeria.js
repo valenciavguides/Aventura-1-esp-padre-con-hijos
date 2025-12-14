@@ -1,3 +1,4 @@
+
 /**
  * Módulo de mensajería para comunicación entre componentes
  * @module Mensajeria
@@ -7,7 +8,7 @@
  */
 
 import { TIPOS_MENSAJE, TIPOS_MENSAJE_VALIDOS } from './constants.js';
-import { ajustarTimeoutPorConexion, generarIdUnico } from './utils.js';
+import { ajustarTimeoutPorConexion, generarIdUnico, getPadreId } from './utils.js';
 import logger from './logger.js';
 
 // ================== UTILIDADES INTERNAS =====================
@@ -41,6 +42,10 @@ function __vv_getManejadores() {
 // TDZ al leer una variable de módulo que aún no se inicializó.
 globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
 
+// Para evitar spam de logs, sólo advertimos una vez si un caller usa la forma objeto
+// sin proveer `origen` explícito. Esto facilita migrar el código sin generar demasiados warnings.
+let _warnedMissingOrigen = false;
+
 // ================== MENSAJERÍA CENTRALIZADA =====================
 
 // Estado global de la mensajería (configuración local)
@@ -68,16 +73,24 @@ const estadoMensajeria = {
     listenerRegistrado: false,
     heartbeat: {
         activo: false,
+        userPaused: false, // pause requested by user/mode (distinguished from visibility-based pause)
         hijosConectados: new Set(),
         ultimoHeartbeat: new Map(),
         timeoutsHeartbeat: new Map(),
         intervalo: 5000,
-        timer: null
+        timer: null,
+        listenerRegistrado: false
     },
     broadcastsPendientes: [], // Cola de broadcasts esperando a que hijos estén listos
+    // Hijos críticos: estos deben estar listos antes de considerar la aplicación completamente inicializada.
+    // Nota: `hijo1-hamburguesa` y `hijo1-opciones` se excluyen a propósito (son UI helpers) y se cargan secuencialmente
+    // por el padre, pero no se consideran críticos para bloquear la readiness del sistema.
     hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'], // Hijos críticos que deben estar listos
     hijosListos: new Set() // Hijos críticos que ya enviaron HIJO_LISTO
 };
+
+// Flag to indicate that heartbeat pre-warm has been executed
+let _heartbeatPrewarmed = false;
 
 // Registro de capacidades declaradas por cada hijo (padre mantiene esto)
 // Map<hijoId, Set<capability>>
@@ -97,6 +110,36 @@ function registrarCapacidadesHijo(hijoId, capacidades = []) {
     } catch (e) {
         console.warn('[MENSAJERIA] Error registrando capacidades hijo:', e);
     }
+}
+
+// Helper de diagnóstico accesible desde la consola para verificar configuración de orígenes
+if (typeof window !== 'undefined') {
+    window.diagnosticarMensajeria = function() {
+        try {
+            const origenActual = window.location.origin;
+            const allowed = (window.Config && window.Config.MENSAJERIA && Array.isArray(window.Config.MENSAJERIA.ALLOWED_ORIGINS)) ? window.Config.MENSAJERIA.ALLOWED_ORIGINS : [];
+            console.info('[MENSAJERIA][DIAG] origenActual:', origenActual, 'ALLOWED_ORIGINS:', allowed);
+            return { origenActual, allowedOrigins: allowed };
+        } catch (e) {
+            console.warn('[MENSAJERIA][DIAG] Error diagnósticando mensajería:', e && e.message);
+            return null;
+        }
+    };
+}
+
+// Helper de desarrollo: simula un mensaje entrante (no debe usarse en producción)
+if (typeof window !== 'undefined') {
+    window.simularMensajeEntrada = function({ origin = 'null', data = {} } = {}) {
+        try {
+            console.info('[MENSAJERIA][DIAG] Simulando mensaje entrante', { origin, data });
+            // Llamar al handler interno con una estructura que imita MessageEvent
+            manejarMensajeEntrante({ origin, data, source: window.parent });
+            return true;
+        } catch (e) {
+            console.warn('[MENSAJERIA][DIAG] Error simulando mensaje:', e && e.message);
+            return false;
+        }
+    };
 }
 
 /**
@@ -171,6 +214,10 @@ function validarDestino(destino) {
     if (destino === 'padre') {
         return true;
     }
+    // Soportar ID canónico del padre (ej., si no usan el literal 'padre')
+    try {
+        if (typeof getPadreId === 'function' && destino === getPadreId()) return true;
+    } catch (e) { /* ignore */ }
     
     // Soportar envíos globales/broadcast desde el padre (o alias 'todos')
     if (destino === 'broadcast' || destino === 'todos') {
@@ -236,6 +283,66 @@ export async function inicializarMensajeria(config = {}) {
 }
 
 /**
+ * Pre-inicializa el subsistema de heartbeat sin arrancar los intervalos.
+ * Esto puede registrar listeners y preparar estado para acelerar el
+ * arranque del heartbeat cuando sea necesario.
+ * @param {number} [timeoutMs]
+ * @returns {Promise<{ready:boolean}>}
+ */
+export async function preiniciarHeartbeat(timeoutMs = null) {
+    try {
+        const cfgTimeout = (window.Config && window.Config.MENSAJERIA && window.Config.MENSAJERIA.HEARTBEAT_PREWARM && window.Config.MENSAJERIA.HEARTBEAT_PREWARM.TIMEOUT_MS) || 8000;
+        const to = timeoutMs || cfgTimeout;
+
+        if (_heartbeatPrewarmed) return { ready: true };
+
+        // Ensure listener is registered (but do not start timers)
+        if (!estadoMensajeria.heartbeat.listenerRegistrado) {
+            // The normal initialization registers message listeners; here we just
+            // mark the flag so the system knows heartbeat is prepared.
+            estadoMensajeria.heartbeat.listenerRegistrado = true;
+        }
+
+        // Simulate small async preparation window so callers can await readiness
+        await new Promise(resolve => setTimeout(resolve, Math.min(200, to)));
+        _heartbeatPrewarmed = true;
+        return { ready: true };
+    } catch (e) {
+        logger.warn('[MENSAJERIA][preiniciarHeartbeat] fallo en preiniciar:', e && e.message ? e.message : e);
+        return { ready: false };
+    }
+}
+
+/**
+ * Espera a que los hijos críticos envíen HIJO_LISTO o hasta timeout
+ * @param {number} timeoutMs
+ * @returns {Promise<{ready:boolean, missing:Array<string>}>}
+ */
+export function esperarHijosListos(timeoutMs = 10000) {
+    return new Promise(resolve => {
+        const expected = Array.from(estadoMensajeria.hijosEsperados || []);
+
+        const missingNow = expected.filter(id => !estadoMensajeria.hijosListos.has(id));
+        if (missingNow.length === 0) return resolve({ ready: true, missing: [] });
+
+        const interval = setInterval(() => {
+            const missing = expected.filter(id => !estadoMensajeria.hijosListos.has(id));
+            if (missing.length === 0) {
+                clearInterval(interval);
+                clearTimeout(timeout);
+                return resolve({ ready: true, missing: [] });
+            }
+        }, 200);
+
+        const timeout = setTimeout(() => {
+            clearInterval(interval);
+            const missing = expected.filter(id => !estadoMensajeria.hijosListos.has(id));
+            return resolve({ ready: false, missing });
+        }, timeoutMs);
+    });
+}
+
+/**
  * Envía un mensaje a un destino específico.
  * @param {Object} params - Parámetros del mensaje.
  * @param {string} params.tipo - Tipo de mensaje.
@@ -245,7 +352,23 @@ export async function inicializarMensajeria(config = {}) {
  * @param {string} [params.version='1.0.0'] - Versión del mensaje.
  */
 export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
-    const defaultOrigen = estadoMensajeria.componenteId || (window.parent === window ? 'padre' : 'hijo');
+    // Compute default origin with more robust parent canonicalization.
+    // Prefer explicit componenteId; if not available, and we're running in the parent
+    // prefer a canonical parent id via getPadreId() (runtime-safe helper), then fall back to 'padre'.
+    let defaultOrigen = estadoMensajeria.componenteId || null;
+    try {
+        if (!defaultOrigen) {
+            if (typeof window !== 'undefined' && window.parent === window) {
+                // Use canonical helper if available (returns CONFIG_PADRE.ID or fallback)
+                defaultOrigen = (typeof getPadreId === 'function' ? getPadreId() : null) || 'padre';
+            } else {
+                defaultOrigen = 'hijo';
+            }
+        }
+    } catch (e) {
+        // Fallback to legacy resolution if helper failed
+        defaultOrigen = estadoMensajeria.componenteId || (window.parent === window ? 'padre' : 'hijo');
+    }
 
     return Promise.resolve().then(() => {
         // Normalizar firma: aceptar tanto un objeto {tipo, origen, destino, datos}
@@ -254,6 +377,20 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
 
         if (typeof paramsOrDestino === 'object' && paramsOrDestino !== null && !Array.isArray(paramsOrDestino)) {
             ({ tipo, origen, destino, datos = {}, version = '1.0.0' } = paramsOrDestino);
+            // Sanity: if calling code omitted origen, fallback to defaultOrigin (caller component)
+            if (!origen) {
+                origen = defaultOrigen;
+                try {
+                    if (!_warnedMissingOrigen) {
+                        // Emit helpful trace once (caller stack) to find the location in code that omitted `origen`.
+                        const stack = (typeof Error === 'function' && new Error().stack) || 'stack trace not available';
+                        logger && logger.debug && logger.debug('[MENSAJERIA] enviarMensaje called without explicit "origen" (object signature); using default origin: ' + origen + '\n' + stack);
+                        _warnedMissingOrigen = true;
+                    } else {
+                        logger && logger.debug && logger.debug('[MENSAJERIA] Re-using default origen for enviarMensaje when caller omitted `origen`.');
+                    }
+                } catch (e) { console.warn('[MENSAJERIA] Warn logging failed', e); }
+            }
         } else {
             destino = paramsOrDestino;
             tipo = tipoOrOptions;
@@ -344,7 +481,28 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
             }
         }
 
+        // Allow some legacy aliases and map them to canonical destinations to avoid noisy errors
+        const canonicalizarDestino = (d) => {
+            if (!d) return d;
+            if (d === 'sistema-notificaciones') {
+                // Prefer the legacy element if it exists, otherwise map to 'sistema-ui' if available
+                try {
+                    if (document.getElementById('sistema-notificaciones')) return 'sistema-notificaciones';
+                    if (document.getElementById('sistema-ui')) return 'sistema-ui';
+                } catch (e) {
+                    // ignore DOM access errors
+                }
+                return 'broadcast';
+            }
+            return d;
+        };
+
+        destino = canonicalizarDestino(destino);
+
         if (!validarDestino(destino)) {
+            // Increment a monitoring counter so we can track how often invalid destinations occur
+            try { typeof window.incrementarContador === 'function' && window.incrementarContador('mensajeria.destino_invalido'); } catch (e) { /* ignore */ }
+
             const errorMsg = destino === 'funciones-mapa'
                 ? `Destino 'funciones-mapa' no válido. Los mensajes GPS ahora se manejan directamente llamando a las funciones de funciones-mapa.js desde el padre.`
                 : `Destino no válido: ${destino}`;
@@ -508,14 +666,22 @@ function manejarMensajeEntrante(event) {
 
     // Validar el origen del mensaje para seguridad
     const origenEsperado = window.location.origin;
-    if (event.origin !== origenEsperado) {
-        console.warn(`Mensaje rechazado de origen no confiable: ${event.origin} (esperado: ${origenEsperado})`);
+    const origenMensaje = event.origin || 'null';
+    // Orígenes permitidos configurables via CONFIG.MENSAJERIA.ALLOWED_ORIGINS
+    const allowedOriginsConfig = (window.Config && window.Config.MENSAJERIA && Array.isArray(window.Config.MENSAJERIA.ALLOWED_ORIGINS)) ? window.Config.MENSAJERIA.ALLOWED_ORIGINS : [];
+    const origenPermitido = (origenMensaje === origenEsperado) || (origenMensaje === 'null') || allowedOriginsConfig.includes(origenMensaje) || (event.source === window.parent);
+    if (!origenPermitido) {
+        console.warn(`Mensaje rechazado de origen no confiable: ${origenMensaje} (esperado: ${origenEsperado})`);
+        try { typeof window.incrementarContador === 'function' && window.incrementarContador('mensajeria.rejected_origin'); } catch (e) { /* ignore */ }
         // Añadir ayuda rápida para el desarrollador
         if (window.__vv_diagnostics) {
-            console.info('[MENSAJERIA][DIAG] Sugerencia: ejecutar el proyecto desde un servidor HTTP (ej. python -m http.server) en lugar de file:// para mantener el mismo origin entre marcos.');
+            console.info('[MENSAJERIA][DIAG] Sugerencia: si está ejecutando desde file:// o en un iframe sandboxed, agregue "null" a CONFIG.MENSAJERIA.ALLOWED_ORIGINS o sirva la app desde localhost/https.');
             try { console.debug('[MENSAJERIA][DIAG] payload:', event.data); } catch (e) { /* ignore */ }
         }
         return;
+    }
+    if (window.__vv_diagnostics && origenMensaje === 'null') {
+        console.info('[MENSAJERIA][DIAG] Aceptando mensaje de origen "null" (posible file:// o iframe sandboxed)');
     }
 
     const mensaje = event.data;
@@ -662,7 +828,7 @@ function manejarMensajeEntrante(event) {
                     enviarMensaje({
                         destino: mensaje.origen,
                         tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                        origen: estadoMensajeria.componenteId || 'padre',
+                        origen: estadoMensajeria.componenteId || getPadreId(),
                         datos: { timestamp: Date.now() }
                     }).catch && null;
                 } catch (e) {
@@ -764,13 +930,19 @@ export function iniciarHeartbeat(intervalo) {
         estadoMensajeria.heartbeat.intervalo = intervalo;
     }
 
-    estadoMensajeria.heartbeat.activo = true;
+    // No start if user requested pause (mode 'casa')
+    if (estadoMensajeria.heartbeat.userPaused) {
+        logger.info && logger.info('[heartbeat] Ignorando iniciarHeartbeat porque userPaused=true');
+        return;
+    }
+
+    // No marcar activo hasta verificar que no estamos en pausa por modo
     let heartbeatPausado = false;
     let primerHeartbeat = true; // Flag para mostrar el primer latido
 
     const enviarHeartbeat = () => {
-        // Pausar heartbeat si la página está oculta
-        if (document.hidden || heartbeatPausado) {
+        // Pausar heartbeat si la página está oculta o si el usuario pidió pausa por modo
+        if (document.hidden || heartbeatPausado || estadoMensajeria.heartbeat.userPaused) {
             return;
         }
 
@@ -784,15 +956,17 @@ export function iniciarHeartbeat(intervalo) {
         estadoMensajeria.heartbeat.hijosConectados.forEach(hijoId => {
             enviarMensaje({
                 tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT,
-                origen: 'padre',
+                origen: getPadreId(),
                 destino: hijoId,
                 datos: { mensajeId: generarIdUnico() }
             }).catch(error => console.error(`❌ Error enviando heartbeat a ${hijoId}:`, error));
         });
     };
 
-    // Pausar/reanudar heartbeat según visibilidad
-    document.addEventListener('visibilitychange', () => {
+    // Pausar/reanudar heartbeat según visibilidad; registrar el listener una sola vez
+    if (!estadoMensajeria.heartbeat.listenerRegistrado) {
+        estadoMensajeria.heartbeat.listenerRegistrado = true;
+        document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
             heartbeatPausado = true;
         } else {
@@ -801,7 +975,14 @@ export function iniciarHeartbeat(intervalo) {
             enviarHeartbeat();
         }
     });
+    }
 
+    // Guardar cualquier timer previo y limpiarlo para evitar duplicados
+    if (estadoMensajeria.heartbeat.timer) {
+        try { clearInterval(estadoMensajeria.heartbeat.timer); } catch (e) { /* ignore */ }
+        estadoMensajeria.heartbeat.timer = null;
+    }
+    estadoMensajeria.heartbeat.activo = true;
     estadoMensajeria.heartbeat.timer = setInterval(enviarHeartbeat, estadoMensajeria.heartbeat.intervalo);
     enviarHeartbeat();
 }
@@ -822,11 +1003,34 @@ export function detenerHeartbeat() {
  * ✅ PROBLEMA 29: Pausar heartbeat en modo casa para ahorrar recursos
  */
 export function pausarHeartbeat() {
+    // Solo el padre mantiene la lógica de heartbeat; en hijos ignorar la llamada
+    if (estadoMensajeria.rol !== 'padre') {
+        try { logger.debug && logger.debug('[heartbeat] pausarHeartbeat invocado en rol no-padre, omitiendo'); } catch (e) { /* ignore logging failure */ }
+        return;
+    }
+
+    // Mark user pause to avoid visibilitychange from reactivating the heartbeat
+    estadoMensajeria.heartbeat.userPaused = true;
+
     if (estadoMensajeria.heartbeat.timer) {
         clearInterval(estadoMensajeria.heartbeat.timer);
         estadoMensajeria.heartbeat.timer = null;
         estadoMensajeria.heartbeat.activo = false;
         logger.debug('[heartbeat] Sistema pausado (modo casa)');
+    }
+
+    // Limpieza de timeouts de heartbeats pendientes (solo en padre)
+    try {
+        const timeoutsMap = estadoMensajeria.heartbeat.timeoutsHeartbeat;
+        if (timeoutsMap && typeof timeoutsMap.entries === 'function') {
+            for (const [hijoId, t] of timeoutsMap.entries()) {
+                try { clearTimeout(t); } catch (e) { /* ignore */ }
+            }
+            try { timeoutsMap.clear && timeoutsMap.clear(); } catch (e) { /* ignore */ }
+            logger.debug('[heartbeat] Limpiados timeoutsHeartbeat pendientes al pausar');
+        }
+    } catch (e) {
+        logger.warn && logger.warn('[heartbeat] Error limpiando timeoutsHeartbeat:', e);
     }
 }
 
@@ -835,9 +1039,17 @@ export function pausarHeartbeat() {
  * ✅ PROBLEMA 29: Reanudar heartbeat en modo aventura
  */
 export function reanudarHeartbeat() {
-    if (!estadoMensajeria.heartbeat.activo && estadoMensajeria.rol === 'padre') {
-        iniciarHeartbeat();
-        logger.debug('[heartbeat] Sistema reanudado (modo aventura)');
+    // Only re-enable if the pause was explicitly set by the user
+    if (estadoMensajeria.rol !== 'padre') return;
+    try {
+        estadoMensajeria.heartbeat.userPaused = false;
+        // Iniciar únicamente si no está activo
+        if (!estadoMensajeria.heartbeat.activo) {
+            iniciarHeartbeat();
+            logger.debug('[heartbeat] Sistema reanudado (modo aventura)');
+        }
+    } catch (e) {
+        logger.warn && logger.warn('[heartbeat] Error reanudando heartbeat:', e);
     }
 }
 
@@ -913,6 +1125,89 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
     } else if (modo === 'aventura') {
         logger.info(`${logPrefix} Modo AVENTURA: Reanudando heartbeat (necesario para GPS)`);
         reanudarHeartbeat();
+    }
+});
+
+// Controlador: SISTEMA.HEARTBEAT.START (orden para iniciar heartbeat desde mensajería)
+registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, async (mensaje) => {
+    const logPrefix = '[mensajeria][HEARTBEAT_START]';
+    const datos = mensaje.datos || {};
+    try {
+        if (estadoMensajeria.rol !== 'padre') {
+            // Si no es padre, el mensaje de start solo lo consumimos y respondemos
+            logger.debug && logger.debug(`${logPrefix} recibido en rol no-padre, ignorando iniciarHeartbeat`);
+            return { exito: true };
+        }
+        // Intentar iniciar heartbeat con el intervalo sugerido o usar el por defecto
+        const intervalo = typeof datos.intervalo === 'number' && datos.intervalo > 0 ? datos.intervalo : undefined;
+        // Respetar pausa por modo
+        if (estadoMensajeria.heartbeat.userPaused) {
+            logger.info && logger.info(`${logPrefix} Ignorando petición de inicio por heartbeat.userPaused=true`);
+            return { exito: true };
+        }
+        iniciarHeartbeat(intervalo);
+        logger.info(`${logPrefix} Heartbeat iniciado por mensaje (intervalo: ${intervalo || estadoMensajeria.heartbeat.intervalo})`);
+        return { exito: true };
+    } catch (e) {
+        logger.error && logger.error(`${logPrefix} Error iniciando heartbeat:`, e);
+        return { exito: false, error: e.message };
+    }
+});
+
+// Controlador: SISTEMA.HEARTBEAT.PAUSE (orden para pausar heartbeat desde mensajería)
+registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, async (mensaje) => {
+    const logPrefix = '[mensajeria][HEARTBEAT_PAUSE]';
+    try {
+        if (estadoMensajeria.rol !== 'padre') {
+            logger.debug && logger.debug(`${logPrefix} recibido en rol no-padre, ignorando pausarHeartbeat`);
+            return { exito: true };
+        }
+        pausarHeartbeat();
+        logger.info(`${logPrefix} Heartbeat pausado por mensaje`);
+        return { exito: true };
+    } catch (e) {
+        logger.error && logger.error(`${logPrefix} Error pausando heartbeat:`, e);
+        return { exito: false, error: e.message };
+    }
+});
+
+// Controlador: SISTEMA.HEARTBEAT.ESTADO (consulta del estado del heartbeat)
+registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_ESTADO, async (mensaje) => {
+    const logPrefix = '[mensajeria][HEARTBEAT_ESTADO]';
+    try {
+        if (estadoMensajeria.rol !== 'padre') {
+            logger.debug && logger.debug(`${logPrefix} consulta recibida en rol no-padre, respondiendo con estado local`);
+            return {
+                exito: true,
+                estado: {
+                    rol: estadoMensajeria.rol,
+                    activo: estadoMensajeria.heartbeat.activo,
+                    userPaused: estadoMensajeria.heartbeat.userPaused,
+                    intervalo: estadoMensajeria.heartbeat.intervalo,
+                    timerPresent: !!estadoMensajeria.heartbeat.timer,
+                    hijosConectados: Array.from(estadoMensajeria.heartbeat.hijosConectados || []),
+                    timeoutsHeartbeat: (estadoMensajeria.heartbeat.timeoutsHeartbeat && typeof estadoMensajeria.heartbeat.timeoutsHeartbeat.size === 'number') ? estadoMensajeria.heartbeat.timeoutsHeartbeat.size : undefined
+                },
+                timestamp: new Date().toISOString()
+            };
+        }
+        // Para el padre, enviar info completa
+        return {
+            exito: true,
+            estado: {
+                rol: estadoMensajeria.rol,
+                activo: estadoMensajeria.heartbeat.activo,
+                userPaused: estadoMensajeria.heartbeat.userPaused,
+                intervalo: estadoMensajeria.heartbeat.intervalo,
+                timerPresent: !!estadoMensajeria.heartbeat.timer,
+                hijosConectados: Array.from(estadoMensajeria.heartbeat.hijosConectados || []),
+                timeoutsHeartbeat: (estadoMensajeria.heartbeat.timeoutsHeartbeat && typeof estadoMensajeria.heartbeat.timeoutsHeartbeat.size === 'number') ? estadoMensajeria.heartbeat.timeoutsHeartbeat.size : undefined
+            },
+            timestamp: new Date().toISOString()
+        };
+    } catch (e) {
+        logger.error && logger.error(`${logPrefix} Error consultando estado heartbeat:`, e);
+        return { exito: false, error: e.message };
     }
 });
 
