@@ -26,12 +26,42 @@
         
         .tramo-btn {
             background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
-            color: white;
+            color: rgb(252, 251, 251);
             border: none !important;
         }
         
         /* Agrega aquí el resto de tus estilos */
     </style>
+            <!-- Make the iframe page background transparent so the parent map shows through,
+                 while keeping the paradas window translucent and fully interactive. -->
+            <style>
+            /* Ensure the child document itself is transparent */
+            html, body {
+                background: transparent !important;
+                background-color: transparent !important;
+            }
+
+            /* Do not let the main zona-boton-casa add a solid background */
+            #zona-boton-casa {
+                background: transparent !important;
+            }
+
+            /* Make the paradas window translucent and readable; ensure it accepts pointer events */
+            #paradas-window {
+                background: rgba(255,255,255,0.92) !important; /* adjust alpha as needed */
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                pointer-events: auto !important; /* ensure buttons inside can be clicked */
+                border: 2px solid rgba(0,123,255,0.6) !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important;
+                z-index: 1000001 !important;
+            }
+            /* Ensure the horizontal list is transparent and interactive */
+            #lista-paradas {
+                background: transparent !important;
+                pointer-events: auto !important;
+            }
+            </style>
     <style>
     /* Contenedor principal */
     #zona-boton-casa {
@@ -42,7 +72,9 @@
         display: flex;
         flex-direction: row;
         align-items: center;
+        justify-content: flex-start !important; /* keep button left-aligned even when siblings hide/show */
         gap: 10px;
+        width: auto !important; /* avoid 100% width inherited from earlier rule so position:left is honored */
     }
     
     /* Botón GPS: estilo actualizado with emoji de satélite y etiqueta ON/OFF */
@@ -64,13 +96,15 @@
     }
     
     #gps-casa-btn.on {
-        background: linear-gradient(to right, #27ae60, #2ecc71); /* Green gradient */
+        /* Ensure ON state uses explicit green gradient even if other styles try to override */
+        background: linear-gradient(to right, #27ae60, #2ecc71) !important; /* Green gradient */
         box-shadow: 0 4px 8px rgba(0,0,0,0.3);
     }
 
     #gps-casa-btn.off {
-        background: linear-gradient(to right, #e74c3c, #c0392b); /* Red gradient */
-        opacity: 0.7;
+        /* Ensure OFF state uses explicit red gradient; use slightly reduced opacity but not fully transparent */
+        background: linear-gradient(to right, #e74c3c, #c0392b) !important; /* Red gradient */
+        opacity: 0.95 !important;
     }
     
     #gps-casa-btn:hover {
@@ -84,6 +118,33 @@
     
     #gps-casa-btn:active {
         transform: scale(0.95);
+    }
+
+    /* Updated GPS casa button dimensions and alignment per design request */
+    #gps-casa-btn {
+        width: 85px !important;
+        height: 85px !important;
+        min-width: 76px !important;
+        min-height: 76px !important;
+        padding: 0 !important;
+        border-radius: 10% !important; /* not a perfect circle */
+        display: inline-flex !important;
+        align-items: center !important; /* vertical center */
+        justify-content: flex-start !important; /* align content to the left */
+        box-sizing: border-box !important;
+        /* Force a default background in case other rules remove it */
+        background: linear-gradient(135deg, #007bff, #0056b3) !important; /* Default blue */
+        color: white !important;
+    }
+
+    /* Slight offset for inner content so icons/text sit visually to the left */
+    #gps-casa-btn .button-content {
+        margin-left: 10px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 2px;
     }
     
     .button-content {
@@ -291,6 +352,11 @@
     function toggleParadasWindow() {
         const window = document.getElementById('paradas-window');
         window.style.display = window.style.display === 'none' ? 'block' : 'none';
+        try {
+            if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                parent.postMessage({ tipo: 'VV:PARADAS:SHOWN', datos: { visible: window.style.display === 'block' } }, '*');
+            }
+        } catch (e) { /* ignore */ }
     }
 
     /**
@@ -446,6 +512,11 @@
             });
             
             logger.info(`${logPrefix} ${botonesGenerados} botones generados exitosamente`);
+            try {
+                if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
+                    parent.postMessage({ tipo: 'VV:PARADAS:READY', datos: { count: botonesGenerados } }, '*');
+                }
+            } catch (e) { /* ignore */ }
             
         } catch (error) {
             logger.error(`${logPrefix} Error al generar botones de paradas:`, {
