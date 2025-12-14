@@ -12,7 +12,7 @@ import {
 import { CONFIG, MAPA_TIPOS_HIJO } from './config.js';
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import { validarCoordenadas } from './validacion.js';
-import { generarIdUnico, manejarError, ajustarTimeoutPorConexion, normalizarParadas } from './utils.js';
+import { generarIdUnico, manejarError, ajustarTimeoutPorConexion, normalizarParadas, resolverIdsParada, getPadreId } from './utils.js';
 import logger from './logger.js';
 
 /**
@@ -58,6 +58,28 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Helper: Extract lat/lng robustly from an object that may use different conventions
+ * Supports: { lat, lng }, { latitud, longitud }, { coordenadas: {lat, lng} }
+ * Returns { lat, lng } or null
+ */
+function _getLatLng(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    // Direct lat/lng
+    if (Number.isFinite(obj.lat) && Number.isFinite(obj.lng)) return { lat: Number(obj.lat), lng: Number(obj.lng) };
+    // latitud/longitud
+    if (Number.isFinite(obj.latitud) && Number.isFinite(obj.longitud)) return { lat: Number(obj.latitud), lng: Number(obj.longitud) };
+    // nested coordenadas
+    if (obj.coordenadas && Number.isFinite(obj.coordenadas.lat) && Number.isFinite(obj.coordenadas.lng)) return { lat: Number(obj.coordenadas.lat), lng: Number(obj.coordenadas.lng) };
+    // try parse strings too
+    const latCandidate = obj.lat || obj.latitud || (obj.coordenadas && obj.coordenadas.lat);
+    const lngCandidate = obj.lng || obj.longitud || (obj.coordenadas && obj.coordenadas.lng);
+    const lat = Number(latCandidate);
+    const lng = Number(lngCandidate);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+    return null;
+}
+
+/**
  * Calcula la tolerancia GPS para un elemento (parada o tramo)
  * Paradas: 50m fijos
  * Tramos: distancia máxima entre waypoints consecutivos + 20m de buffer
@@ -81,13 +103,13 @@ function calcularToleranciaGPS(elemento) {
     for (let i = 0; i < elemento.waypoints.length - 1; i++) {
         const wp1 = elemento.waypoints[i];
         const wp2 = elemento.waypoints[i + 1];
-        
-        const distancia = calcularDistancia(
-            wp1.latitud,
-            wp1.longitud,
-            wp2.latitud,
-            wp2.longitud
-        );
+        const coord1 = _getLatLng(wp1);
+        const coord2 = _getLatLng(wp2);
+        if (!coord1 || !coord2) {
+            logger.warn(`⚠️ calcularToleranciaGPS: waypoint inválido en elemento "${elemento.id}" índice ${i}`);
+            continue;
+        }
+        const distancia = calcularDistancia(coord1.lat, coord1.lng, coord2.lat, coord2.lng);
         
         if (distancia > distanciaMaxima) {
             distanciaMaxima = distancia;
@@ -118,17 +140,13 @@ function verificarLlegadaADestino(posicionUsuario, elementoActual) {
     // Determinar coordenadas del destino
     let coordenadasDestino;
     if (elementoActual.tipo === 'parada') {
-        coordenadasDestino = {
-            lat: elementoActual.latitud,
-            lng: elementoActual.longitud
-        };
+        const c = _getLatLng(elementoActual.ubicacion || elementoActual);
+        coordenadasDestino = c ? c : { lat: elementoActual.lat, lng: elementoActual.lng };
     } else if (elementoActual.waypoints && elementoActual.waypoints.length > 0) {
         // Para tramos, usar el último waypoint como destino
         const ultimoWaypoint = elementoActual.waypoints[elementoActual.waypoints.length - 1];
-        coordenadasDestino = {
-            lat: ultimoWaypoint.latitud,
-            lng: ultimoWaypoint.longitud
-        };
+        const c = _getLatLng(ultimoWaypoint);
+        coordenadasDestino = c ? c : { lat: ultimoWaypoint.lat, lng: ultimoWaypoint.lng };
     } else {
         logger.error('❌ verificarLlegadaADestino: elemento sin coordenadas válidas', elementoActual);
         return false;
@@ -200,6 +218,10 @@ const estadoMapa = {
 // Variable de control para navigator.geolocation.watchPosition
 // (necesaria para clearWatch pero el estado real está en estadoMapa)
 let gpsWatchId = null;
+// Warmup (precalentamiento) variables: low-power watch to prime geolocation
+let warmupWatchId = null;
+let warmupReady = false;
+let warmupTimer = null;
 
 /**
  * Sincroniza el estado GPS local (estadoMapa) con el estado global del padre
@@ -244,7 +266,7 @@ async function solicitarDatosParadas() {
         datosParadasSolicitados = true;
 
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS,
             origen: 'funciones-mapa',
             datos: {
@@ -1226,7 +1248,7 @@ function manejarActualizarPosicion(mensaje) {
             if (coordenadasParada && validarRango(posicion, coordenadasParada)) {
                 // Enviar NAVEGACION.LLEGADA_DETECTADA solo si está dentro del rango
                 enviarMensaje({
-                    destino: 'padre',
+                    destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA,
                     origen: 'mapa',
                     datos: { paradaId: estadoMapa.paradaActual, posicion }
@@ -1375,12 +1397,16 @@ async function manejarCambiarParada(mensaje) {
     
     try {
         logger.info(`${logPrefix} Procesando cambio de parada`, { mensajeId, datos: mensaje.datos });
+        logger.debug(`${logPrefix} resolved IDs:`, { padreId, paradaId });
         
-        if (!mensaje?.datos?.paradaId) {
-            throw new Error('ID de parada no especificado');
+        const { padreId: padreFromDatos, paradaId: paradaFromDatos } = mensaje.datos || {};
+        // Use resolver for compatibility with 'padreid' / 'parada_id' and legacy fields
+        const resolved = resolverIdsParada(mensaje.datos || {});
+        const padreId = padreFromDatos || resolved.padreId;
+        const paradaId = paradaFromDatos || resolved.paradaId;
+        if (!paradaId && !padreId) {
+            throw new Error('ID de parada no especificado (paradaId o padreId)');
         }
-
-        const { paradaId } = mensaje.datos;
         
         // Validar que el mapa esté inicializado
         if (!_mapaInstance) {
@@ -1393,15 +1419,19 @@ async function manejarCambiarParada(mensaje) {
             return { exito: false, error: 'Consulta pendiente' };
         }
 
-        // Validar que la parada existe en AVENTURA_PARADAS
-        const paradaBase = window.AVENTURA_PARADAS?.find(p => p.padreid === paradaId);
+        // Validar que la parada existe en AVENTURA_PARADAS (soporta both padreId and paradaId)
+        const idToMatch = padreId || paradaId;
+        const paradaBase = window.AVENTURA_PARADAS?.find(p => p.padreid === idToMatch || p.parada_id === idToMatch || p.tramo_id === idToMatch || p.id === idToMatch);
         if (!paradaBase) {
             throw new Error(`Parada ${paradaId} no encontrada en datos base`);
         }
 
-        // Registrar consulta pendiente
+        // Registrar consulta pendiente (usar parsed id)
+        const resolvedParadaId = paradaBase.parada_id || paradaBase.tramo_id || paradaBase.id;
+        const resolvedPadreId = paradaBase.padreid || `padre-${resolvedParadaId}`;
         estadoMapa.consultaParadaPendiente = {
-            paradaId,
+            paradaId: resolvedParadaId,
+            padreId: resolvedPadreId,
             origen: mensaje.origen,
             timestamp: Date.now(),
             mensajeId
@@ -1415,13 +1445,13 @@ async function manejarCambiarParada(mensaje) {
 
         // Enviar consultas a hijos
         const consultas = [
-            enviarConsultaCoordenadas(paradaId),
-            enviarConsultaAudio(paradaId)
+            enviarConsultaCoordenadas(resolvedParadaId, resolvedPadreId),
+            enviarConsultaAudio(resolvedParadaId, resolvedPadreId)
         ];
 
         // Solo enviar consulta de reto si es una parada (no tramo)
-        if (paradaId.startsWith('P-') || paradaId.startsWith('padre-P-')) {
-            consultas.push(enviarConsultaReto(paradaId));
+        if ((resolvedParadaId && resolvedParadaId.startsWith('P-')) || (resolvedPadreId && resolvedPadreId.startsWith('padre-P-'))) {
+            consultas.push(enviarConsultaReto(resolvedParadaId, resolvedPadreId));
         } else {
             // Para tramos, marcar reto como no disponible
             estadoMapa.esperandoReto = false;
@@ -1465,15 +1495,16 @@ async function manejarCambiarParada(mensaje) {
  * Envía consulta de coordenadas a hijo2
  * @param {string} paradaId - ID de la parada
  */
-async function enviarConsultaCoordenadas(paradaId) {
+async function enviarConsultaCoordenadas(paradaId, padreId) {
     const mensajeId = generarIdUnico();
     await enviarMensaje({
         destino: 'hijo2',
         tipo: TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS,
-        origen: 'padre',
+        origen: getPadreId(),
         mensajeId,
         datos: { 
             paradaId,
+            padreId,
             tipoConsulta: MAPA_TIPOS_HIJO['hijo2']
         }
     });
@@ -1483,15 +1514,16 @@ async function enviarConsultaCoordenadas(paradaId) {
  * Envía consulta de audio a hijo3
  * @param {string} paradaId - ID de la parada
  */
-async function enviarConsultaAudio(paradaId) {
+async function enviarConsultaAudio(paradaId, padreId) {
     const mensajeId = generarIdUnico();
     await enviarMensaje({
         destino: 'hijo3',
         tipo: TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO,
-        origen: 'padre',
+        origen: getPadreId(),
         mensajeId,
         datos: { 
             paradaId,
+            padreId,
             tipoConsulta: MAPA_TIPOS_HIJO['hijo3']
         }
     });
@@ -1501,15 +1533,16 @@ async function enviarConsultaAudio(paradaId) {
  * Envía consulta de reto a hijo4
  * @param {string} paradaId - ID de la parada
  */
-async function enviarConsultaReto(paradaId) {
+async function enviarConsultaReto(paradaId, padreId) {
     const mensajeId = generarIdUnico();
     await enviarMensaje({
         destino: 'hijo4',
         tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_RETO,
-        origen: 'padre',
+        origen: getPadreId(),
         mensajeId,
         datos: { 
             paradaId,
+            padreId,
             tipoConsulta: MAPA_TIPOS_HIJO['hijo4']
         }
     });
@@ -1674,12 +1707,15 @@ async function completarCambioParada() {
             tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO,
             origen: 'funciones-mapa',
             datos: {
-                paradaId,
-                mensajeOriginalId: mensajeId,
-                coordenadas,
-                audio: !!audio,
-                reto: !!reto
-            }
+                    paradaId,
+                    parada_id: paradaId,
+                    padreId: resolvedPadreId || null,
+                    padreid: resolvedPadreId || null,
+                    mensajeOriginalId: mensajeId,
+                    coordenadas,
+                    audio: !!audio,
+                    reto: !!reto
+                }
         });
         
         // Limpiar estado
@@ -2379,7 +2415,7 @@ async function verificarPermisosGeolocalizacion() {
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SISTEMA.ADVERTENCIA,
                 origen: 'funciones-mapa',
-                destino: 'padre',
+                destino: getPadreId(),
                 datos: {
                     titulo: 'HTTPS Requerido',
                     mensaje: warningMsg,
@@ -2429,28 +2465,39 @@ export async function manejarGPSActivar(mensaje) {
     const logPrefix = `[GPS.ACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
     try {
-        // Si ya estamos en el contexto del padre, activar GPS directamente
+        try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.activaciones_intentadas'); } catch (e) { /* ignore */ }
+        // Si ya estamos en el contexto del padre, delegar a la implementación centralizada
         if (window.parent === window) {
-            logger.info(`${logPrefix} Activando GPS directamente (ya en contexto padre)`);
-
-            // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
-            estadoMapa.gpsActivo = true;
-            estadoMapa.gpsPermisos = true;
-            estadoMapa.gpsError = null;
-            estadoMapa.watchId = gpsWatchId;
-            
-            // Sincronizar con el estado global del padre
-            sincronizarEstadoGPSConPadre();
-
-            logger.info(`${logPrefix} GPS activado directamente`);
-            return { exito: true };
+            logger.info(`${logPrefix} En contexto padre: delegando a la implementación centralizada (window.activarGPS)`);
+            try {
+                if (typeof window.activarGPS === 'function') {
+                    const res = await window.activarGPS();
+                    // sincronizar estado local con el estado global del padre
+                    sincronizarEstadoGPSConPadre();
+                    try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.activaciones_ok'); } catch (e) { /* ignore */ }
+                    return { exito: true, detalle: res };
+                }
+                // Fallback: mantener comportamiento previo (marcar activo) y sincronizar
+                estadoMapa.gpsActivo = true;
+                estadoMapa.gpsPermisos = true;
+                estadoMapa.gpsError = null;
+                estadoMapa.watchId = gpsWatchId;
+                sincronizarEstadoGPSConPadre();
+                return { exito: true };
+            } catch (err) {
+                logger.error(`${logPrefix} Error delegando activación al padre:`, err);
+                estadoMapa.gpsError = err.message || String(err);
+                sincronizarEstadoGPSConPadre();
+                try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.activaciones_fallidas'); } catch (e) { /* ignore */ }
+                return { exito: false, error: err.message || String(err) };
+            }
         }
 
         // Si estamos en un iframe, delegar al padre
         logger.info(`${logPrefix} Delegando activación GPS al padre`);
 
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR,
             origen: 'funciones-mapa',
             datos: {
@@ -2491,37 +2538,40 @@ export async function manejarGPSDesactivar(mensaje) {
     const logPrefix = `[GPS.DESACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
     try {
-        // Si ya estamos en el contexto del padre, desactivar GPS directamente
+        // Si ya estamos en el contexto del padre, delegar a la implementación centralizada
         if (window.parent === window) {
-            logger.info(`${logPrefix} Desactivando GPS directamente (ya en contexto padre)`);
-
-            // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
-            estadoMapa.gpsActivo = false;
-            estadoMapa.gpsPermisos = null;
-            estadoMapa.gpsPrecision = null;
-            estadoMapa.gpsError = null;
-            estadoMapa.posicionUsuario = null;
-            estadoMapa.watchId = null;
-            estadoMapa.ultimaUbicacion = null;
-            
-            // Sincronizar con el estado global del padre
-            sincronizarEstadoGPSConPadre();
-
-            // Limpiar marcador de usuario si existe
-            if (_mapaInstance && marcadorUsuario) {
-                _mapaInstance.removeLayer(marcadorUsuario);
-                marcadorUsuario = null;
+            logger.info(`${logPrefix} En contexto padre: delegando desactivación a window.desactivarGPS()`);
+            try {
+                if (typeof window.desactivarGPS === 'function') {
+                    const res = await window.desactivarGPS();
+                    sincronizarEstadoGPSConPadre();
+                    return { exito: true, detalle: res };
+                }
+                // Fallback: limpiar estado local
+                estadoMapa.gpsActivo = false;
+                estadoMapa.gpsPermisos = null;
+                estadoMapa.gpsPrecision = null;
+                estadoMapa.gpsError = null;
+                estadoMapa.posicionUsuario = null;
+                estadoMapa.watchId = null;
+                estadoMapa.ultimaUbicacion = null;
+                sincronizarEstadoGPSConPadre();
+                if (_mapaInstance && marcadorUsuario) {
+                    _mapaInstance.removeLayer(marcadorUsuario);
+                    marcadorUsuario = null;
+                }
+                return { exito: true };
+            } catch (err) {
+                logger.error(`${logPrefix} Error delegando desactivación al padre:`, err);
+                return { exito: false, error: err.message || String(err) };
             }
-
-            logger.info(`${logPrefix} GPS desactivado directamente`);
-            return { exito: true };
         }
 
         // Si estamos en un iframe, delegar al padre
         logger.info(`${logPrefix} Delegando desactivación GPS al padre`);
 
         await enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR,
             origen: 'funciones-mapa',
             datos: {
@@ -3112,7 +3162,7 @@ async function manejarCambioModoMapa(mensaje) {
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 origen: 'funciones-mapa',
-                destino: mensaje?.origen || 'padre',
+                destino: mensaje?.origen || getPadreId(),
                 mensajeId: generarIdUnico(),
                 datos: {
                     error: error.message,
@@ -3237,7 +3287,7 @@ export function registrarManejadoresMensajes() {
                 const respuesta = await enviarMensajeConConfirmacion({
                     tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS,
                     origen: 'funciones-mapa',
-                    destino: 'padre',
+                    destino: getPadreId(),
                     datos: {
                         lat: ubicacionUsuario.lat,
                         lng: ubicacionUsuario.lng,
@@ -3473,39 +3523,46 @@ export function registrarManejadoresMensajes() {
     }
 }
 
+// Exportar calcularToleranciaGPS para pruebas unitarias (no rompe runtime en navegador)
+export { calcularToleranciaGPS };
+
 // Registrar manejadores al cargar el módulo
 try {
     if (typeof window !== 'undefined') {
         window.addEventListener('DOMContentLoaded', () => {
             registrarManejadoresMensajes();
+
+            // If running in parent and prewarm enabled, start light GPS warmup
+            try {
+                if (window.parent === window) {
+                    const prewarmCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
+                    if (prewarmCfg && prewarmCfg.ENABLE) {
+                        // Defer a little so the app can complete startup first
+                        setTimeout(() => {
+                            try {
+                                if (typeof precalentarGPS === 'function') {
+                                    precalentarGPS().catch && precalentarGPS().catch(() => {});
+                                }
+                                if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
+                                    window.mensajeria.preiniciarHeartbeat().catch && window.mensajeria.preiniciarHeartbeat().catch(() => {});
+                                }
+                            } catch (err) {
+                                // Non-fatal: log and continue
+                                logger.debug('[FUNCIONES-MAPA] Error lanzando prewarm en startup:', err && err.message ? err.message : err);
+                            }
+                        }, 2000);
+                    }
+                }
+            } catch (e) {
+                logger.debug('[FUNCIONES-MAPA] Prewarm startup check failed:', e && e.message ? e.message : e);
+            }
         });
     }
 } catch (error) {
     console.error('Error al configurar listener para registrar manejadores:', error);
 }
 
-/**
- * Add integration tests for error flows
- */
-export async function probarFlujosError() {
-    // Simulate communication failures
-    try {
-        // Mock a failure in enviarMensaje
-        const mockEnviarMensaje = jest.fn().mockRejectedValue(new Error('Simulated failure'));
-        // Temporarily replace enviarMensaje
-        const originalEnviarMensaje = global.enviarMensaje;
-        global.enviarMensaje = mockEnviarMensaje;
-        
-        // Test recovery
-        await mostrarTodasLasParadas([]);
-        // Verify no crash and recovery logic
-        
-        // Restore
-        global.enviarMensaje = originalEnviarMensaje;
-    } catch (error) {
-        logger.error('Error en pruebas de flujo:', error);
-    }
-}
+// Integration tests removed from production code (was: probarFlujosError)
 
 // Call tests in initialization if in test environment
 /**
@@ -3577,6 +3634,15 @@ async function iniciarGPSAventura() {
     try {
         logger.info(`${logPrefix} Activando GPS centralizado del padre para modo aventura`);
 
+        // Si existe un warmup watch, adoptarlo para evitar crear otro watcher
+        if (warmupWatchId !== null) {
+            logger.info(`${logPrefix} Reutilizando warmup watchId=${warmupWatchId} para activación rápida`);
+            gpsWatchId = warmupWatchId;
+            warmupWatchId = null;
+            warmupReady = false;
+            if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
+        }
+
         // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = true;
         estadoMapa.gpsPermisos = true;
@@ -3590,6 +3656,95 @@ async function iniciarGPSAventura() {
 
     } catch (error) {
         logger.error(`${logPrefix} Error al activar GPS para aventura:`, error);
+    }
+}
+
+/**
+ * Inicia un watchPosition de bajo coste para 'precalentar' el GPS (no marca gpsActivo)
+ * @returns {Promise<{started:boolean, watchId:number|null}>}
+ */
+export async function precalentarGPS() {
+    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
+
+    try {
+        if (!navigator.geolocation) {
+            logger.warn(`${logPrefix} Geolocation no disponible; no se puede precalentar`);
+            return { started: false, watchId: null };
+        }
+
+        // Si ya hay un warmup activo, devolverlo
+        if (warmupWatchId !== null) {
+            logger.debug(`${logPrefix} Warmup ya activo (watchId=${warmupWatchId})`);
+            return { started: true, watchId: warmupWatchId };
+        }
+
+        // Obedecer configuración
+        const prewarmCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
+        if (!prewarmCfg || !prewarmCfg.ENABLE) {
+            logger.debug(`${logPrefix} Prewarm deshabilitado por configuración`);
+            return { started: false, watchId: null };
+        }
+
+        const options = (prewarmCfg.WATCH_OPTIONS) ? prewarmCfg.WATCH_OPTIONS : { enableHighAccuracy: false, maximumAge: 300000, timeout: 20000 };
+
+        logger.info(`${logPrefix} Iniciando warmup con opciones:`, options);
+
+        warmupReady = false;
+        warmupWatchId = navigator.geolocation.watchPosition(
+            (position) => {
+                // No promocionar a gpsActivo; sólo almacenar la última ubicación
+                estadoMapa.ultimaUbicacion = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
+                warmupReady = true;
+                sincronizarEstadoGPSConPadre();
+                logger.debug(`${logPrefix} Warmup recibió posición (±${Math.round(position.coords.accuracy)}m)`);
+            },
+            (err) => {
+                logger.debug(`${logPrefix} Error warmup geolocation:`, err && err.message ? err.message : err);
+            },
+            options
+        );
+
+        // Auto-stop warmup after configured timeout to avoid battery drain
+        const timeoutMs = (prewarmCfg.TIMEOUT_MS) ? prewarmCfg.TIMEOUT_MS : 15000;
+        if (warmupTimer) clearTimeout(warmupTimer);
+        warmupTimer = setTimeout(() => {
+            try {
+                if (warmupWatchId !== null) {
+                    navigator.geolocation.clearWatch(warmupWatchId);
+                    logger.info(`${logPrefix} Warmup timeout, clearWatch(${warmupWatchId})`);
+                    warmupWatchId = null;
+                    warmupReady = false;
+                }
+            } catch (e) {
+                logger.warn(`${logPrefix} Error limpiando warmup:`, e);
+            }
+            warmupTimer = null;
+        }, timeoutMs);
+
+        return { started: true, watchId: warmupWatchId };
+    } catch (e) {
+        logger.error(`${logPrefix} Excepción iniciando warmup:`, e);
+        return { started: false, watchId: null };
+    }
+}
+
+/**
+ * Detiene cualquier warmup GPS activo
+ */
+export function detenerPrecalentarGPS() {
+    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
+
+    try {
+        if (warmupWatchId !== null) {
+            navigator.geolocation.clearWatch(warmupWatchId);
+            logger.info(`${logPrefix} warmup detenido (watchId=${warmupWatchId})`);
+            warmupWatchId = null;
+        }
+        if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
+        warmupReady = false;
+        sincronizarEstadoGPSConPadre();
+    } catch (e) {
+        logger.warn(`${logPrefix} Error deteniendo warmup:`, e);
     }
 }
 
@@ -3764,12 +3919,18 @@ async function procesarPosicionGPSParaAventura(posicion) {
             logger.info(`${logPrefix} 🎯 Activando parada secuencial: ${siguienteParada.padreid}`);
 
             // Enviar mensaje de cambio de parada
+            // Derivar ids para compatibilidad (padreId vs paradaId)
+            const derivedParadaId = siguienteParada.parada_id || siguienteParada.tramo_id || (typeof siguienteParada.padreid === 'string' ? siguienteParada.padreid.replace(/^padre-/, '') : siguienteParada.id || null);
+            const derivedPadreId = siguienteParada.padreid || (derivedParadaId ? `padre-${derivedParadaId}` : null);
             await enviarMensaje({
-                destino: 'padre',
+                destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
                 origen: 'funciones-mapa',
                 datos: {
-                    paradaId: siguienteParada.padreid,
+                    paradaId: derivedParadaId,
+                    parada_id: derivedParadaId,
+                    padreId: derivedPadreId,
+                    padreid: derivedPadreId,
                     origen: 'gps-automatico',
                     distancia: distancia,
                     timestamp: Date.now()
@@ -3818,6 +3979,10 @@ window.funcionesMapa = {
     procesarPosicionGPSParaAventura,
     // Exponer la API pública centralizada para cambiar la vista
     setMapView
+    ,
+    // Warmup helpers
+    precalentarGPS,
+    detenerPrecalentarGPS
 };
 
 logger.info('[FUNCIONES-MAPA] ✅ Funciones GPS expuestas globalmente');
@@ -4058,8 +4223,42 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensa
     const logPrefix = `[NAVEGACION.CENTRAR_EN_UBICACION][${mensaje?.origen || 'desconocido'}]`;
     const timestamp = Date.now();
     const mensajeId = mensaje?.mensajeId || generarIdUnico();
-    
+
     try {
+        // Guard: solo procesar si el mensaje viene del padre (autoridad)
+        const padreId = (typeof getPadreId === 'function') ? getPadreId() : (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) || 'padre';
+        if (mensaje?.origen !== padreId) {
+            logger.debug(`${logPrefix} Ignorado (no viene del padre ${padreId}); reenviando al padre para que lo procese`);
+
+            try {
+                if (typeof window.enviarMensajePadre === 'function') {
+                    await window.enviarMensajePadre({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
+                        origen: mensaje.origen || padreId,
+                        destino: padreId,
+                        datos: mensaje.datos || {}
+                    });
+                    logger.debug(`${logPrefix} Reenvío a padre realizado`);
+                } else if (typeof enviarMensaje === 'function') {
+                    // Fallback: intentar enviar directamente al padre si no hay helper específico
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
+                        origen: mensaje.origen || padreId,
+                        destino: padreId,
+                        datos: mensaje.datos || {}
+                    });
+                    logger.debug(`${logPrefix} Reenvío a padre (fallback enviarMensaje) realizado`);
+                } else {
+                    logger.warn(`${logPrefix} No se pudo reenviar al padre: no existe helper de envío disponible`);
+                }
+            } catch (reenvioErr) {
+                logger.warn(`${logPrefix} Error reenviando al padre: ${reenvioErr?.message || reenvioErr}`);
+            }
+
+            return;
+        }
+
+        // Mensaje autorizado: procesar centrado
         if (!mensaje?.origen) {
             logger.warn(`${logPrefix} Mensaje sin origen`);
             return;
