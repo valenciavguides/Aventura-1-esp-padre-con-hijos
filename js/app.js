@@ -6,9 +6,9 @@
 
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import logger from './logger.js';
-import { enviarMensaje, registrarControlador, iniciarHeartbeat } from './mensajeria.js';
+import { enviarMensaje, registrarControlador } from './mensajeria.js';
 import { CONFIG } from './config.js';
-import { generarIdUnico } from './utils.js';
+import { generarIdUnico, getPadreId } from './utils.js';
 import { promesasPendientes } from './monitoreo.js';
 import { esMovil } from './device-detection.js';
 
@@ -314,7 +314,7 @@ export async function actualizarInterfazModo(estado, modo) {
             const resultado = enviarMensaje({
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-                origen: 'padre',
+                origen: getPadreId(),
                 datos: {
                     modo,
                     // Indicar si la secuencia de inicialización global ya se
@@ -340,9 +340,9 @@ export function notificarError(codigo, error, contexto = {}) {
     logger.error('Error cr�tico:', error);
     try {
         const r = enviarMensaje({
-            destino: 'padre',
+            destino: getPadreId(),
             tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-            origen: 'padre',
+            origen: getPadreId(),
             datos: {
                 codigo,
                 mensaje: error.message,
@@ -373,7 +373,7 @@ export async function enviarCambioModo(nuevoModo, origen = 'app') {
     return await enviarMensaje({
         destino: CONFIG.IFRAME_ID,
         tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-        origen: 'padre',
+        origen: getPadreId(),
         datos: {
             modo: nuevoModo,
             origen,
@@ -544,6 +544,67 @@ export async function manejarCambioModo(estado, mensaje) {
             // 8. Notificar a los componentes del cambio inminente
             await notificarCambioModoInminente(modoActual, modo, motivo);
 
+            // 8.1 Preparar pre-warm para reducir latencia si vamos a AVENTURA
+            try {
+                if (modoNormalized === 'AVENTURA' || modo === MODOS.AVENTURA) {
+                    const cfgConfirmTimeout = (window.Config && window.Config.MENSAJERIA && window.Config.MENSAJERIA.TIMEOUTS && window.Config.MENSAJERIA.TIMEOUTS.CONFIRMACION) || 10000;
+
+                    const promises = [];
+
+                    try {
+                        if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
+                            const gpsCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
+                            if (gpsCfg && gpsCfg.ENABLE) {
+                                promises.push(window.funcionesMapa.precalentarGPS());
+                                logger.debug('[APP][CAMBIO_MODO] Precaliendo GPS en background');
+                            }
+                        }
+                            else if (modoNormalized === 'CASA' || modo === MODOS.CASA) {
+                                // If switching back to CASA, stop any warmup to conserve resources
+                                try {
+                                    if (window.funcionesMapa && typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
+                                        window.funcionesMapa.detenerPrecalentarGPS();
+                                        logger.debug('[APP][CAMBIO_MODO] Detenido warmup GPS al cambiar a CASA');
+                                    }
+                                } catch (e) { logger.debug('[APP][CAMBIO_MODO] Error deteniendo warmup al cambiar a CASA:', e); }
+                            }
+                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando precalentarGPS:', e); }
+
+                    try {
+                        if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
+                            promises.push(window.mensajeria.preiniciarHeartbeat());
+                            logger.debug('[APP][CAMBIO_MODO] Pre-iniciando heartbeat en background');
+                        }
+                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando preiniciarHeartbeat:', e); }
+
+                    // Also wait for children readiness (HIJO_LISTO) up to the confirmation timeout
+                    const hijosPromise = (window.mensajeria && typeof window.mensajeria.esperarHijosListos === 'function')
+                        ? window.mensajeria.esperarHijosListos(cfgConfirmTimeout)
+                        : Promise.resolve({ ready: true });
+
+                    // Wait for either prewarm tasks and hijos readiness or timeout
+                    try {
+                        const race = await Promise.race([
+                            (async () => {
+                                await Promise.allSettled(promises);
+                                return hijosPromise;
+                            })(),
+                            new Promise(resolve => setTimeout(() => resolve({ timeout: true }), cfgConfirmTimeout))
+                        ]);
+
+                        if (race && race.timeout) {
+                            logger.info('[APP][CAMBIO_MODO] Pre-warm / HIJO_LISTO timed out; proceeding anyway');
+                        } else {
+                            logger.info('[APP][CAMBIO_MODO] Pre-warm and/or HIJO_LISTO completed or settled');
+                        }
+                    } catch (e) {
+                        logger.warn('[APP][CAMBIO_MODO] Error esperando prewarm/hijosListos:', e);
+                    }
+                }
+            } catch (e) {
+                logger.warn('[APP][CAMBIO_MODO] Error en flujo de pre-warm:', e);
+            }
+
             // 9. Actualizar el estado global
             estado.modo = estado.modo || {};
             estado.modo.anterior = modoActual;
@@ -624,7 +685,7 @@ export async function manejarCambioModo(estado, mensaje) {
             await enviarMensaje({
                 destino: mensaje?.origen || 'sistema',
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                origen: 'padre',
+                origen: getPadreId(),
                 mensajeId: generarIdUnico(),
                 timestamp: Date.now(),
                 datos: {
@@ -935,7 +996,7 @@ export async function enviarConfirmacionAHijo(hijoId, mensajeId) {
         await enviarMensaje({
             destino: hijoId,
             tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-            origen: 'padre',
+            origen: getPadreId(),
             datos: {
                 mensajeId,
                 timestamp: new Date().toISOString()
@@ -972,7 +1033,7 @@ export async function enviarEstadoGlobal(estado) {
                 await enviarMensaje({
                     destino: hijoId,
                     tipo: TIPOS_MENSAJE.SISTEMA.ESTADO,
-                    origen: 'padre',
+                    origen: getPadreId(),
                     datos: {
                         modo: estado.modo,
                         paradaActual: estado.paradaActual,
@@ -1474,7 +1535,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
                 await enviarMensaje({
                     destino: hijoId,
                     tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-                    origen: 'padre',
+                    origen: getPadreId(),
                     datos: {
                         modo: pending.modo,
                         ...pending.datos,
@@ -1519,7 +1580,7 @@ setInterval(async () => {
                 await enviarMensaje({
                     destino: hijoId,
                     tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-                    origen: 'padre',
+                    origen: getPadreId(),
                     datos: {
                         modo: pending.modo,
                         ...pending.datos,
