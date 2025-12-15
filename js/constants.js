@@ -28,6 +28,17 @@ export const MODOS = {
  * ✅ PROBLEMA 26: Centralización de TTLs para evitar duplicación
  */
 export const TTL_LIMPIEZA = {
+    /* Configuración de TTL (Time To Live) para limpieza automática de memoria
+     * Optimizado por tipo de dispositivo para mejorar rendimiento y consumo de recursos.
+     *
+     * - En MÓVIL: Se mantiene menos historial y la limpieza es menos frecuente (para ahorrar batería y CPU).
+     * - En DESKTOP: Se mantiene más historial y la limpieza es más frecuente (más recursos disponibles).
+     *
+     * Ejemplo:
+     *   LOGGER: MÓVIL = 5min (menos frecuente, menos historial), DESKTOP = 1min (más frecuente, más historial)
+     *   SUPPRESS: MÓVIL = 2min, DESKTOP = 5min
+     * ✅ PROBLEMA 26: Centralización de TTLs para evitar duplicación
+     */
     // Mensajería: limpieza de mensajes procesados y promesas pendientes
     MENSAJERIA: {
         MOVIL: 30000,      // 30 segundos (móvil necesita limpieza agresiva)
