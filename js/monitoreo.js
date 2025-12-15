@@ -1,5 +1,6 @@
 /**
  * Módulo de Monitoreo y Telemetría
+import logger from './logger.js';
  * 
  * Este módulo proporciona funcionalidades para el monitoreo y análisis de eventos,
  * métricas de rendimiento y estado de la aplicación Valencia VGuides.
@@ -172,6 +173,24 @@ export function registrarMetrica(nombre, valor, metadatos = {}) {
     }
 
     logger.debug('[MONITOREO] Métrica registrada', { nombre, valor });
+
+    // Alertas por umbral (si la configuración global las define)
+    try {
+        const globalEstado = (typeof window !== 'undefined') ? window.estadoPadre : null;
+        const umbrales = (globalEstado && globalEstado.monitoreo && globalEstado.monitoreo.config && globalEstado.monitoreo.config.umbralAlerta)
+            || (estadoMonitoreo.configuracion && estadoMonitoreo.configuracion.umbralAlerta) || null;
+
+        if (umbrales) {
+            if (nombre === 'tiempo_respuesta' && typeof umbrales.tiempoRespuesta === 'number' && valor > umbrales.tiempoRespuesta) {
+                registrarEvento({ tipo: 'tiempo_respuesta_elevado', valor, umbral: umbrales.tiempoRespuesta, metrica, nivel: 'warn' });
+            }
+            if (nombre === 'uso_memoria' && typeof umbrales.usoMemoria === 'number' && valor > umbrales.usoMemoria) {
+                registrarEvento({ tipo: 'uso_memoria_elevado', valor, umbral: umbrales.usoMemoria, metrica, nivel: 'warn' });
+            }
+        }
+    } catch (e) {
+        logger.warn('[MONITOREO] Error evaluando umbrales de métricas:', e);
+    }
 }
 
 /**
@@ -921,7 +940,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
         }
 
         // 4. Registrar métrica de rendimiento
-        registrarMetrica('tiempo_respuesta_ack', tiempoRespuesta || 0, 'ms');
+        registrarMetrica('tiempo_respuesta_ack', tiempoRespuesta || 0, { unidad: 'ms' });
 
     } catch (error) {
         const errorMsg = `Error al procesar ACK: ${error.message}`;
@@ -1068,7 +1087,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
                 datos: mensaje.datos
             });
             // Registrar métrica leve y devolver; no intentar reintentos automáticos
-            registrarMetrica('errores_nack_desconocidos', 1, 'count', { origen: mensaje.origen, codigo: codigoError });
+            registrarMetrica('errores_nack_desconocidos', 1, { unidad: 'count', origen: mensaje.origen, codigo: codigoError });
             return;
         }
 
@@ -1083,7 +1102,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
         }
 
         // 8. Registrar métrica de fallo
-        registrarMetrica('errores_nack', 1, 'count', {
+        registrarMetrica('errores_nack', 1, { unidad: 'count',
             codigo: codigoError,
             origen: mensaje.origen
         });
@@ -1215,7 +1234,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO, async (mensaje) => {
         });
 
         // Registrar métricas
-        registrarMetrica('errores_componentes', 1, 'count', {
+        registrarMetrica('errores_componentes', 1, { unidad: 'count',
             componente: mensaje.origen,
             codigo
         });
