@@ -1935,3 +1935,4 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (
 });
 
 export { estadoMensajeria };
+
