@@ -23,6 +23,39 @@
         <!-- Add warning suppression script early in the head -->
     <script src="js/suppress-warnings.js"></script>
 
+    <!-- Ensure an activator stub is available immediately so tests and early callers can invoke it.
+         Calls are queued until the real implementation is registered via window.__setRealActivarGPS(fn). -->
+    <script>
+        (function(){
+            if (typeof window === 'undefined') return;
+            if (typeof window.activarGPS !== 'undefined') return; // already defined
+            var _impl = null;
+            var _queue = [];
+            function _flush() {
+                while (_queue.length) {
+                    var item = _queue.shift();
+                    try {
+                        var res = _impl.apply(window, item.args);
+                        Promise.resolve(res).then(item.resolve, item.reject);
+                    } catch (err) { item.reject(err); }
+                }
+            }
+            window.activarGPS = function() {
+                var args = Array.prototype.slice.call(arguments);
+                return new Promise(function(resolve, reject){
+                    if (_impl) {
+                        try { var r = _impl.apply(window, args); Promise.resolve(r).then(resolve, reject); } catch (e) { reject(e); }
+                        return;
+                    }
+                    _queue.push({ args: args, resolve: resolve, reject: reject });
+                });
+            };
+            window.__setRealActivarGPS = function(fn){
+                try { _impl = fn; _flush(); return true; } catch (e) { return false; }
+            };
+        })();
+    </script>
+
     <!-- Global iframe handling functions -->
     <script>
         window.handleIframeError = function(iframeId, event) {
@@ -95,18 +128,29 @@
                             const script = doc.createElement('script');
                             script.type = 'text/javascript';
                             script.appendChild(doc.createTextNode(`(function(){
+                                var attempts = 0;
+                                var maxAttempts = 3;
                                 function applyStylingOnce() {
                                     try {
                                         var els = Array.prototype.slice.call(document.querySelectorAll('*'));
                                         var candidates = els.filter(function(el){
-                                            var st = getComputedStyle(el);
+                                            var st;
+                                            try { st = getComputedStyle(el); } catch(e) { return false; }
                                             return (st.overflowX === 'auto' || st.overflowX === 'scroll') && el.clientWidth > 40 && el.clientHeight > 20;
                                         });
-                                        if (candidates.length === 0) {
+                                        if (!candidates || candidates.length === 0) {
                                             var alt = document.querySelector('[id*=\"parad\"],[class*=\"parad\"],[id*=\"lista\"],[class*=\"lista\"],[id*=\"stop\"],[class*=\"stop\"],[id*=\"btn\"],[class*=\"btn\"]');
-                                            if (alt) candidates.push(alt);
+                                            if (alt) candidates = [alt];
                                         }
-                                        if (candidates.length === 0) return false;
+                                        if (!candidates || candidates.length === 0) {
+                                            attempts++;
+                                            if (attempts < maxAttempts) {
+                                                setTimeout(applyStylingOnce, 250);
+                                                return false;
+                                            }
+                                            try { var regFail = (window.registrarMetrica || (window.parent && window.parent.registrarMetrica)); if (typeof regFail === 'function') regFail('hijo5.applyStyling', 0, { applied: false, attempts: attempts }); } catch (e) {}
+                                            return false;
+                                        }
                                         candidates.forEach(function(el){
                                             try{
                                                 el.style.background = el.style.background || 'white';
@@ -117,46 +161,22 @@
                                             }catch(e){}
                                         });
                                         Array.prototype.slice.call(document.querySelectorAll('button,a,[role=\"button\"]')).forEach(function(b){ try{ b.style.pointerEvents = 'auto'; }catch(e){} });
-                                        return true;
-                                    } catch (e) { return false; }
+                                        try { var reg = (window.registrarMetrica || (window.parent && window.parent.registrarMetrica)); if (typeof reg === 'function') reg('hijo5.applyStyling', candidates.length, { applied: true, attempts: attempts }); } catch (e) {}
+                                    } catch (e) {
+                                        (window.logger || console).warn('[PADRE] applyStylingOnce fallo:', e && e.message);
+                                    }
                                 }
-
-                                // Try immediately and then set up a MutationObserver to catch dynamic renderings
-                                try { if (applyStylingOnce()) { return; } } catch (e) {}
-
-                                var attempts = 0;
-                                var intervalId = setInterval(function(){ attempts++; try { if (applyStylingOnce()) { clearInterval(intervalId); } } catch(e){} if (attempts > 8) clearInterval(intervalId); }, 500);
-
-                                try {
-                                    var observer = new MutationObserver(function(mutations){
-                                        try { if (applyStylingOnce()) { observer.disconnect(); } } catch(e){}
-                                    });
-                                    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
-                                } catch (e) {}
-
-                                // Expose a manual reapply helper for debugging from parent
-                                try { window.reapplyParadasStyle = applyStylingOnce; } catch(e){}
-
-                            })();`));
-                            doc.body && doc.body.appendChild(script);
-                        } catch (e) { /* ignore */ }
-                    }
-                }
-            } catch (err) { console.warn('[PADRE] handleIframeLoad post-load injection error', err); }
-        };
-    </script>
-        <script>
-            // Proveer un stub global para persistProgressState ante llamadas tempranas desde otros scripts
-            try {
-                if (typeof window !== 'undefined' && typeof window.persistProgressState === 'undefined') {
-                    window.persistProgressState = function() {
-                        // Stub temporario: será sustituido por la implementación real en Script 1.
-                        try { console.debug('[PADRE] persistProgressState stub invoked (early)'); } catch (e) {}
-                    };
-                }
+                                try { applyStylingOnce(); } catch (e) { /* ignore */ }
+                                try { if (typeof window.__vv_applyStylingOnce === 'undefined') window.__vv_applyStylingOnce = applyStylingOnce; } catch (e) { /* ignore */ }
+                            })()`));
+                            doc.head && doc.head.appendChild(script);
+                        } catch (e) { console.warn('[PADRE] Error injecting hijo5 script', e); }
+                    } // cierra if (iframe && iframe.contentDocument)
+                } // cierra if (iframeId === 'hijo5-casa')
             } catch (e) {
-                // No fatal: ignorar si no se puede crear
+                (window.logger || console).warn('[PADRE] handleIframeLoad error:', e && e.message);
             }
+        } // cierra window.handleIframeLoad = function(iframeId)
         </script>
         <script>
             // Proveer un stub global para getPadreId si se necesita antes de importar utils
@@ -2617,6 +2637,9 @@
             console.warn('[PADRE] No fue posible exponer funciones GPS en window:', e && e.message);
         }
 
+        // If an early stub registered pending calls, provide the real implementation
+        try { if (typeof window.__setRealActivarGPS === 'function') window.__setRealActivarGPS(activarGPS); } catch (e) { /* ignore */ }
+
         // ============================================================
         // UI: Overlay para posicionamientos GPS descartados
         // ============================================================
@@ -3198,7 +3221,7 @@
                         const modoActual = estado.modo.actual;
                         logger.info(`${logPrefix} Modo inicial: ${modoActual}`);
                         
-                        if (modoActual === 'AVENTURA') {
+                        if (modoActual === MODOS.AVENTURA) {
                             // En modo aventura, iniciar GPS para detección secuencial
                             logger.info(`${logPrefix} Iniciando GPS para modo aventura secuencial`);
                             // El GPS se maneja en funciones-mapa.js
@@ -4152,51 +4175,7 @@
                 if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
             } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSafe error', e && e.message); }
         }
-        /**
-         * Registra una métrica de rendimiento local
-         */
-        function registrarMetrica(nombre, valor, unidad = 'ms') {
-            if (!estadoScript2.monitoreo?.config?.habilitado || !estadoScript2.monitoreo?.config?.rastrearRendimiento) {
-                return;
-            }
-            
-            try {
-                const metrica = {
-                    nombre,
-                    valor,
-                    unidad,
-                    timestamp: new Date().toISOString(),
-                    timestampMs: Date.now()
-                };
-                
-                if (nombre === 'tiempo_procesamiento_padre_listo' || nombre === 'tiempo_respuesta') {
-                    estadoScript2.monitoreo.metricas.solicitudes++;
-                    estadoScript2.monitoreo.metricas.tiempoTotalRespuesta += valor;
-                    estadoScript2.monitoreo.metricas.tiempoRespuestaPromedio = 
-                        estadoScript2.monitoreo.metricas.tiempoTotalRespuesta / estadoScript2.monitoreo.metricas.solicitudes;
-                    
-                    if (valor > estadoScript2.monitoreo.config.umbralAlerta.tiempoRespuesta) {
-                        registrarEventoScript2('tiempo_respuesta_elevado', {
-                            valor,
-                            umbral: estadoScript2.monitoreo.config.umbralAlerta.tiempoRespuesta,
-                            metrica
-                        }, 'warn');
-                    }
-                }
-                
-                estadoScript2.monitoreo.historial.metricas.push(metrica);
-                
-                const maxItems = estadoScript2.monitoreo.historial.maxItems;
-                if (estadoScript2.monitoreo.historial.metricas.length > maxItems) {
-                    estadoScript2.monitoreo.historial.metricas = estadoScript2.monitoreo.historial.metricas.slice(-maxItems);
-                }
-                
-                logger.debug(`[PADRE] Métrica: ${nombre} = ${valor}${unidad}`);
-                
-            } catch (error) {
-                logger.error('[PADRE] Error registrando métrica:', error);
-            }
-        }
+        // Local `registrarMetrica` duplicate removed: use central `window.registrarMetrica`
 
         // ============================================================
         // FUNCIONES AUXILIARES DE PROGRESIÓN DE AVENTURA
@@ -5419,7 +5398,7 @@
                 logger.info(`${logPrefix} ✅ Estado ubicacionActiva marcado como TRUE`);
 
                 // Si estamos en modo aventura, dibujar polyline hasta la siguiente parada
-                if (estado.modo?.actual === 'AVENTURA') {
+                if (estado.modo?.actual === MODOS.AVENTURA) {
                     try {
                         // Obtener la siguiente parada
                         const paradas = window.AVENTURA_PARADAS;
@@ -5872,7 +5851,7 @@
                     try {
                         // Forzar incluir rutas cuando la parada solicitada es un tramo
                         const esTramoSolicitado = (parada && (parada.tipo === 'tramo' || !!parada.tramo_id));
-                        const incluirRutasFlag = (estado.modo?.actual === 'AVENTURA') || esTramoSolicitado;
+                        const incluirRutasFlag = (estado.modo?.actual === MODOS.AVENTURA) || esTramoSolicitado;
                         logger.debug(`${logPrefix} DEBUG: Modo actual=${estado.modo?.actual}, esTramoSolicitado=${esTramoSolicitado}, incluirRutas=${incluirRutasFlag}`);
 
                         await enviarMensajePadre({
