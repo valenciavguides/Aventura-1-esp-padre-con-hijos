@@ -1901,6 +1901,12 @@
             return (typeof window !== 'undefined' && window.estadoPadre) ? window.estadoPadre : {};
         }
 
+        // Expose `getEstadoSafe` to other scripts that may run in different scopes
+        try {
+            if (typeof window !== 'undefined' && typeof window.getEstadoSafe === 'undefined') {
+                window.getEstadoSafe = getEstadoSafe;
+            }
+        } catch (e) { /* ignore */ }
         // Definir early fallback seguro para ajustarTimeoutPorConexion si no está presente
         if (typeof window !== 'undefined' && typeof window.ajustarTimeoutPorConexionSafe === 'undefined') {
             // Función segura que devuelve un timeout en ms (comportamiento por defecto)
@@ -2234,8 +2240,49 @@
         async function activarGPS() {
             const logPrefix = '[PADRE][GPS][ACTIVAR]';
 
+            // Mutex: si ya hay una activación en curso, devolver la promesa existente
+            const est = getEstadoSafe();
+            est.gps = est.gps || {};
+            if (est.gps.activando) {
+                logger.debug(`${logPrefix} Activación ya en progreso, esperando resultado existente`);
+                try { return await est.gps.activandoPromise; } catch (e) { throw e; }
+            }
+
+            // Marcar como en progreso y guardar la promesa para otras llamadas concurrentes
+            let resolveActivacion, rejectActivacion;
+            const activacionPromise = new Promise((resolve, reject) => { resolveActivacion = resolve; rejectActivacion = reject; });
+            est.gps.activando = true;
+            est.gps.activandoPromise = activacionPromise;
+
             try {
                 logger.info(`${logPrefix} Iniciando activación GPS...`);
+
+                // Antes de intentar fallback a hijo2, esperar brevemente a que los hijos estén listos
+                try {
+                    if (window.mensajeria && typeof window.mensajeria.esperarHijosListos === 'function') {
+                        const esperar = window.mensajeria.esperarHijosListos;
+                        const waitPromise = typeof esperar === 'function' ? esperar(5000) : Promise.resolve({ ready: true });
+                        const race = await Promise.race([waitPromise, new Promise(r => setTimeout(() => r({ timeout: true }), 5000))]);
+                        if (race && race.timeout) {
+                            logger.warn(`${logPrefix} Espera de hijosListos expiró (5000ms); proceder de todos modos`);
+                        } else {
+                            logger.debug(`${logPrefix} Hijos listos o settled antes de iniciar GPS`);
+                        }
+                    }
+                } catch (e) { logger.debug(`${logPrefix} Error esperando hijos listos:`, e); }
+
+                // Comprobar que el iframe hijo2 permite geolocation (informativo)
+                try {
+                    const iframeHijo2 = document.getElementById('hijo2');
+                    if (iframeHijo2 && typeof iframeHijo2.getAttribute === 'function') {
+                        const allowAttr = iframeHijo2.getAttribute('allow') || '';
+                        if (!allowAttr.includes('geolocation')) {
+                            logger.warn(`${logPrefix} Iframe 'hijo2' no expone 'geolocation' en allow attribute; fallback P-0 puede fallar`);
+                        } else {
+                            logger.debug(`${logPrefix} Iframe 'hijo2' tiene allow="geolocation"`);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
 
                 // Diagnostics: report permission API status and environment
                 try {
@@ -2245,8 +2292,7 @@
                     logger.debug(`${logPrefix} userAgent: ${navigator.userAgent}`);
                 } catch (diagErr) { /* ignore diagnostics */ }
 
-                // Runtime-safe estado + gps subobj
-                const est = getEstadoSafe();
+                // Runtime-safe estado + gps subobj (re-using 'est' definido arriba)
                 est.gps = est.gps || {};
 
                 // Verificar permisos
@@ -2268,6 +2314,7 @@
                 // Si ya está activo, no hacer nada
                 if (est.gps.activo && est.gps.watchId !== null) {
                     logger.info(`${logPrefix} GPS ya activo`);
+                    resolveActivacion(true);
                     return true;
                 }
 
@@ -2286,7 +2333,11 @@
 
                         let initialAccepted = false;
                         for (let i = 0; i < maxAttempts; i++) {
-                            const timeoutMs = Math.round(baseTimeout * Math.pow(1.8, i)); // mild exponential backoff
+                            // Apply connection-aware timeout adjustment when available
+                            const rawTimeout = Math.round(baseTimeout * Math.pow(1.8, i)); // mild exponential backoff
+                            const timeoutMs = (typeof ajustarTimeoutPorConexion_S1 === 'function')
+                                ? ajustarTimeoutPorConexion_S1(rawTimeout)
+                                : rawTimeout;
                             try {
                                 try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos'); } catch (e) { /* ignore */ }
                                 const fresh = await getCurrentPositionAsync({ enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 });
@@ -2345,7 +2396,7 @@
                                     est.gps.ultimaUbicacion = est.gps.posicionUsuario;
                                     est.gps.precision = 1000;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_hijo2_ok'); } catch (e) { /* ignore */ }
-                                    logger.info(`${logPrefix} Coordenadas de fallback obtenidas de hijo2 y aplicadas: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
+                                    logger.info(`${logPrefix} Coordenadas de fallback obtenidas de hijo2 y aplicadas: [${est.gps.posicionUsuario.lat}, ${est.gps.posicionUsuario.lng}]`);
                                 } else {
                                     // Fallback a coordenadas por defecto P-0 si hijo2 no responde correctamente
                                     est.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
@@ -2354,11 +2405,11 @@
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
                                     logger.info(`${logPrefix} Fallback a inicio (P-0) aplicado: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
                                 }
-                            } catch (err) {
+                                } catch (err) {
                                 // En caso de timeout o error al solicitar a hijo2, fallback a P-0
-                                estado.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
-                                estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
-                                estado.gps.precision = 1000;
+                                est.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
+                                est.gps.ultimaUbicacion = est.gps.posicionUsuario;
+                                est.gps.precision = 1000;
                                 try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
                                 logger.warn(`${logPrefix} Error solicitando coordenadas a hijo2 para fallback (${err.message}); fallback a inicio (P-0)`);
                             }
@@ -2644,6 +2695,9 @@
 
                 logger.info(`${logPrefix} GPS activado exitosamente (watchId: ${estado.gps.watchId})`);
 
+                // Resolución exitosa de la promesa de activación
+                resolveActivacion(true);
+
                 // Notificar estado actualizado SOLO a hijos con capability 'gps'
                 try {
                     if (typeof broadcastToCapability === 'function') {
@@ -2682,7 +2736,14 @@
                 logger.error(`${logPrefix} Error activando GPS:`, error);
                 estado.gps.activo = false;
                 estado.gps.error = error.message;
+                try { rejectActivacion && rejectActivacion(error); } catch (e) { /* ignore */ }
                 throw error;
+            } finally {
+                // Limpiar bandera de activación en curso
+                try {
+                    est.gps.activando = false;
+                    delete est.gps.activandoPromise;
+                } catch (e) { /* ignore */ }
             }
         }
 
@@ -2698,6 +2759,18 @@
                 estado.gps.activo = false;
                 estado.gps.posicionUsuario = null;
                 logger.info(`${logPrefix} GPS desactivado`);
+                // Notificar a hijos que GPS se desactivó
+                try {
+                    if (typeof broadcastToCapability === 'function') {
+                        broadcastToCapability('gps', {
+                            tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
+                            origen: getPadreId(),
+                            datos: { activo: false, permisos: false, precision: null, error: null }
+                        });
+                    }
+                } catch (e) {
+                    logger.warn(`${logPrefix} Error notificando desactivación GPS a hijos:`, e);
+                }
             }
         }
 
@@ -5102,6 +5175,20 @@
 
             try {
                 logger.info(`${logPrefix} Solicitud de activación GPS de ${mensaje.origen}`);
+                    // Only allow activation when the system is in AVENTURA mode
+                    try {
+                        const modoActual = (window.estadoPadre && window.estadoPadre.modo && window.estadoPadre.modo.actual) || (estado && estado.modo && estado.modo.actual);
+                        if (modoActual !== MODOS.AVENTURA) {
+                            logger.warn(`${logPrefix} Rechazando activación: modo actual no es AVENTURA (${modoActual})`);
+                            await enviarMensajePadre({
+                                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                                origen: getPadreId(),
+                                destino: mensaje.origen,
+                                datos: { error: 'GPS solo disponible en modo AVENTURA', contexto: 'gps_activar_restringido' }
+                            });
+                            return;
+                        }
+                    } catch (e) { /* ignore mode check errors */ }
                 try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.solicitudes_recibidas'); } catch (e) { /* ignore */ }
 
                 // Usar la función GPS centralizada del padre
