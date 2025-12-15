@@ -6,6 +6,32 @@
   <title>Menú Hamburguesa</title>
   <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+
+    // Wrapper seguro para evitar doble registro de controladores en hijos
+    if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
+        window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                    return;
+                }
+                if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                    return;
+                }
+                window.__CONTROLADOR_REGISTRADOS.add(tipo);
+                if (typeof registrarControlador === 'function') {
+                    return registrarControlador(tipo, handler, opciones);
+                }
+                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+                globalThis.__vv_manejadores.set(tipo, handler);
+                return;
+            } catch (e) {
+                (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
+            }
+        };
+    }
     import { TIPOS_MENSAJE } from './js/constants.js';
     import { getPadreId } from './js/utils.js';
     import logger from './js/logger.js';
@@ -132,7 +158,7 @@
             // ============================================================
             // CONTROLADOR 1: SISTEMA.PADRE_LISTO
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
                 
                 try {
@@ -204,7 +230,7 @@
             // ============================================================
             // CONTROLADOR: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_CONFIRMA_HIJO_LISTO]`;
 
                 try {
@@ -260,7 +286,7 @@
             // ============================================================
             // CONTROLADOR 2: UI.CLOSE_MENUS
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.UI.CLOSE_MENUS, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.UI.CLOSE_MENUS, (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[CLOSE_MENUS]`;
                 
                 try {
@@ -323,7 +349,7 @@
             // ============================================================
             // CONTROLADOR 3: SISTEMA.HEARTBEAT
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[HEARTBEAT]`;
                 
                 try {
@@ -370,7 +396,7 @@
             // ============================================================
             // CONTROLADOR 4: SISTEMA.ACK
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[ACK]`;
                 
                 try {
@@ -659,7 +685,7 @@
             // ============================================================
             // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
             // ============================================================
-            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ACTIVAR]`;
                 try {
                     if (!mensaje || !mensaje.origen) return { exito: false };
@@ -671,7 +697,7 @@
                 }
             });
 
-            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.DESACTIVAR]`;
                 try {
                     if (!mensaje || !mensaje.origen) return { exito: false };
@@ -683,7 +709,7 @@
                 }
             });
 
-            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.UBICACION_ACTUALIZADA]`;
                 try {
                     logger.debug(`${gPrefix} Ubicación recibida (no-op) desde ${mensaje?.origen}`);
@@ -694,7 +720,7 @@
                 }
             });
 
-            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ESTADO_ACTUALIZADO]`;
                 try {
                     logger.debug(`${gPrefix} Estado GPS recibido (no-op):`, mensaje?.datos || {});
@@ -705,7 +731,7 @@
                 }
             });
 
-            registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ERROR]`;
                 try {
                     logger.warn(`${gPrefix} Error GPS recibido (no-op):`, mensaje?.datos || {});
