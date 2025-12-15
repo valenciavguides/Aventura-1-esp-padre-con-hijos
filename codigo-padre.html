@@ -904,6 +904,12 @@
                     </div>
                 `;
                 document.body.appendChild(overlay);
+                // Ensure close button does not allow its touch events to bubble to the container
+                const btn = overlay.querySelector('.btn-cerrar-overlay');
+                if (btn) {
+                    btn.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+                    btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+                }
             }
             
             // Configurar imagen
@@ -991,8 +997,10 @@
                 actualizarTransformImagen();
             });
             
-            // Pan con arrastrar
+            // Pan con arrastrar (mouse)
             contenedor.addEventListener('mousedown', (e) => {
+                // If the user started the mouse down on a UI control (close button, other buttons), ignore
+                if (e.target && e.target.closest && e.target.closest('.btn-cerrar-overlay, button, a, [role="button"]')) return;
                 isDragging = true;
                 lastX = e.clientX;
                 lastY = e.clientY;
@@ -1015,11 +1023,24 @@
                 isDragging = false;
             });
             
-            // Touch events para móviles
+            // Touch events para móviles (ignorar gestos que comienzan sobre controles)
             let initialDistance = 0;
             let initialZoom = 1;
-            
+            let touchStartedOnControl = false;
+
             contenedor.addEventListener('touchstart', (e) => {
+                // Detect if touch started on a control (close button, buttons, links)
+                const t = e.touches && e.touches[0];
+                if (t) {
+                    const target = document.elementFromPoint(t.clientX, t.clientY);
+                    if (target && target.closest && target.closest('.btn-cerrar-overlay, button, a, [role="button"]')) {
+                        touchStartedOnControl = true;
+                        return; // let the control handle the touch
+                    }
+                }
+
+                touchStartedOnControl = false;
+
                 if (e.touches.length === 2) {
                     // Pinch to zoom
                     const touch1 = e.touches[0];
@@ -1035,10 +1056,13 @@
                     lastX = e.touches[0].clientX;
                     lastY = e.touches[0].clientY;
                 }
-                e.preventDefault();
-            });
-            
+                // Only prevent default if the touch is not on a control
+                if (!touchStartedOnControl) e.preventDefault();
+            }, { passive: false });
+
             contenedor.addEventListener('touchmove', (e) => {
+                if (touchStartedOnControl) return; // ignore moves that started on controls
+
                 if (e.touches.length === 2) {
                     // Pinch to zoom
                     const touch1 = e.touches[0];
@@ -1060,11 +1084,13 @@
                     lastY = e.touches[0].clientY;
                     actualizarTransformImagen();
                 }
+                // Only prevent default on actual gestures
                 e.preventDefault();
-            });
-            
+            }, { passive: false });
+
             contenedor.addEventListener('touchend', () => {
                 isDragging = false;
+                touchStartedOnControl = false;
             });
             
             // Doble click para resetear zoom
@@ -1140,6 +1166,12 @@
                     </div>
                 `;
                 document.body.appendChild(overlay);
+                // Prevent touch/clicks on close button from bubbling to video container
+                const vbtn = overlay.querySelector('.btn-cerrar-overlay');
+                if (vbtn) {
+                    vbtn.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+                    vbtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+                }
             }
             
             // Configurar video
@@ -1268,6 +1300,12 @@
                     </div>
                 `;
                 document.body.appendChild(overlay);
+                // Make sure close button handles touch without letting container intercept
+                const ibtn = overlay.querySelector('.btn-cerrar-overlay');
+                if (ibtn) {
+                    ibtn.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+                    ibtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+                }
             } else {
                 const iframe = overlay.querySelector('iframe');
                 if (iframe) iframe.src = urlIframe;
@@ -1670,6 +1708,16 @@
             if (typeof window.ajustarTimeoutPorConexion === 'undefined' && typeof ajustarTimeoutPorConexion_S1 !== 'undefined') {
                 window.ajustarTimeoutPorConexion = ajustarTimeoutPorConexion_S1;
             }
+            // Provide a safe wrapper to avoid ReferenceErrors when code references ajustarTimeoutPorConexionSafe
+            if (typeof window.ajustarTimeoutPorConexionSafe === 'undefined') {
+                window.ajustarTimeoutPorConexionSafe = function(ms) {
+                    try {
+                        if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
+                        if (typeof ajustarTimeoutPorConexion_S1 === 'function') return ajustarTimeoutPorConexion_S1(ms);
+                        return ms;
+                    } catch (e) { return ms; }
+                };
+            }
         }
 
         await import('./js/suppress-warnings.js');
@@ -1848,6 +1896,19 @@
         // eslint-disable-next-line no-undef
         var estado = window.estadoPadre;
 
+        // Helper runtime-safe para obtener el estado del padre sin lanzar si aún no existe
+        function getEstadoSafe() {
+            return (typeof window !== 'undefined' && window.estadoPadre) ? window.estadoPadre : {};
+        }
+
+        // Definir early fallback seguro para ajustarTimeoutPorConexion si no está presente
+        if (typeof window !== 'undefined' && typeof window.ajustarTimeoutPorConexionSafe === 'undefined') {
+            // Función segura que devuelve un timeout en ms (comportamiento por defecto)
+            window.ajustarTimeoutPorConexionSafe = function(ms) {
+                return Number(ms) || 10000;
+            };
+        }
+
         // Persistencia del progreso de la aventura
         function persistProgressState() {
             try {
@@ -1892,6 +1953,16 @@
                 if (obj.paradaActual) {
                     estado.paradaActual = obj.paradaActual;
                     logger.info(`${logPrefix} paradaActual restaurada: ${estado.paradaActual}`);
+                    try {
+                        document.body.appendChild(overlay);
+                        const ebtn = overlay.querySelector('.btn-cerrar-overlay');
+                        if (ebtn) {
+                            ebtn.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+                            ebtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+                        }
+                    } catch (e) {
+                        // overlay might not be defined or needed here; ignore error
+                    }
                 }
                 if (obj.elementoActualId && Array.isArray(window.AVENTURA_PARADAS)) {
                     const found = window.AVENTURA_PARADAS.find(p => p.parada_id === obj.elementoActualId || p.tramo_id === obj.elementoActualId || p.padreid === obj.elementoActualId);
@@ -2166,24 +2237,36 @@
             try {
                 logger.info(`${logPrefix} Iniciando activación GPS...`);
 
+                // Diagnostics: report permission API status and environment
+                try {
+                    if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+                        navigator.permissions.query({ name: 'geolocation' }).then(r => logger.debug(`${logPrefix} permisos.geolocation state: ${r.state}`)).catch(() => {});
+                    }
+                    logger.debug(`${logPrefix} userAgent: ${navigator.userAgent}`);
+                } catch (diagErr) { /* ignore diagnostics */ }
+
+                // Runtime-safe estado + gps subobj
+                const est = getEstadoSafe();
+                est.gps = est.gps || {};
+
                 // Verificar permisos
                 const permisosConcedidos = await verificarPermisosGPS();
                 if (!permisosConcedidos) {
-                    estado.gps.error = 'Permisos de geolocalización denegados';
-                    estado.gps.permisos = false;
-                    estado.gps.activo = false;
-                    throw new Error(estado.gps.error);
+                    est.gps.error = 'Permisos de geolocalización denegados';
+                    est.gps.permisos = false;
+                    est.gps.activo = false;
+                    throw new Error(est.gps.error);
                 }
 
                 // Verificar soporte
                 if (!navigator.geolocation) {
-                    estado.gps.error = 'Geolocalización no soportada';
-                    estado.gps.activo = false;
-                    throw new Error(estado.gps.error);
+                    est.gps.error = 'Geolocalización no soportada';
+                    est.gps.activo = false;
+                    throw new Error(est.gps.error);
                 }
 
                 // Si ya está activo, no hacer nada
-                if (estado.gps.activo && estado.gps.watchId !== null) {
+                if (est.gps.activo && est.gps.watchId !== null) {
                     logger.info(`${logPrefix} GPS ya activo`);
                     return true;
                 }
@@ -2214,10 +2297,10 @@
                                     // Accept this initial position
                                     const fLat = fresh.coords.latitude;
                                     const fLng = fresh.coords.longitude;
-                                    estado.gps.posicionUsuario = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
-                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
-                                    estado.gps.precision = a2;
-                                    estado.gps.permisos = true;
+                                    est.gps.posicionUsuario = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
+                                    est.gps.ultimaUbicacion = est.gps.posicionUsuario;
+                                    est.gps.precision = a2;
+                                    est.gps.permisos = true;
                                     initialAccepted = true;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.inicial_intentos_exitosos'); } catch (e) { /* ignore */ }
                                     logger.debug(`${logPrefix} ✅ Posición inicial de alta precisión aceptada (±${Math.round(a2)}m)`);
@@ -2258,16 +2341,16 @@
 
                                 if (coordenadasResponse && coordenadasResponse.length > 0 && coordenadasResponse[0].coordenadas) {
                                     const c = coordenadasResponse[0].coordenadas;
-                                    estado.gps.posicionUsuario = { lat: c.lat || c[0], lng: c.lng || c[1], accuracy: 1000, timestamp: Date.now() };
-                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
-                                    estado.gps.precision = 1000;
+                                    est.gps.posicionUsuario = { lat: c.lat || c[0], lng: c.lng || c[1], accuracy: 1000, timestamp: Date.now() };
+                                    est.gps.ultimaUbicacion = est.gps.posicionUsuario;
+                                    est.gps.precision = 1000;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_hijo2_ok'); } catch (e) { /* ignore */ }
                                     logger.info(`${logPrefix} Coordenadas de fallback obtenidas de hijo2 y aplicadas: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
                                 } else {
                                     // Fallback a coordenadas por defecto P-0 si hijo2 no responde correctamente
-                                    estado.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
-                                    estado.gps.ultimaUbicacion = estado.gps.posicionUsuario;
-                                    estado.gps.precision = 1000;
+                                    est.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
+                                    est.gps.ultimaUbicacion = est.gps.posicionUsuario;
+                                    est.gps.precision = 1000;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
                                     logger.info(`${logPrefix} Fallback a inicio (P-0) aplicado: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
                                 }
@@ -5077,7 +5160,7 @@
                             origen: getPadreId(),
                             datos: {
                                 activo: false,
-                                permisos: estado.gps.permisos,
+                                permisos: (getEstadoSafe().gps && getEstadoSafe().gps.permisos) || null,
                                 precision: null,
                                 error: null
                             }
@@ -5090,7 +5173,7 @@
                             destino: 'todos',
                             datos: {
                                 activo: false,
-                                permisos: estado.gps.permisos,
+                                permisos: (getEstadoSafe().gps && getEstadoSafe().gps.permisos) || null,
                                 precision: null,
                                 error: null
                             }
@@ -5398,7 +5481,8 @@
                 logger.info(`${logPrefix} ✅ Estado ubicacionActiva marcado como TRUE`);
 
                 // Si estamos en modo aventura, dibujar polyline hasta la siguiente parada
-                if (estado.modo?.actual === MODOS.AVENTURA) {
+                const est = getEstadoSafe();
+                if (est.modo?.actual === MODOS.AVENTURA) {
                     try {
                         // Obtener la siguiente parada
                         const paradas = window.AVENTURA_PARADAS;
@@ -5913,9 +5997,10 @@
                 try {
                     const padreId = (mensaje.datos && (mensaje.datos.padreId || mensaje.datos.padreid || mensaje.datos.padre)) || null;
                     if (padreId) {
-                        estado.paradasConfirmaciones = estado.paradasConfirmaciones || {};
-                        estado.paradasConfirmaciones[padreId] = estado.paradasConfirmaciones[padreId] || [];
-                        estado.paradasConfirmaciones[padreId].push({ origen: mensaje.origen, timestamp: Date.now(), datos: mensaje.datos });
+                        const est = getEstadoSafe();
+                        est.paradasConfirmaciones = est.paradasConfirmaciones || {};
+                        est.paradasConfirmaciones[padreId] = est.paradasConfirmaciones[padreId] || [];
+                        est.paradasConfirmaciones[padreId].push({ origen: mensaje.origen, timestamp: Date.now(), datos: mensaje.datos });
                     }
                     // Telemetría: incrementar contador si existe
                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('confirmaciones_cambio_parada'); } catch (err) { /* ignore */ }
@@ -6230,8 +6315,9 @@
             window.__VV_PENDING_CLEANUP = setInterval(() => {
                 try {
                         const now = Date.now();
-                        if (!estado.pendingCompleciones) return;
-                        for (const [clave, pending] of Object.entries(estado.pendingCompleciones)) {
+                        const est = getEstadoSafe();
+                        if (!est || !est.pendingCompleciones) return;
+                        for (const [clave, pending] of Object.entries(est.pendingCompleciones)) {
                             if (!pending) continue;
                             // TTL expirado (use per-pending ttlMs if defined)
                             const ttl = (typeof pending.ttlMs === 'number') ? pending.ttlMs : (pendingCfg && typeof pendingCfg.TTL_MS === 'number' ? pendingCfg.TTL_MS : (10 * 60 * 1000));
