@@ -8,8 +8,8 @@ import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import logger from './logger.js';
 import { enviarMensaje, registrarControlador } from './mensajeria.js';
 import { CONFIG } from './config.js';
-import { generarIdUnico, getPadreId } from './utils.js';
-import { promesasPendientes } from './monitoreo.js';
+import { generarIdUnico, getPadreId, canonicalizarModo } from './utils.js';
+import { promesasPendientes, registrarMetrica as registrarMetricaMonitoreo } from './monitoreo.js';
 import { esMovil } from './device-detection.js';
 
 import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './funciones-mapa.js';
@@ -25,7 +25,7 @@ export async function registrarControladoresApp() {
         const { registrarControlador } = await import('./mensajeria.js');
         if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
             globalThis.__vv_manejadores.forEach((cb, tipo) => {
-                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[APP] error registrando controlador', tipo, e); }
+                try { registrarControlador(tipo, cb); } catch (e) { logger.warn('[APP] error registrando controlador', tipo, e); }
             });
             try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
         }
@@ -366,16 +366,15 @@ export function notificarError(codigo, error, contexto = {}) {
  * @returns {Promise<Object>} Resultado de la operaci�n
  */
 export async function enviarCambioModo(nuevoModo, origen = 'app') {
-    if (nuevoModo !== MODOS.CASA && nuevoModo !== MODOS.AVENTURA) {
-        throw new Error(`Modo inv�lido: ${nuevoModo}`);
-    }
-    
+    const modoCanonical = canonicalizarModo(nuevoModo);
+    if (!modoCanonical) throw new Error(`Modo inv�lido: ${nuevoModo}`);
+
     return await enviarMensaje({
         destino: CONFIG.IFRAME_ID,
         tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
         origen: getPadreId(),
         datos: {
-            modo: nuevoModo,
+            modo: modoCanonical,
             origen,
             timestamp: new Date().toISOString()
         }
@@ -399,8 +398,8 @@ function validarCambioModoMensaje(mensaje) {
     }
     
     // Compara con constantes para mayor compatibilidad
-    const modoLowerCase = typeof modo === 'string' ? modo.toLowerCase() : modo;
-    if (modoLowerCase !== MODOS.CASA && modoLowerCase !== MODOS.AVENTURA) {
+    const modoCanonical = canonicalizarModo(modo);
+    if (!modoCanonical) {
         throw new Error(`Modo no v�lido: ${modo}`);
     }
 
@@ -409,9 +408,14 @@ function validarCambioModoMensaje(mensaje) {
 
 // Constantes para los modos de operación del sistema (diferentes a MODOS de constants.js que son 'casa'/'aventura')
 const MODOS_OPERACION = {
-    normal: {
-        nombre: 'Normal',
-        descripcion: 'Modo de funcionamiento est�ndar',
+    casa: {
+        nombre: 'Casa',
+        descripcion: 'Modo Casa (funcionamiento por defecto)',
+        puedeCambiar: true
+    },
+    aventura: {
+        nombre: 'Aventura',
+        descripcion: 'Modo Aventura (usuario en ruta)',
         puedeCambiar: true
     },
     mantenimiento: {
@@ -466,24 +470,10 @@ export async function manejarCambioModo(estado, mensaje) {
 
     const { modo, opciones = {}, motivo = 'no especificado' } = mensaje.datos;
 
-    // Normalizar modo: aceptar tanto claves ('CASA','AVENTURA') como valores ('casa','aventura')
+    // Normalizar modo usando helper centralizado
+    const modoNormalized = canonicalizarModo(modo); // 'casa'|'aventura' or null
     const modosKeys = Object.keys(MODOS); // ['CASA','AVENTURA']
-    const modosValues = Object.values(MODOS); // ['casa','aventura']
-
-    let modoNormalized = null; // valor en minúsculas: 'casa'|'aventura'
-    let modoKey = null; // clave en mayúsculas: 'CASA'|'AVENTURA'
-
-    if (typeof modo === 'string') {
-        const lower = modo.toLowerCase();
-        const upper = modo.toUpperCase();
-        if (modosValues.includes(lower)) {
-            modoNormalized = lower;
-            modoKey = modosKeys.find(k => MODOS[k] === lower);
-        } else if (modosKeys.includes(upper)) {
-            modoKey = upper;
-            modoNormalized = MODOS[upper];
-        }
-    }
+    const modoKey = modosKeys.find(k => MODOS[k] === modoNormalized) || null;
 
     try {
         // 2. Validar modo solicitado (ahora normalizado)
@@ -494,7 +484,7 @@ export async function manejarCambioModo(estado, mensaje) {
         }
 
         // 3. Validar transici�n de modos
-        const modoActual = estado.modo?.actual || 'normal';
+        const modoActual = estado.modo?.actual || MODOS.CASA;
         if (modoNormalized === modoActual) {
             logger.info(`${logPrefix} El modo ya est� establecido a '${modoNormalized}'`, { mensajeId });
             return { exito: true, cambiado: false, modoActual };
@@ -513,7 +503,9 @@ export async function manejarCambioModo(estado, mensaje) {
         registrarEvento('CAMBIO_MODO', eventoCambioModo);
 
         // 5. Validar permisos (si es necesario) - comprobar en MODOS_OPERACION de forma segura
-        if (MODOS_OPERACION && MODOS_OPERACION[modoNormalized] && MODOS_OPERACION[modoNormalized].requiereAutenticacion) {
+        // Buscar configuración de permisos en MODOS_OPERACION usando varias formas de key
+        const permisoCfg = MODOS_OPERACION && (MODOS_OPERACION[modoNormalized] || MODOS_OPERACION[modoKey?.toLowerCase?.()] || MODOS_OPERACION[modoKey]);
+        if (permisoCfg && permisoCfg.requiereAutenticacion) {
             const tienePermisos = await validarPermisosCambioModo(mensaje.origen, modoNormalized);
             if (!tienePermisos) {
                 const errorMsg = 'No tiene permisos para cambiar a este modo';
@@ -544,51 +536,43 @@ export async function manejarCambioModo(estado, mensaje) {
             // 8. Notificar a los componentes del cambio inminente
             await notificarCambioModoInminente(modoActual, modo, motivo);
 
-            // 8.1 Preparar pre-warm para reducir latencia si vamos a AVENTURA
+            // 8.1 Preparar pre-warm / pausar según el modo (usar valores normalizados)
             try {
-                if (modoNormalized === 'AVENTURA' || modo === MODOS.AVENTURA) {
-                    const cfgConfirmTimeout = (window.Config && window.Config.MENSAJERIA && window.Config.MENSAJERIA.TIMEOUTS && window.Config.MENSAJERIA.TIMEOUTS.CONFIRMACION) || 10000;
+                const esAventura = (modoKey === 'AVENTURA') || (modoNormalized === MODOS.AVENTURA);
+                const esCasa = (modoKey === 'CASA') || (modoNormalized === MODOS.CASA);
 
+                // Si vamos a AVENTURA, precalentar subsistemas que reducen latencia
+                if (esAventura) {
+                    const cfgConfirmTimeout = (window.Config && window.Config.MENSAJERIA && window.Config.MENSAJERIA.TIMEOUTS && window.Config.MENSAJERIA.TIMEOUTS.CONFIRMACION) || 10000;
                     const promises = [];
 
                     try {
-                        if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
-                            const gpsCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
-                            if (gpsCfg && gpsCfg.ENABLE) {
-                                promises.push(window.funcionesMapa.precalentarGPS());
-                                logger.debug('[APP][CAMBIO_MODO] Precaliendo GPS en background');
+                        // Si el prewarm ya se inició en modo CASA y está pausado, no volver a reiniciarlo
+                        if (estado.sistema?.prewarmIniciado && estado.sistema?.prewarmPausado) {
+                            logger.debug('[APP][CAMBIO_MODO] Pre-warm detectado (iniciado en CASA), se reanudará en lugar de reiniciarse');
+                        } else {
+                            if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
+                                const gpsCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
+                                if (gpsCfg && gpsCfg.ENABLE) {
+                                    promises.push(window.funcionesMapa.precalentarGPS());
+                                    logger.debug('[APP][CAMBIO_MODO] Precaliendo GPS en background (no estaba pre-iniciado)');
+                                }
+                            }
+
+                            if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
+                                promises.push(window.mensajeria.preiniciarHeartbeat());
+                                logger.debug('[APP][CAMBIO_MODO] Pre-iniciando heartbeat en background (no estaba pre-iniciado)');
                             }
                         }
-                            else if (modoNormalized === 'CASA' || modo === MODOS.CASA) {
-                                // If switching back to CASA, stop any warmup to conserve resources
-                                try {
-                                    if (window.funcionesMapa && typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
-                                        window.funcionesMapa.detenerPrecalentarGPS();
-                                        logger.debug('[APP][CAMBIO_MODO] Detenido warmup GPS al cambiar a CASA');
-                                    }
-                                } catch (e) { logger.debug('[APP][CAMBIO_MODO] Error deteniendo warmup al cambiar a CASA:', e); }
-                            }
-                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando precalentarGPS:', e); }
+                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando prewarm inicial:', e); }
 
-                    try {
-                        if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
-                            promises.push(window.mensajeria.preiniciarHeartbeat());
-                            logger.debug('[APP][CAMBIO_MODO] Pre-iniciando heartbeat en background');
-                        }
-                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando preiniciarHeartbeat:', e); }
-
-                    // Also wait for children readiness (HIJO_LISTO) up to the confirmation timeout
                     const hijosPromise = (window.mensajeria && typeof window.mensajeria.esperarHijosListos === 'function')
                         ? window.mensajeria.esperarHijosListos(cfgConfirmTimeout)
                         : Promise.resolve({ ready: true });
 
-                    // Wait for either prewarm tasks and hijos readiness or timeout
                     try {
                         const race = await Promise.race([
-                            (async () => {
-                                await Promise.allSettled(promises);
-                                return hijosPromise;
-                            })(),
+                            (async () => { await Promise.allSettled(promises); return hijosPromise; })(),
                             new Promise(resolve => setTimeout(() => resolve({ timeout: true }), cfgConfirmTimeout))
                         ]);
 
@@ -597,9 +581,80 @@ export async function manejarCambioModo(estado, mensaje) {
                         } else {
                             logger.info('[APP][CAMBIO_MODO] Pre-warm and/or HIJO_LISTO completed or settled');
                         }
+
+                        // Tras pre-warm o si estaba pre-iniciado, reanudar heartbeat e iniciar GPS aventura
+                        try {
+                            if (estado.sistema?.prewarmIniciado && estado.sistema?.prewarmPausado) {
+                                // Reanudar desde estado preiniciado
+                                if (window.mensajeria && typeof window.mensajeria.reanudarHeartbeat === 'function') {
+                                    window.mensajeria.reanudarHeartbeat();
+                                    logger.debug('[APP][CAMBIO_MODO] Heartbeat reanudado desde pre-warm en CASA');
+                                }
+
+                                // Asegurar que el warmup GPS esté activo antes de iniciar la AVENTURA.
+                                // Nota: `pausarPrecalentarGPS()` deja `warmupInitialized=true` pero puede
+                                // haber limpiado el watch; re-ejecutar `precalentarGPS()` es idempotente
+                                // y restablecerá un watch rápido si la configuración lo permite.
+                                try {
+                                    if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
+                                        await window.funcionesMapa.precalentarGPS();
+                                        logger.debug('[APP][CAMBIO_MODO] Precalentar GPS re-ejecutado antes de iniciar aventura');
+                                    }
+                                } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error re-ejecutando precalentarGPS:', e); }
+
+                                if (window.funcionesMapa && typeof window.funcionesMapa.iniciarGPSAventura === 'function') {
+                                    await window.funcionesMapa.iniciarGPSAventura();
+                                    logger.debug('[APP][CAMBIO_MODO] Iniciado GPS aventura desde pre-warm en CASA');
+                                }
+
+                                estado.sistema.prewarmPausado = false;
+                            } else {
+                                if (window.mensajeria && typeof window.mensajeria.reanudarHeartbeat === 'function') {
+                                    window.mensajeria.reanudarHeartbeat();
+                                    logger.debug('[APP][CAMBIO_MODO] Heartbeat reanudado tras pre-warm');
+                                }
+                                if (window.funcionesMapa && typeof window.funcionesMapa.iniciarGPSAventura === 'function') {
+                                    await window.funcionesMapa.iniciarGPSAventura();
+                                    logger.debug('[APP][CAMBIO_MODO] Iniciado GPS aventura tras pre-warm');
+                                }
+                                estado.sistema.prewarmPausado = false;
+                                estado.sistema.prewarmIniciado = true;
+                            }
+                        } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error reanudando/iniciando subsistemas tras pre-warm:', e); }
                     } catch (e) {
                         logger.warn('[APP][CAMBIO_MODO] Error esperando prewarm/hijosListos:', e);
                     }
+
+                // Si volvemos a CASA, pausar heartbeat y detener warmup GPS para ahorrar recursos
+                } else if (esCasa) {
+                    try {
+                        if (window.funcionesMapa) {
+                            if (typeof window.funcionesMapa.pausarPrecalentarGPS === 'function') {
+                                window.funcionesMapa.pausarPrecalentarGPS();
+                                logger.debug('[APP][CAMBIO_MODO] Warmup GPS pausado al cambiar a CASA');
+                                estado.sistema.prewarmIniciado = true;
+                                estado.sistema.prewarmPausado = true;
+                            } else if (typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
+                                // Fallback: detener si no existe pausar
+                                window.funcionesMapa.detenerPrecalentarGPS();
+                                logger.debug('[APP][CAMBIO_MODO] Warmup GPS detenido al cambiar a CASA (fallback)');
+                                estado.sistema.prewarmIniciado = false;
+                                estado.sistema.prewarmPausado = false;
+                            } else {
+                                logger.debug('[APP][CAMBIO_MODO] Ninguna función de warmup disponible para pausar/detener');
+                            }
+                        }
+                    } catch (e) { logger.debug('[APP][CAMBIO_MODO] Error deteniendo/pausando warmup al cambiar a CASA:', e); }
+
+                    try {
+                        if (window.mensajeria && typeof window.mensajeria.pausarHeartbeat === 'function') {
+                            window.mensajeria.pausarHeartbeat();
+                            logger.debug('[APP][CAMBIO_MODO] Heartbeat pausado al cambiar a CASA');
+                        }
+                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error pausando heartbeat al cambiar a CASA:', e); }
+
+                    // Si no fue modificado arriba, asegurar que la bandera quede marcada como pausada
+                    estado.sistema.prewarmPausado = estado.sistema.prewarmPausado || false;
                 }
             } catch (e) {
                 logger.warn('[APP][CAMBIO_MODO] Error en flujo de pre-warm:', e);
@@ -708,6 +763,93 @@ export async function manejarCambioModo(estado, mensaje) {
             modoActual: estado.modo?.actual
         };
     }
+}
+
+/**
+ * Inicia (idempotente) el pre-warm de subsistemas cuando la app está en modo CASA.
+ * Pre-inicia (inicializa en background) GPS y Heartbeat pero los deja en estado pausado.
+ * Esto permite reanudar rápidamente al cambiar a AVENTURA.
+ */
+export async function iniciarPrewarmEnCasa(estado = window.estadoPadre) {
+    try {
+        if (!estado) return { iniciado: false, motivo: 'estado no disponible' };
+        const modoActual = estado.modo?.actual || MODOS.CASA;
+        if (modoActual !== MODOS.CASA) return { iniciado: false, motivo: 'modo no es CASA' };
+
+        estado.sistema = estado.sistema || {};
+        if (estado.sistema.prewarmIniciado) {
+            logger.debug('[APP][PREWARM] Ya iniciado previamente, omitiendo re-inicio');
+            return { iniciado: true, motivo: 'ya_iniciado' };
+        }
+
+        // Pre-iniciar GPS warmup
+        try {
+            if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
+                await window.funcionesMapa.precalentarGPS();
+                // Pausar inmediatamente para mantenerlo pre-iniciado pero no activo
+                if (typeof window.funcionesMapa.pausarPrecalentarGPS === 'function') {
+                    window.funcionesMapa.pausarPrecalentarGPS();
+                } else if (typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
+                    // fallback: detener si no existe pausar (menos ideal)
+                    window.funcionesMapa.detenerPrecalentarGPS();
+                }
+                logger.info('[APP][PREWARM] Precalentar GPS ejecutado y puesto en estado pausado');
+            }
+        } catch (e) {
+            logger.warn('[APP][PREWARM] Error durante precalentarGPS en CASA:', e);
+        }
+
+        // Pre-iniciar heartbeat (preparado pero pausado)
+        try {
+            if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
+                await window.mensajeria.preiniciarHeartbeat();
+                if (typeof window.mensajeria.pausarHeartbeat === 'function') {
+                    window.mensajeria.pausarHeartbeat();
+                }
+                logger.info('[APP][PREWARM] Heartbeat pre-iniciado y pausado');
+            }
+        } catch (e) {
+            logger.warn('[APP][PREWARM] Error durante preiniciarHeartbeat en CASA:', e);
+        }
+
+        estado.sistema.prewarmIniciado = true;
+        estado.sistema.prewarmPausado = true;
+
+        return { iniciado: true };
+    } catch (err) {
+        logger.warn('[APP][PREWARM] Error iniciando prewarm en CASA:', err);
+        return { iniciado: false, motivo: err.message };
+    }
+}
+
+// Auto-run seguro: si el estado del padre ya existe y está en CASA, iniciar pre-warm.
+// Si no está disponible aún, comprobar periódicamente durante unos segundos.
+if (typeof window !== 'undefined') {
+    (async () => {
+        try {
+            const tryStart = async () => {
+                if (window.estadoPadre && (window.estadoPadre.modo?.actual === MODOS.CASA || !window.estadoPadre.modo)) {
+                    await iniciarPrewarmEnCasa(window.estadoPadre);
+                    return true;
+                }
+                return false;
+            };
+
+            if (!(await tryStart())) {
+                // Reintentar a intervalos cortos hasta 5s
+                const maxRetries = 10;
+                let attempts = 0;
+                const iv = setInterval(async () => {
+                    attempts++;
+                    if (await tryStart() || attempts >= maxRetries) {
+                        clearInterval(iv);
+                    }
+                }, 500);
+            }
+        } catch (e) {
+            logger.warn('[APP][PREWARM] Auto-run prewarm falló:', e);
+        }
+    })();
 }
 
 /**
@@ -837,7 +979,7 @@ async function restaurarEstadoModoAnterior(estado, modoAnterior, modoFallido, mo
     });
     
     // Actualizar la interfaz
-    await actualizarInterfazModo(modoAnterior);
+    await actualizarInterfazModo(estado, modoAnterior);
     
     logger.warn(`Modo restaurado a '${modoAnterior}' despu�s de fallo al cambiar a '${modoFallido}'`, {
         motivo
@@ -876,52 +1018,16 @@ export function registrarEvento(tipo, datos = {}, nivel = 'info') {
  * @param {number} valor - Valor de la m�trica
  * @param {string} [unidad='ms'] - Unidad de medida
  */
-export function registrarMetrica(estado, nombre, valor, unidad = 'ms') {
-    if (!estado?.monitoreo?.config?.habilitado || !estado?.monitoreo?.config?.rastrearRendimiento) {
-        return;
-    }
-    
-    try {
-        const metrica = {
-            nombre,
-            valor,
-            unidad,
-            timestamp: new Date().toISOString()
-        };
-        
-        // Actualizar m�tricas espec�ficas
-        if (nombre === 'tiempo_respuesta') {
-            estado.monitoreo.metricas.solicitudes++;
-            estado.monitoreo.metricas.tiempoTotalRespuesta += valor;
-            estado.monitoreo.metricas.tiempoRespuestaPromedio = estado.monitoreo.metricas.tiempoTotalRespuesta / estado.monitoreo.metricas.solicitudes;
-            
-            // Alerta si se supera el umbral
-            if (valor > estado.monitoreo.config.umbralAlerta.tiempoRespuesta) {
-                registrarEvento('tiempo_respuesta_elevado', {
-                    valor,
-                    umbral: estado.monitoreo.config.umbralAlerta.tiempoRespuesta,
-                    metrica
-                }, 'warn');
-            }
-        } else if (nombre === 'uso_memoria') {
-            estado.monitoreo.metricas.usoMemoria = valor;
-            
-            // Alerta si se supera el umbral de memoria
-            if (valor > estado.monitoreo.config.umbralAlerta.usoMemoria) {
-                registrarEvento('uso_memoria_elevado', {
-                    valor,
-                    umbral: estado.monitoreo.config.umbralAlerta.usoMemoria,
-                    timestamp: new Date().toISOString()
-                }, 'warn');
-            }
-        }
-        
-        // Mantener un historial de m�tricas
-        estado.monitoreo.historial.metricas.push(metrica);
-    } catch (error) {
-        console.error('Error al registrar m�trica:', error);
-    }
-}
+/**
+ * Registra una métrica utilizando una firma simple y consistente.
+ * Nueva firma pública: `registrarMetrica(nombre, valor, metadatos = {})`
+ * - `metadatos.unidad` : unidad legible (opcional)
+ * - `metadatos.estado` : permitir pasar un `estado` explícito (útil en tests)
+ * Compatibilidad: si se llama con la firma antigua (estado, nombre, valor, unidad)
+ * se detecta y se comporta como antes.
+ */
+// Reexport registrarMetrica from the central `monitoreo` module for a single canonical implementation
+export const registrarMetrica = registrarMetricaMonitoreo;
 
 /**
  * Obtiene el estado actual del sistema de monitoreo
@@ -943,7 +1049,10 @@ if (window.performance && window.performance.memory) {
     setInterval(() => {
         const memory = window.performance.memory;
         const usoMemoria = (memory.usedJSHeapSize / memory.totalJSHeapSize) * 100;
-        registrarMetrica('uso_memoria', usoMemoria, '%');
+        // Preferir `window.registrarMetrica` cuando esté disponible (scripts globales)
+        (typeof window !== 'undefined' && typeof window.registrarMetrica === 'function' ? window.registrarMetrica : registrarMetrica)(
+            'uso_memoria', usoMemoria, { unidad: '%' }
+        );
     }, intervaloMemoria);
 }
 
@@ -965,30 +1074,37 @@ if (typeof window !== 'undefined') {
     });
 }
 
-// Inicializar monitoreo de eventos de navegaci�n
-if (window.performance) {
-    // Registrar m�tricas de carga de p�gina
-    window.addEventListener('load', () => {
-        const memory = window.performance.memory;
-        const usoMemoria = (memory.usedJSHeapSize / memory.totalJSHeapSize) * 100;
-        registrarMetrica('uso_memoria', usoMemoria, '%');
-        
-        const timing = window.performance.timing;
-        const tiempoCarga = timing.loadEventEnd - timing.navigationStart;
-        registrarMetrica('tiempo_carga_pagina', tiempoCarga);
-        
-        // Registrar evento de carga completa
-        registrarEvento('pagina_cargada', {
-            tiempoCarga,
-            url: window.location.href,
-            userAgent: navigator.userAgent
-        });
-    });
+// Inicializar monitoreo de eventos de navegación usando solo la API moderna
+function obtenerTiempoCargaPagina() {
+    if (performance.getEntriesByType) {
+        const [nav] = performance.getEntriesByType('navigation');
+        if (nav && typeof nav.loadEventEnd === 'number') {
+            return nav.loadEventEnd - nav.startTime;
+        }
+    }
+    return null;
 }
 
+window.addEventListener('load', () => {
+    if (window.performance && window.performance.memory) {
+        const memory = window.performance.memory;
+        const usoMemoria = (memory.usedJSHeapSize / memory.totalJSHeapSize) * 100;
+        (typeof window !== 'undefined' && typeof window.registrarMetrica === 'function' ? window.registrarMetrica : registrarMetrica)('uso_memoria', usoMemoria, { unidad: '%' });
+    }
+    const tiempoCarga = obtenerTiempoCargaPagina();
+    if (typeof tiempoCarga === 'number' && !isNaN(tiempoCarga)) {
+        (typeof window !== 'undefined' && typeof window.registrarMetrica === 'function' ? window.registrarMetrica : registrarMetrica)('tiempo_carga_pagina', tiempoCarga);
+    }
+    registrarEvento('pagina_cargada', {
+        tiempoCarga,
+        url: window.location.href,
+        userAgent: navigator.userAgent
+    });
+});
+
 /**
- * Env�a una confirmaci�n a un hijo espec�fico.
- * @param {string} hijoId - ID del hijo al que se enviar� la confirmaci�n.
+ * Envía una confirmación a un hijo específico.
+ * @param {string} hijoId - ID del hijo al que se enviará la confirmación.
  * @returns {Promise<void>}
  */
 export async function enviarConfirmacionAHijo(hijoId, mensajeId) {
@@ -1008,7 +1124,7 @@ export async function enviarConfirmacionAHijo(hijoId, mensajeId) {
 }
 
 /**
- * Env�a el estado global a todos los hijos inicializados y verifica confirmaciones.
+ * Envía el estado global a todos los hijos inicializados y verifica confirmaciones.
  * @param {Object} estado - Estado global de la aplicación
  */
 export async function enviarEstadoGlobal(estado) {
@@ -1056,22 +1172,22 @@ export async function enviarEstadoGlobal(estado) {
 }
 
 // Controladores AUDIO implementados en Av1_audio_esp.html (hijo3)
-// Controladores NAVEGACI�N en funciones-mapa.js
+// Controladores NAVEGACIóN en funciones-mapa.js
 
 /**
- * Maneja la confirmaci�n de inicializaci�n de componentes.
- * Este controlador procesa las notificaciones de finalizaci�n de inicializaci�n
+ * Maneja la confirmación de inicialización de componentes.
+ * Este controlador procesa las notificaciones de finalización de inicialización
  * de componentes, actualizando su estado y coordinando las acciones posteriores.
  * 
- * @param {Object} mensaje - Mensaje de confirmaci�n
- * @param {string} mensaje.origen - ID del componente que env�a la confirmaci�n
- * @param {Object} mensaje.datos - Datos de confirmaci�n
+ * @param {Object} mensaje - Mensaje de confirmación
+ * @param {string} mensaje.origen - ID del componente que envía la confirmación
+ * @param {Object} mensaje.datos - Datos de confirmación
  * @param {string} mensaje.datos.componenteId - ID del componente inicializado
- * @param {string} mensaje.datos.estado - Estado de la inicializaci�n ('inicializado', 'error', etc.)
- * @param {number} [mensaje.datos.timestamp] - Marca de tiempo de la inicializaci�n
+ * @param {string} mensaje.datos.estado - Estado de la inicialización ('inicializado', 'error', etc.)
+ * @param {number} [mensaje.datos.timestamp] - Marca de tiempo de la inicialización
  * @param {string} [mensaje.datos.mensajeId] - ID del mensaje original (opcional)
- * @param {Object} [mensaje.datos.metricas] - M�tricas de rendimiento de la inicializaci�n
- * @param {Object} [mensaje.datos.detalles] - Detalles adicionales de la inicializaci�n
+ * @param {Object} [mensaje.datos.metricas] - Métricas de rendimiento de la inicialización
+ * @param {Object} [mensaje.datos.detalles] - Detalles adicionales de la inicialización
  */
 // CONTROLADOR SISTEMA.INICIALIZACION_COMPLETADA movido a monitoreo.js (FASE 10)
 
@@ -1117,11 +1233,11 @@ window.addEventListener('online', () => manejarReconexion(window.estadoPadre));
 
 // ADVERTENCIA IMPORTANTE:
 // No usar window.addEventListener('unload', ...) ni window.addEventListener('beforeunload', ...)
-// en ning�n archivo propio ni de terceros. Estos eventos est�n obsoletos y bloqueados por pol�ticas modernas de navegador.
+// en ningún archivo propio ni de terceros. Estos eventos están obsoletos y bloqueados por políticas modernas de navegador.
 // Usar siempre 'pagehide' para limpieza de recursos y memoria.
-// Revisar cualquier librer�a externa antes de integrarla para evitar estos listeners.
+// Revisar cualquier librería externa antes de integrarla para evitar estos listeners.
 
-// Limpieza agresiva de globales al descargar la p�gina
+// Limpieza agresiva de globales al descargar la página
 if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', () => {
         try {
@@ -1168,7 +1284,7 @@ if (typeof window !== 'undefined') {
             logger.info('Limpieza agresiva de globales de la aplicaci�n completada');
         } catch (error) {
             // Logging m�nimo durante pagehide para evitar errores
-            console.warn('Error en limpieza agresiva de la aplicaci�n:', error.message);
+            logger.warn('Error en limpieza agresiva de la aplicación:', error.message);
         }
     });
 }
@@ -1477,7 +1593,7 @@ setInterval(limpiarCacheCoordinacion, intervaloCache);
  * });
  * // ? CORRECTO: respuesta.paradas
  * if (respuesta && respuesta.paradas) {
- *     console.log(respuesta.paradas);
+ *     logger.debug(respuesta.paradas);
  * }
  * // ? INCORRECTO: respuesta.datos.paradas (NO existe)
  */
