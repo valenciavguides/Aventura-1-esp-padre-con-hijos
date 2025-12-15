@@ -175,7 +175,7 @@ export function registrarValidacionesFormulario(formulario, validaciones) {
     validaciones.forEach(({ campoId, regex, mensajeError }) => {
         const campo = formulario.querySelector(`#${campoId}`);
         if (campo) {
-            campo.addEventListener('input', () => validarCampoTexto(campo, regex, mensajeError));
+            campo.addEventListener('input', () => validarCampoTexto(campo, { patron: regex, mensajeError }));
         } else {
             logger.warn(`Campo con ID "${campoId}" no encontrado en el formulario.`);
         }
@@ -259,3 +259,4 @@ export function normalizarCoordenadas(input) {
     }
     return null;
 }
+
