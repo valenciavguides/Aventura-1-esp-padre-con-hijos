@@ -222,6 +222,10 @@ let gpsWatchId = null;
 let warmupWatchId = null;
 let warmupReady = false;
 let warmupTimer = null;
+// Indica si el warmup ha sido inicializado al menos una vez
+let warmupInitialized = false;
+// Indica si el warmup está en estado pausado (inicializado pero no activo)
+let warmupPaused = false;
 
 /**
  * Sincroniza el estado GPS local (estadoMapa) con el estado global del padre
@@ -3690,6 +3694,8 @@ export async function precalentarGPS() {
         logger.info(`${logPrefix} Iniciando warmup con opciones:`, options);
 
         warmupReady = false;
+        warmupInitialized = true;
+        warmupPaused = false;
         warmupWatchId = navigator.geolocation.watchPosition(
             (position) => {
                 // No promocionar a gpsActivo; sólo almacenar la última ubicación
@@ -3729,6 +3735,33 @@ export async function precalentarGPS() {
 }
 
 /**
+ * Pausa (sin destruir) el warmup GPS: detiene el watch pero marca el warmup
+ * como inicializado para permitir un reinicio rápido cuando se reanude.
+ */
+export function pausarPrecalentarGPS() {
+    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
+    try {
+        // Si hay un watch activo, limpiarlo
+        if (warmupWatchId !== null) {
+            try { navigator.geolocation.clearWatch(warmupWatchId); } catch (e) { /* ignore */ }
+            logger.info(`${logPrefix} Warmup pausado (clearWatch ${warmupWatchId})`);
+            warmupWatchId = null;
+        } else {
+            logger.debug(`${logPrefix} No había warmup activo, marcando como pausado`);
+        }
+
+        // Limpiar timer pero no marcar como no inicializado
+        if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
+        warmupReady = false;
+        warmupPaused = true;
+        warmupInitialized = true;
+        sincronizarEstadoGPSConPadre();
+    } catch (e) {
+        logger.warn(`${logPrefix} Error pausando warmup:`, e);
+    }
+}
+
+/**
  * Detiene cualquier warmup GPS activo
  */
 export function detenerPrecalentarGPS() {
@@ -3742,6 +3775,8 @@ export function detenerPrecalentarGPS() {
         }
         if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
         warmupReady = false;
+        warmupInitialized = false;
+        warmupPaused = false;
         sincronizarEstadoGPSConPadre();
     } catch (e) {
         logger.warn(`${logPrefix} Error deteniendo warmup:`, e);
@@ -3982,6 +4017,7 @@ window.funcionesMapa = {
     ,
     // Warmup helpers
     precalentarGPS,
+    pausarPrecalentarGPS,
     detenerPrecalentarGPS
 };
 
