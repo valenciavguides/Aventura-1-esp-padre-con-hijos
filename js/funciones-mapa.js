@@ -218,14 +218,7 @@ const estadoMapa = {
 // Variable de control para navigator.geolocation.watchPosition
 // (necesaria para clearWatch pero el estado real está en estadoMapa)
 let gpsWatchId = null;
-// Warmup (precalentamiento) variables: low-power watch to prime geolocation
-let warmupWatchId = null;
-let warmupReady = false;
-let warmupTimer = null;
-// Indica si el warmup ha sido inicializado al menos una vez
-let warmupInitialized = false;
-// Indica si el warmup está en estado pausado (inicializado pero no activo)
-let warmupPaused = false;
+// NOTE: GPS warmup implementation removed — main GPS will be started on demand
 
 /**
  * Sincroniza el estado GPS local (estadoMapa) con el estado global del padre
@@ -3536,30 +3529,7 @@ try {
         window.addEventListener('DOMContentLoaded', () => {
             registrarManejadoresMensajes();
 
-            // If running in parent and prewarm enabled, start light GPS warmup
-            try {
-                if (window.parent === window) {
-                    const prewarmCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
-                    if (prewarmCfg && prewarmCfg.ENABLE) {
-                        // Defer a little so the app can complete startup first
-                        setTimeout(() => {
-                            try {
-                                if (typeof precalentarGPS === 'function') {
-                                    precalentarGPS().catch && precalentarGPS().catch(() => {});
-                                }
-                                if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
-                                    window.mensajeria.preiniciarHeartbeat().catch && window.mensajeria.preiniciarHeartbeat().catch(() => {});
-                                }
-                            } catch (err) {
-                                // Non-fatal: log and continue
-                                logger.debug('[FUNCIONES-MAPA] Error lanzando prewarm en startup:', err && err.message ? err.message : err);
-                            }
-                        }, 2000);
-                    }
-                }
-            } catch (e) {
-                logger.debug('[FUNCIONES-MAPA] Prewarm startup check failed:', e && e.message ? e.message : e);
-            }
+            // Note: GPS warmup removed; heartbeat pre-init remains handled elsewhere
         });
     }
 } catch (error) {
@@ -3638,14 +3608,8 @@ async function iniciarGPSAventura() {
     try {
         logger.info(`${logPrefix} Activando GPS centralizado del padre para modo aventura`);
 
-        // Si existe un warmup watch, adoptarlo para evitar crear otro watcher
-        if (warmupWatchId !== null) {
-            logger.info(`${logPrefix} Reutilizando warmup watchId=${warmupWatchId} para activación rápida`);
-            gpsWatchId = warmupWatchId;
-            warmupWatchId = null;
-            warmupReady = false;
-            if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
-        }
+        // Always start GPS via the parent's central activation flow; do not reuse any
+        // low-power warmup watches — we removed the warmup implementation.
 
         // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = true;
@@ -3667,121 +3631,18 @@ async function iniciarGPSAventura() {
  * Inicia un watchPosition de bajo coste para 'precalentar' el GPS (no marca gpsActivo)
  * @returns {Promise<{started:boolean, watchId:number|null}>}
  */
-export async function precalentarGPS() {
-    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
-
-    try {
-        if (!navigator.geolocation) {
-            logger.warn(`${logPrefix} Geolocation no disponible; no se puede precalentar`);
-            return { started: false, watchId: null };
-        }
-
-        // Si ya hay un warmup activo, devolverlo
-        if (warmupWatchId !== null) {
-            logger.debug(`${logPrefix} Warmup ya activo (watchId=${warmupWatchId})`);
-            return { started: true, watchId: warmupWatchId };
-        }
-
-        // Obedecer configuración
-        const prewarmCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
-        if (!prewarmCfg || !prewarmCfg.ENABLE) {
-            logger.debug(`${logPrefix} Prewarm deshabilitado por configuración`);
-            return { started: false, watchId: null };
-        }
-
-        const options = (prewarmCfg.WATCH_OPTIONS) ? prewarmCfg.WATCH_OPTIONS : { enableHighAccuracy: false, maximumAge: 300000, timeout: 20000 };
-
-        logger.info(`${logPrefix} Iniciando warmup con opciones:`, options);
-
-        warmupReady = false;
-        warmupInitialized = true;
-        warmupPaused = false;
-        warmupWatchId = navigator.geolocation.watchPosition(
-            (position) => {
-                // No promocionar a gpsActivo; sólo almacenar la última ubicación
-                estadoMapa.ultimaUbicacion = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
-                warmupReady = true;
-                sincronizarEstadoGPSConPadre();
-                logger.debug(`${logPrefix} Warmup recibió posición (±${Math.round(position.coords.accuracy)}m)`);
-            },
-            (err) => {
-                logger.debug(`${logPrefix} Error warmup geolocation:`, err && err.message ? err.message : err);
-            },
-            options
-        );
-
-        // Auto-stop warmup after configured timeout to avoid battery drain
-        const timeoutMs = (prewarmCfg.TIMEOUT_MS) ? prewarmCfg.TIMEOUT_MS : 15000;
-        if (warmupTimer) clearTimeout(warmupTimer);
-        warmupTimer = setTimeout(() => {
-            try {
-                if (warmupWatchId !== null) {
-                    navigator.geolocation.clearWatch(warmupWatchId);
-                    logger.info(`${logPrefix} Warmup timeout, clearWatch(${warmupWatchId})`);
-                    warmupWatchId = null;
-                    warmupReady = false;
-                }
-            } catch (e) {
-                logger.warn(`${logPrefix} Error limpiando warmup:`, e);
-            }
-            warmupTimer = null;
-        }, timeoutMs);
-
-        return { started: true, watchId: warmupWatchId };
-    } catch (e) {
-        logger.error(`${logPrefix} Excepción iniciando warmup:`, e);
-        return { started: false, watchId: null };
-    }
-}
+// GPS warmup removed: implementation intentionally omitted
 
 /**
  * Pausa (sin destruir) el warmup GPS: detiene el watch pero marca el warmup
  * como inicializado para permitir un reinicio rápido cuando se reanude.
  */
-export function pausarPrecalentarGPS() {
-    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
-    try {
-        // Si hay un watch activo, limpiarlo
-        if (warmupWatchId !== null) {
-            try { navigator.geolocation.clearWatch(warmupWatchId); } catch (e) { /* ignore */ }
-            logger.info(`${logPrefix} Warmup pausado (clearWatch ${warmupWatchId})`);
-            warmupWatchId = null;
-        } else {
-            logger.debug(`${logPrefix} No había warmup activo, marcando como pausado`);
-        }
-
-        // Limpiar timer pero no marcar como no inicializado
-        if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
-        warmupReady = false;
-        warmupPaused = true;
-        warmupInitialized = true;
-        sincronizarEstadoGPSConPadre();
-    } catch (e) {
-        logger.warn(`${logPrefix} Error pausando warmup:`, e);
-    }
-}
+// pausarPrecalentarGPS removed
 
 /**
  * Detiene cualquier warmup GPS activo
  */
-export function detenerPrecalentarGPS() {
-    const logPrefix = '[funciones-mapa][GPS-WARMUP]';
-
-    try {
-        if (warmupWatchId !== null) {
-            navigator.geolocation.clearWatch(warmupWatchId);
-            logger.info(`${logPrefix} warmup detenido (watchId=${warmupWatchId})`);
-            warmupWatchId = null;
-        }
-        if (warmupTimer) { clearTimeout(warmupTimer); warmupTimer = null; }
-        warmupReady = false;
-        warmupInitialized = false;
-        warmupPaused = false;
-        sincronizarEstadoGPSConPadre();
-    } catch (e) {
-        logger.warn(`${logPrefix} Error deteniendo warmup:`, e);
-    }
-}
+// detenerPrecalentarGPS removed
 
 /**
  * Detiene GPS
@@ -4015,10 +3876,7 @@ window.funcionesMapa = {
     // Exponer la API pública centralizada para cambiar la vista
     setMapView
     ,
-    // Warmup helpers
-    precalentarGPS,
-    pausarPrecalentarGPS,
-    detenerPrecalentarGPS
+    // Note: GPS warmup helpers removed
 };
 
 logger.info('[FUNCIONES-MAPA] ✅ Funciones GPS expuestas globalmente');
