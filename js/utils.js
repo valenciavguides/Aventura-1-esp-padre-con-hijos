@@ -56,6 +56,37 @@ export function esDestinoValido(destino) {
     }
 }
 
+/**
+ * Canonicaliza un valor de modo a la forma admitida por la aplicación.
+ * Acepta claves en mayúsculas ('CASA','AVENTURA') o valores ('casa','aventura'),
+ * normaliza y devuelve el valor en minúsculas ('casa'|'aventura') o `null` si no es válido.
+ * @param {string} modo - Valor de modo (ej. 'CASA', 'casa', 'AVENTURA')
+ * @returns {string|null} Modo canónico o null si inválido
+ */
+export function canonicalizarModo(modo) {
+    if (!modo && modo !== 0) return null;
+    try {
+        const s = String(modo).trim();
+        if (!s) return null;
+        const lower = s.toLowerCase();
+
+        // Aceptar tanto las claves en MODOS (CASA/AVENTURA) como sus valores
+        const modosValues = Object.values(MODOS).map(v => String(v).toLowerCase());
+        if (modosValues.includes(lower)) return lower;
+
+        const modosKeys = Object.keys(MODOS).map(k => String(k).toLowerCase());
+        if (modosKeys.includes(lower)) {
+            // devolver el valor asociado a la clave
+            const key = Object.keys(MODOS).find(k => k.toLowerCase() === lower);
+            return MODOS[key] || null;
+        }
+
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 // Proveer un fallback seguro para `registrarControlador` durante la
 // evaluación del módulo. Algunos módulos registran controladores en
 // top-level antes de que `mensajeria.js` esté totalmente inicializado
@@ -77,7 +108,7 @@ if (typeof registrarControlador === 'undefined') {
             globalThis.__vv_manejadores.set(tipo, callback);
         } catch (err) {
             // No bloqueamos la evaluación si algo falla aquí
-            console.warn('[UTILS] Fallback registrarControlador failed:', err);
+            logger.warn('[UTILS] Fallback registrarControlador failed:', err);
         }
     };
     /* eslint-enable no-var */
@@ -1144,7 +1175,7 @@ if (typeof window !== 'undefined') {
             logger.info('Limpieza agresiva de globales de utilidades completada');
         } catch (error) {
             // Logging mínimo durante pagehide para evitar errores
-            console.warn('Error en limpieza agresiva de utilidades:', error.message);
+            logger.warn('Error en limpieza agresiva de utilidades:', error.message);
         }
     });
 }
@@ -1257,8 +1288,8 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
     // Usar tipo primero, luego accion para compatibilidad
     const tipoAccion = tipo || accion;
     
-    console.log('🔥 [UTILS][UI.ACCION_USUARIO] MENSAJE RECIBIDO:', mensaje);
-    console.log('🔥 [UTILS][UI.ACCION_USUARIO] TIPO/ACCION:', tipoAccion);
+    logger.info('🔥 [UTILS][UI.ACCION_USUARIO] MENSAJE RECIBIDO:', mensaje);
+    logger.info('🔥 [UTILS][UI.ACCION_USUARIO] TIPO/ACCION:', tipoAccion);
     
     try {
         switch (tipoAccion) {
@@ -1272,24 +1303,24 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                 await manejarInteraccionNotificacion(mensaje.datos);
                 break;
             case 'mostrar-imagen':
-                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-imagen');
+                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-imagen');
                 await manejarMostrarImagen(mensaje.datos);
                 break;
             case 'mostrar-mapa-completo':
-                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-completo');
+                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-completo');
                 try {
                     const url = 'Av1_mapa_completo.html';
                     if (typeof window.mostrarIframeOverlay === 'function') {
                         window.mostrarIframeOverlay(url, 'Mapa completo');
                     } else {
-                        console.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] window.mostrarIframeOverlay no está disponible');
+                        logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] window.mostrarIframeOverlay no está disponible');
                     }
                 } catch (err) {
-                    console.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error:', err);
+                    logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error:', err);
                 }
                 break;
             case 'mostrar-mapa-jpg':
-                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-jpg');
+                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-jpg');
                 try {
                     // Accept a dynamic URL from the child. If none provided, fallback to a default JPG.
                     const url = (mensaje.datos && mensaje.datos.url) || 'mapas/Av1_mapa.jpg';
@@ -1300,7 +1331,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                         if (typeof window.mostrarIframeOverlay === 'function') {
                             window.mostrarIframeOverlay(url, titulo);
                         } else {
-                            console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarIframeOverlay no está disponible');
+                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarIframeOverlay no está disponible');
                         }
                     } else {
                         if (typeof window.mostrarImagenOverlay === 'function') {
@@ -1311,19 +1342,19 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                                 if (cont) { cont.style.width = '85vw'; cont.style.height = '85vh'; }
                             }
                         } else {
-                            console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
+                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
                         }
                     }
                 } catch (err) {
-                    console.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error:', err);
+                    logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error:', err);
                 }
                 break;
             case 'reproducir-video':
-                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO reproducir-video');
+                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO reproducir-video');
                 await manejarReproducirVideo(mensaje.datos);
                 break;
             case 'backdrop_click':
-                console.log('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO backdrop_click');
+                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO backdrop_click');
                 if (typeof window.ocultarHijo4 === 'function') {
                     window.ocultarHijo4();
                 }
@@ -1342,7 +1373,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
 async function manejarMostrarImagen(datos) {
     const { paradaActual, urlImagen, nombre, sinContenido, mensajeError } = datos || {};
     
-    console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Datos recibidos:', {
+    logger.debug('🔥 [UTILS][MOSTRAR_IMAGEN] Datos recibidos:', {
         paradaActual,
         urlImagen,
         nombre,
@@ -1353,17 +1384,17 @@ async function manejarMostrarImagen(datos) {
     try {
         if (typeof window.mostrarImagenOverlay === 'function') {
             if (sinContenido) {
-                console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con mensaje de error');
+                logger.warn('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con mensaje de error');
                 window.mostrarImagenOverlay(null, nombre || `Imagen ${paradaActual}`, mensajeError);
             } else {
-                console.log('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con imagen:', urlImagen);
+                logger.info('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con imagen:', urlImagen);
                 window.mostrarImagenOverlay(urlImagen, nombre || `Imagen ${paradaActual}`);
             }
         } else {
-            console.error('🔥 [UTILS][MOSTRAR_IMAGEN] window.mostrarImagenOverlay no está disponible');
+            logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] window.mostrarImagenOverlay no está disponible');
         }
     } catch (error) {
-        console.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error:', error);
+        logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error:', error);
     }
 }
 
@@ -1373,7 +1404,7 @@ async function manejarMostrarImagen(datos) {
 async function manejarReproducirVideo(datos) {
     const { paradaActual, urlVideo, nombre, sinContenido, mensajeError } = datos || {};
     
-    console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Datos recibidos:', {
+    logger.debug('🔥 [UTILS][REPRODUCIR_VIDEO] Datos recibidos:', {
         paradaActual,
         urlVideo,
         nombre,
@@ -1384,17 +1415,17 @@ async function manejarReproducirVideo(datos) {
     try {
         if (typeof window.mostrarVideoOverlay === 'function') {
             if (sinContenido) {
-                console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con mensaje de error');
+                logger.warn('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con mensaje de error');
                 window.mostrarVideoOverlay(null, nombre || `Video ${paradaActual}`, mensajeError);
             } else {
-                console.log('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con video:', urlVideo);
+                logger.info('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con video:', urlVideo);
                 window.mostrarVideoOverlay(urlVideo, nombre || `Video ${paradaActual}`);
             }
         } else {
-            console.error('🔥 [UTILS][REPRODUCIR_VIDEO] window.mostrarVideoOverlay no está disponible');
+            logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] window.mostrarVideoOverlay no está disponible');
         }
     } catch (error) {
-        console.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error:', error);
+        logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error:', error);
     }
 }
 
