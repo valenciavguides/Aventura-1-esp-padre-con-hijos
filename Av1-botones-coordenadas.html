@@ -963,6 +963,32 @@
 // ==================== INICIALIZACIÓN DE MENSAJERÍA ====================
 
 import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+
+// Wrapper seguro para evitar doble registro de controladores en hijos
+if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
+    window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+    window.registrarControladorSeguro = function(tipo, handler, opciones) {
+        try {
+            if (!tipo || typeof handler !== 'function') {
+                (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                return;
+            }
+            if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                return;
+            }
+            window.__CONTROLADOR_REGISTRADOS.add(tipo);
+            if (typeof registrarControlador === 'function') {
+                return registrarControlador(tipo, handler, opciones);
+            }
+            globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+            globalThis.__vv_manejadores.set(tipo, handler);
+            return;
+        } catch (e) {
+            (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
+        }
+    };
+} 
 import { resolverIdsParada, getPadreId } from './js/utils.js';
 import { TIPOS_MENSAJE } from './js/constants.js';
 import logger from './js/logger.js';
@@ -1541,7 +1567,7 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
 
 // Controlador para cambio de modo
 // Controlador para cambio de modo
-registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
     const logPrefix = `[hijo2][CAMBIO_MODO]`;
     const CONFIG_HIJO = { IFRAME_ID: 'hijo2' };
 
@@ -1609,7 +1635,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
 });
 
 // Controlador para actualización de distancia GPS
-registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => {
+registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => {
     const { distancia, idParada, tipoParada } = mensaje.datos;
     estadoComponente.distanciaAlDestino = distancia;
     estadoComponente.idParadaActual = idParada;
@@ -1619,7 +1645,7 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => 
 });
 
 // 📡 Controlador para actualización de estado GPS (enviado por funciones-mapa.js)
-registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO, (mensaje) => {
+registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO, (mensaje) => {
     const logPrefix = '[hijo2][ACTUALIZAR_ESTADO]';
     
     try {
@@ -1661,7 +1687,7 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO, (mensaje) => {
  * Controlador: CONTROL.HABILITAR
  * Descripción: Habilita botones cuando el padre lo solicita (ej: después de cerrar un reto)
  */
-registrarControlador(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
     const logPrefix = '[hijo2][CONTROL.HABILITAR]';
     
     try {
@@ -1686,7 +1712,7 @@ registrarControlador(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
  * Controlador: CONTROL.DESHABILITAR
  * Descripción: Deshabilita botones cuando el padre lo solicita (ej: al abrir un reto)
  */
-registrarControlador(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
     const logPrefix = '[hijo2][CONTROL.DESHABILITAR]';
     
     try {
@@ -1720,7 +1746,7 @@ try {
     // ============================================================
     // CONTROLADOR 1: SISTEMA.PADRE_LISTO
     // ============================================================
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
         const logPrefix = `[hijo2][PADRE_LISTO]`;
 
         try {
@@ -1761,7 +1787,7 @@ try {
      * Origen esperado: padre
      * Respuesta: Ninguna (preparado para futuras solicitudes de datos)
      */
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
         const logPrefix = `[hijo2][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
 
         try {
@@ -1840,7 +1866,7 @@ try {
      *     datos: { paradaId: 'TR-2' }
      * });
      */
-    registrarControlador(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST, async (mensaje) => {
         const logPrefix = `[hijo2][COORDENADAS_PARADAS_REQUEST][${mensaje?.origen || 'desconocido'}]`;
 
         try {
@@ -2026,7 +2052,7 @@ try {
      *     }
      * });
      */
-    registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
         const logPrefix = `[hijo2][SOLICITAR_PARADAS][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2303,7 +2329,7 @@ try {
      * Nota: Este controlador mantiene sincronizado el estado de hijo2 con la parada
      * actual del sistema, permitiendo que los botones envíen contexto correcto
      */
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
         const logPrefix = `[hijo2][CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2390,7 +2416,7 @@ try {
      * 
      * Nota: Incluye información del estado interno para diagnóstico
      */
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
         const logPrefix = `[hijo2][HEARTBEAT][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2415,7 +2441,7 @@ try {
     });
 
     // Controlador: SISTEMA.HEARTBEAT.START (activar comportamiento local de heartbeat)
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
         const logPrefix = `[hijo2][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
         try {
             estadoComponente.heartbeatActivo = true;
@@ -2428,7 +2454,7 @@ try {
     });
 
     // Controlador: SISTEMA.HEARTBEAT.PAUSE (desactivar comportamiento local de heartbeat)
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
         const logPrefix = `[hijo2][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
         try {
             estadoComponente.heartbeatActivo = false;
@@ -2441,7 +2467,7 @@ try {
     });
 
     // Controlador para respuesta de datos de paradas del padre
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS, async (mensaje) => {
         const logPrefix = `[hijo2][NAVEGACION.RESPUESTA_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2506,7 +2532,7 @@ try {
     });
 
     // Controlador para solicitud de coordenadas del padre
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_COORDENADAS, async (mensaje) => {
         const logPrefix = `[hijo2][NAVEGACION.SOLICITAR_COORDENADAS][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2580,7 +2606,7 @@ try {
     });
 
     // Controlador para ACK del sistema
-    registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
         const logPrefix = `[hijo2][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
         
         try {
@@ -2608,7 +2634,7 @@ try {
     // ============================================================
     // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
     // ============================================================
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
         try {
             console.debug(`[hijo2][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
             return { exito: true };
@@ -2618,7 +2644,7 @@ try {
         }
     });
 
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
         try {
             console.debug(`[hijo2][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
             return { exito: true };
@@ -2628,7 +2654,7 @@ try {
         }
     });
 
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
         try {
             console.debug(`[hijo2][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
             return { exito: true };
@@ -2638,7 +2664,7 @@ try {
         }
     });
 
-    registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
         try {
             console.debug(`[hijo2][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
             return { exito: true };
