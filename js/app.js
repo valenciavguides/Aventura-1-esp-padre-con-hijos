@@ -551,18 +551,12 @@ export async function manejarCambioModo(estado, mensaje) {
                         if (estado.sistema?.prewarmIniciado && estado.sistema?.prewarmPausado) {
                             logger.debug('[APP][CAMBIO_MODO] Pre-warm detectado (iniciado en CASA), se reanudará en lugar de reiniciarse');
                         } else {
-                            if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
-                                const gpsCfg = (window.Config && window.Config.GPS && window.Config.GPS.PREWARM) ? window.Config.GPS.PREWARM : null;
-                                if (gpsCfg && gpsCfg.ENABLE) {
-                                    promises.push(window.funcionesMapa.precalentarGPS());
-                                    logger.debug('[APP][CAMBIO_MODO] Precaliendo GPS en background (no estaba pre-iniciado)');
-                                }
-                            }
-
+                            // Only pre-init heartbeat; GPS warmup removed
                             if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
                                 promises.push(window.mensajeria.preiniciarHeartbeat());
                                 logger.debug('[APP][CAMBIO_MODO] Pre-iniciando heartbeat en background (no estaba pre-iniciado)');
                             }
+                            logger.debug('[APP][CAMBIO_MODO] GPS warmup disabled; skipping GPS prewarm');
                         }
                     } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando prewarm inicial:', e); }
 
@@ -591,20 +585,10 @@ export async function manejarCambioModo(estado, mensaje) {
                                     logger.debug('[APP][CAMBIO_MODO] Heartbeat reanudado desde pre-warm en CASA');
                                 }
 
-                                // Asegurar que el warmup GPS esté activo antes de iniciar la AVENTURA.
-                                // Nota: `pausarPrecalentarGPS()` deja `warmupInitialized=true` pero puede
-                                // haber limpiado el watch; re-ejecutar `precalentarGPS()` es idempotente
-                                // y restablecerá un watch rápido si la configuración lo permite.
-                                try {
-                                    if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
-                                        await window.funcionesMapa.precalentarGPS();
-                                        logger.debug('[APP][CAMBIO_MODO] Precalentar GPS re-ejecutado antes de iniciar aventura');
-                                    }
-                                } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error re-ejecutando precalentarGPS:', e); }
-
+                                // Start GPS adventure flow directly (warmup removed)
                                 if (window.funcionesMapa && typeof window.funcionesMapa.iniciarGPSAventura === 'function') {
                                     await window.funcionesMapa.iniciarGPSAventura();
-                                    logger.debug('[APP][CAMBIO_MODO] Iniciado GPS aventura desde pre-warm en CASA');
+                                    logger.debug('[APP][CAMBIO_MODO] Iniciado GPS aventura (sin warmup)');
                                 }
 
                                 estado.sistema.prewarmPausado = false;
@@ -627,24 +611,7 @@ export async function manejarCambioModo(estado, mensaje) {
 
                 // Si volvemos a CASA, pausar heartbeat y detener warmup GPS para ahorrar recursos
                 } else if (esCasa) {
-                    try {
-                        if (window.funcionesMapa) {
-                            if (typeof window.funcionesMapa.pausarPrecalentarGPS === 'function') {
-                                window.funcionesMapa.pausarPrecalentarGPS();
-                                logger.debug('[APP][CAMBIO_MODO] Warmup GPS pausado al cambiar a CASA');
-                                estado.sistema.prewarmIniciado = true;
-                                estado.sistema.prewarmPausado = true;
-                            } else if (typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
-                                // Fallback: detener si no existe pausar
-                                window.funcionesMapa.detenerPrecalentarGPS();
-                                logger.debug('[APP][CAMBIO_MODO] Warmup GPS detenido al cambiar a CASA (fallback)');
-                                estado.sistema.prewarmIniciado = false;
-                                estado.sistema.prewarmPausado = false;
-                            } else {
-                                logger.debug('[APP][CAMBIO_MODO] Ninguna función de warmup disponible para pausar/detener');
-                            }
-                        }
-                    } catch (e) { logger.debug('[APP][CAMBIO_MODO] Error deteniendo/pausando warmup al cambiar a CASA:', e); }
+                    // GPS warmup was removed, nothing to pause/stop here
 
                     try {
                         if (window.mensajeria && typeof window.mensajeria.pausarHeartbeat === 'function') {
@@ -782,22 +749,7 @@ export async function iniciarPrewarmEnCasa(estado = window.estadoPadre) {
             return { iniciado: true, motivo: 'ya_iniciado' };
         }
 
-        // Pre-iniciar GPS warmup
-        try {
-            if (window.funcionesMapa && typeof window.funcionesMapa.precalentarGPS === 'function') {
-                await window.funcionesMapa.precalentarGPS();
-                // Pausar inmediatamente para mantenerlo pre-iniciado pero no activo
-                if (typeof window.funcionesMapa.pausarPrecalentarGPS === 'function') {
-                    window.funcionesMapa.pausarPrecalentarGPS();
-                } else if (typeof window.funcionesMapa.detenerPrecalentarGPS === 'function') {
-                    // fallback: detener si no existe pausar (menos ideal)
-                    window.funcionesMapa.detenerPrecalentarGPS();
-                }
-                logger.info('[APP][PREWARM] Precalentar GPS ejecutado y puesto en estado pausado');
-            }
-        } catch (e) {
-            logger.warn('[APP][PREWARM] Error durante precalentarGPS en CASA:', e);
-        }
+        // GPS warmup removed: only pre-initialize heartbeat here
 
         // Pre-iniciar heartbeat (preparado pero pausado)
         try {
