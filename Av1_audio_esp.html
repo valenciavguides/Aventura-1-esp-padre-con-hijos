@@ -713,6 +713,32 @@
 
     <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+
+    // Wrapper seguro para evitar doble registro de controladores en hijos
+    if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
+        window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                    return;
+                }
+                if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                    return;
+                }
+                window.__CONTROLADOR_REGISTRADOS.add(tipo);
+                if (typeof registrarControlador === 'function') {
+                    return registrarControlador(tipo, handler, opciones);
+                }
+                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+                globalThis.__vv_manejadores.set(tipo, handler);
+                return;
+            } catch (e) {
+                (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
+            }
+        };
+    }
     import { resolverIdsParada, getPadreId } from './js/utils.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
@@ -1112,7 +1138,7 @@
         });
 
         // CONTROLADOR: SISTEMA.NOTIFICACION - manejar PENDING_CANCELADO
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
             const logPrefix = `[hijo3][NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
             try {
                 const evento = mensaje.datos?.evento;
@@ -1166,7 +1192,7 @@
         // ============================================================
         // CONTROLADOR 1: SISTEMA.PADRE_LISTO
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
             const logPrefix = `[hijo3][PADRE_LISTO]`;
 
             try {
@@ -1216,7 +1242,7 @@
          * Origen esperado: padre
          * Respuesta: Ninguna (preparado para futuras solicitudes de datos)
          */
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
             const logPrefix = `[hijo3][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -1262,7 +1288,7 @@
         });
 
         // Controlador para reproducir audio (REQUEST del padre)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST, async (mensaje) => {
             try {
                 logger.debug(`[hijo3] REPRODUCIR_REQUEST recibido:`, mensaje.datos);
                 const { audioId, autoplay = false } = mensaje.datos || {};
@@ -1300,7 +1326,7 @@
         });
 
         // Controlador para pausar audio (REQUEST del padre)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.PAUSA_REQUEST, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.PAUSA_REQUEST, async (mensaje) => {
             try {
                 logger.debug(`[hijo3] PAUSA_REQUEST recibido:`, mensaje.datos);
                 audioPlayer.pause();
@@ -1331,7 +1357,7 @@
         });
 
         // Controlador para control genérico (REQUEST del padre)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.CONTROL_REQUEST, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.CONTROL_REQUEST, async (mensaje) => {
             try {
                 logger.debug(`[hijo3] CONTROL_REQUEST recibido:`, mensaje.datos);
                 const { accion } = mensaje.datos || {};
@@ -1374,7 +1400,7 @@
          * Controlador: SISTEMA.CAMBIO_MODO
          * Descripción: Actualiza la interfaz según el modo (casa/aventura)
          */
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
             const logPrefix = `[hijo3][CAMBIO_MODO]`;
 
             try {
@@ -1434,7 +1460,7 @@
          * Controlador: CONTROL.HABILITAR
          * Descripción: Habilita controles específicos según el mensaje del padre
          */
-        registrarControlador(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
             try {
                 const { control } = mensaje.datos;
                 logger.info(`[hijo3] CONTROL.HABILITAR recibido para: ${control}`);
@@ -1459,7 +1485,7 @@
          * Controlador: CONTROL.DESHABILITAR
          * Descripción: Deshabilita controles específicos según el mensaje del padre
          */
-        registrarControlador(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
             try {
                 const { control } = mensaje.datos;
                 logger.info(`[hijo3] CONTROL.DESHABILITAR recibido para: ${control}`);
@@ -1480,7 +1506,7 @@
             }
         });
 
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
             enviarMensaje({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
@@ -1491,7 +1517,7 @@
         });
 
         // Controlador: SISTEMA.HEARTBEAT.START
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
             const logPrefix = `[hijo3][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
             try {
                 window.__HEARTBEAT_ACTIVO = true;
@@ -1504,7 +1530,7 @@
         });
 
         // Controlador: SISTEMA.HEARTBEAT.PAUSE
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
             const logPrefix = `[hijo3][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
             try {
                 window.__HEARTBEAT_ACTIVO = false;
@@ -1517,7 +1543,7 @@
         });
 
         // Controlador: NAVEGACION.CAMBIO_PARADA (acepta cambio y confirma)
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
             const logPrefix = `[hijo3][NAVEGACION.CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
             try {
                     const resolved = resolverIdsParada(mensaje.datos || {});
@@ -1554,7 +1580,7 @@
         });
 
         // Controlador para solicitud de audio del padre
-        registrarControlador(TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO, async (mensaje) => {
             const logPrefix = `[hijo3][AUDIO.SOLICITAR_AUDIO][${mensaje?.origen || 'desconocido'}]`;
             
             try {
@@ -1606,7 +1632,7 @@
         });
 
         // Controlador para acciones de UI desde botones horizontales
-        registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
             const logPrefix = `[hijo3][UI.ACCION_USUARIO][${mensaje?.origen || 'desconocido'}]`;
             
             try {
@@ -1659,7 +1685,7 @@
         });
 
         // Controlador para ACK del sistema
-        registrarControlador(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
             const logPrefix = `[hijo3][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
             
             try {
@@ -1687,7 +1713,7 @@
         // ============================================================
         // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
             try {
                 console.debug(`[hijo3][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
                 return { exito: true };
@@ -1697,7 +1723,7 @@
             }
         });
 
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
             try {
                 console.debug(`[hijo3][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
                 return { exito: true };
@@ -1707,7 +1733,7 @@
             }
         });
 
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
             try {
                 console.debug(`[hijo3][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
                 return { exito: true };
@@ -1717,7 +1743,7 @@
             }
         });
 
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
             try {
                 console.debug(`[hijo3][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
                 return { exito: true };
