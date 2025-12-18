@@ -23,14 +23,13 @@ import { registrarControlador, enviarMensaje } from './mensajeria.js';
  */
 export async function registrarControladoresMonitoreo() {
     try {
-        const { registrarControlador } = await import('./mensajeria.js');
-        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
-            globalThis.__vv_manejadores.forEach((cb, tipo) => {
-                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[MONITOREO] error registrando controlador', tipo, e); }
-            });
-            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        try {
+            const migrated = migrarManejadoresTempranos();
+            console.info('[MONITOREO][registrarControladores] Controladores migrados (si existían):', migrated);
+        } catch (e) {
+            console.warn('[MONITOREO][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
         }
-        console.info('[MONITOREO][registrarControladores] Controladores migrados (si existían)');
         // Exponer funciones útiles en window para compatibilidad con módulos que no importan monitoreo
         try {
             if (typeof window !== 'undefined') {
@@ -40,7 +39,7 @@ export async function registrarControladoresMonitoreo() {
             }
         } catch (e) { /* ignore */ }
     } catch (error) {
-        console.warn('[MONITOREO][registrarControladores] No se pudo migrar controladores:', error.message);
+        console.warn('[MONITOREO][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
     }
 }
 import { TIPOS_MENSAJE } from './constants.js';
