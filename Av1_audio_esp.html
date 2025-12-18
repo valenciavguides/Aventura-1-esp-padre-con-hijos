@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio esp Av1- hijo3</title>
+    <script src="js/suppress-warnings.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         :root {
@@ -81,7 +82,7 @@
             width: var(--btn-size);
             height: var(--btn-size);
             border-radius: 50%;
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.3);
             background: linear-gradient(to right, #28a745, #218838);
             color: white;
             font-size: var(--icon-size);
@@ -90,31 +91,41 @@
             justify-content: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
             padding: 0;
         }
 
         #playPauseBtn .icon-play {
             color: white;
+            font-size: 35px;
             font-weight: bold;
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
         }
 
         #playPauseBtn:active:not(:disabled) { 
-            transform: scale(0.95); 
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (hover: hover) {
+            #playPauseBtn:hover:not(:disabled) {
+                transform: scale(1.05);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            }
         }
 
         #playPauseBtn:disabled { 
             background: linear-gradient(to right, #dc3545, #c82333);
             opacity: 0.6;
-            cursor: not-allowed; 
+            cursor: not-allowed;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
         }
 
         #retosBtn {
             width: var(--btn-size);
             height: var(--btn-size);
             border-radius: 50%;
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.3);
             background: linear-gradient(to right, #28a745, #218838);
             color: white;
             font-size: var(--icon-size);
@@ -123,7 +134,7 @@
             justify-content: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
             padding: 0;
         }
 
@@ -137,16 +148,25 @@
             background: linear-gradient(to right, #dc3545, #c82333);
             cursor: not-allowed; 
             opacity: 0.6;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
         }
 
         #retosBtn:active:not(:disabled) { 
-            transform: scale(0.95); 
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (hover: hover) {
+            #retosBtn:hover:not(:disabled) {
+                transform: scale(1.05);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            }
         }
 
         /* Imagen dentro del botón retos */
         #retosBtn img {
-            width: 44px;
-            height: 44px;
+            width: 55px;
+            height: 55px;
             object-fit: contain;
             display: block;
             pointer-events: none;
@@ -1170,22 +1190,54 @@
         });
     });
 
+    // Normaliza un valor de modo (acepta string u objeto) y devuelve
+    // una cadena segura para usar en clases CSS y dataset.
+    function normalizarModo(modo) {
+        try {
+            if (typeof modo === 'string') {
+                modo = modo.trim();
+            } else if (modo && typeof modo === 'object') {
+                modo = modo.actual || modo.modo || modo.nombre || Object.values(modo).find(v => typeof v === 'string') || '';
+            } else if (modo === null || typeof modo === 'undefined') {
+                modo = '';
+            } else {
+                modo = String(modo);
+            }
+            modo = String(modo || '').trim().toLowerCase();
+            // Dejar sólo caracteres seguros para clases: a-z0-9_- (reemplazar otros con guión)
+            modo = modo.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+            return modo;
+        } catch (e) {
+            return '';
+        }
+    }
+
     // Función para actualizar la interfaz según el modo
     function actualizarInterfazModo(modo) {
-        console.log(`[AUDIO] Actualizando interfaz para modo: ${modo}`);
+        const modoSeguro = normalizarModo(modo);
+        console.log(`[AUDIO] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
         const body = document.body;
-        
-        // Actualizar clases CSS
+
+        // Actualizar clases CSS (sólo si hay un modo válido)
         body.classList.remove('modo-casa', 'modo-aventura');
-        body.classList.add(`modo-${modo}`);
-        
-        logger.info(`[hijo3] Interfaz actualizada para modo: ${modo}`);
+        if (modoSeguro) body.classList.add(`modo-${modoSeguro}`);
+
+        logger.info(`[hijo3] Interfaz actualizada para modo: ${modoSeguro}`);
     }
 
     // Inicialización y controladores (adaptados a mensajería actual)
     try {
+        // Ocultar la UI hasta que el padre confirme que los controladores están listos
+        let _uiConfirmado = false;
+        const _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+        try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+        function mostrarUI() {
+            if (!_uiConfirmado) { console.warn('[hijo3] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; }
+            try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo3] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {}
+        }
+
         await inicializarMensajeria({
-            iframeId: CONFIG_HIJO.IFRAME_ID,
+            iframeId: window.frameElement.id,
             debug: CONFIG_HIJO.DEBUG
         });
 
@@ -1203,33 +1255,39 @@
 
                 logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
 
-                // ✅ PROCESAR MODO INICIAL DEL PADRE
-                if (mensaje.datos && mensaje.datos.modo) {
-                    const modoInicial = mensaje.datos.modo;
-                    logger.info(`${logPrefix} Procesando modo inicial del padre: ${modoInicial}`);
+                // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                if (mensaje.datos) {
+                    const { modo, paradas, paradaActual } = mensaje.datos;
 
-                    // Aplicar lógica específica del componente
-                    actualizarInterfazModo(modoInicial);
+                    if (modo) {
+                        logger.info(`${logPrefix} Procesando modo inicial del padre: ${modo}`);
+                        actualizarInterfazModo(modo);
+                    }
+
+                    if (paradas) {
+                        logger.debug(`${logPrefix} Paradas recibidas: ${paradas.length}`);
+                        // Procesar paradas si necesario
+                    }
+
+                    if (paradaActual) {
+                        logger.debug(`${logPrefix} Parada actual: ${paradaActual}`);
+                        // Procesar parada actual si necesario
+                    }
                 }
 
-                // Marcar inicializado y Enviar HIJO_LISTO al padre para confirmar que estamos listos
+                // Enviar HIJO_LISTO directamente después de procesar datos
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: 'hijo3',
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['audio', 'retos-button'],
+                        timestamp: Date.now()
+                    }
+                });
                 estado.inicializado = true;
-                try {
-                    await enviarMensaje({
-                        destino: getPadreId(),
-                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                        origen: 'hijo3',
-                        datos: {
-                            version: '1.0.0',
-                            capacidades: ['audio', 'retos-button'],
-                            tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
-                            timestamp: Date.now()
-                        }
-                    });
-                    logger.info(`✅ [hijo3] HIJO_LISTO enviado al padre`);
-                } catch (error) {
-                    console.error(`❌ [hijo3] Error enviando HIJO_LISTO:`, error);
-                }
+                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
@@ -1246,6 +1304,7 @@
             const logPrefix = `[hijo3][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
+                console.log('[hijo3] PADRE_CONFIRMA_HIJO_LISTO recibido:', mensaje);
                 if (!mensaje?.origen) {
                     logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
                     return;
@@ -1267,6 +1326,9 @@
                         });
                         if (estado) delete estado.pendingCambioModo;
                     }
+                    // Mostrar UI ahora que el padre confirmó
+                    try { _uiConfirmado = true; mostrarUI(); } catch (e) { /* ignore */ }
+                    try { enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }).catch(() => {}); } catch (e) { /* ignore */ }
                 } catch (err) {
                     logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
                 }
@@ -1569,7 +1631,7 @@
 
         await enviarMensaje({
             destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
             origen: CONFIG_HIJO.IFRAME_ID,
             datos: {
                 componenteId: CONFIG_HIJO.COMPONENTE_ID,
