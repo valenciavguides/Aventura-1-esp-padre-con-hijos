@@ -1,3 +1,22 @@
+        // CONTROLADOR: RETO.COMPLETADO (avanzar navegación al recibir notificación de hijo4)
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.RETO.COMPLETADO, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[RETO.COMPLETADO]`;
+            try {
+                logger.info(`${logPrefix} Reto completado recibido de ${mensaje?.origen}`);
+                // Marcar reto como completado en el estado
+                if (estado.retoActual) {
+                    estado.retoActual.completado = true;
+                }
+                // Progresar al siguiente elemento de la aventura
+                if (typeof progresarSiguienteElemento === 'function') {
+                    await progresarSiguienteElemento();
+                } else {
+                    logger.warn(`${logPrefix} progresarSiguienteElemento no está disponible`);
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando RETO.COMPLETADO:`, error);
+            }
+        });
 <!DOCTYPE html>
 <!-- 
     @ts-nocheck
@@ -19,6 +38,8 @@
     <!-- Carga de Leaflet desde CDN -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-rotate@0.1.4/dist/leaflet-rotate.min.js"></script>
+    <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
 
         <!-- Add warning suppression script early in the head -->
     <script src="js/suppress-warnings.js"></script>
@@ -172,7 +193,8 @@
                             doc.head && doc.head.appendChild(script);
                         } catch (e) { console.warn('[PADRE] Error injecting hijo5 script', e); }
                     } // cierra if (iframe && iframe.contentDocument)
-                } // cierra if (iframeId === 'hijo5-casa')
+                    } // cierra if (iframeId === 'hijo5-casa')
+                    // Script inyectado correctamente; no se envían confirmaciones automáticas desde este hook.
             } catch (e) {
                 (window.logger || console).warn('[PADRE] handleIframeLoad error:', e && e.message);
             }
@@ -198,6 +220,7 @@
         html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background: transparent; }
         iframe { background: transparent; border: none; }
         #mapa { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 500; background-color: #e0f7fa; /* Azul claro para ver si está visible antes de cargar tiles */ }
+        .user-direction-arrow { pointer-events: none; }
         #map-debug { position: fixed; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.9); padding: 5px 8px; border-radius: 5px; z-index: 5000; font-size: 12px; font-family: monospace; display: none; transition: opacity 0.5s; }
         
         /* Logo styling with exact positioning (responsive) */
@@ -231,7 +254,8 @@
         
         /* Shape styles for trapezoid iframes */
         .iframe-trapezoid {
-            clip-path: polygon(0% 0%, 100% 0%, 95% 100%, 5% 100%);
+            clip-path: polygon(0% 0%, 100% 0%, 90% 100%, 10% 100%);
+            overflow: hidden !important;
         }
         
         .iframe-trapezoid-inverse {
@@ -502,7 +526,7 @@
         /* Corregir estilos para asegurar visibilidad de los iframes */
         #hijo3 {
             position: fixed;
-            bottom: -6px; /* Keep existing positioning */
+            bottom: -8px; /* Keep existing positioning */
             left: 50%;
             transform: translateX(-50%);
             height: 165px;
@@ -1465,19 +1489,19 @@
     <iframe id="hijo1-hamburguesa" src=""
         title="Menú Hamburguesa"
         aria-label="Menú de navegación hamburguesa"
-        style="position:fixed; left:1vw; bottom:0vw; height: 265px; width:57px; z-index:1005; pointer-events:auto;"
+        style="position:fixed; left:1vw; bottom:10px; height: 285px; width:60px; z-index:1502; pointer-events:auto; display:none; visibility:hidden;"
         onload="handleIframeLoad('hijo1-hamburguesa')" onerror="handleIframeError('hijo1-hamburguesa', event)"></iframe>
     
     <iframe id="hijo1-opciones" src=""
         title="Opciones de usuario"
         aria-label="Opciones y configuración"
-        style="position:fixed; right:1vw; bottom:0vw; height: 265px; width:57px; z-index:1005; pointer-events:auto;"
+        style="position:fixed; right:1vw; bottom:10px; height: 285px; width:60px; z-index:1502; pointer-events:auto; display:none; visibility:hidden;"
         onload="handleIframeLoad('hijo1-opciones')" onerror="handleIframeError('hijo1-opciones', event)"></iframe>
     
     <iframe id="hijo5-casa" src=""
         title="Botón Casa"
         aria-label="Botón para cambiar entre modo Casa y Aventura"
-        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:block; background: transparent;"
+        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:none; visibility:hidden; background: transparent;"
         onload="handleIframeLoad('hijo5-casa')" onerror="handleIframeError('hijo5-casa', event)"></iframe>
     
         <!-- Optional: sistema-ui for monitoring / important notifications
@@ -1498,14 +1522,16 @@
         title="Audio de la aventura"
         aria-label="Reproductor de audio de la aventura con botón de retos"
         class="iframe-trapezoid-inverse"
+        style="display:none; visibility:hidden;"
         onload="handleIframeLoad('hijo3-audio')" onerror="handleIframeError('hijo3-audio', event)"></iframe>
     
     <!-- Inverse trapezoid-shaped coordinates component -->
     <iframe id="hijo2" src=""
         title="Botones de coordenadas"
         aria-label="Botones de navegación y coordenadas"
-        style="position:fixed; bottom:151px; left:50%; transform:translateX(-50%); height:165px; width:310px; z-index:1001; pointer-events:auto; display:block;"
+        style="position:fixed; bottom:141px; left:50%; transform:translateX(calc(-50% + 5px)); height:150px !important; width:337px !important; z-index:1501; pointer-events:auto; display:block; visibility:visible; overflow:hidden !important;"
         class="iframe-trapezoid"
+        scrolling="no"
         allow="geolocation" onload="handleIframeLoad('hijo2-coordenadas')" onerror="handleIframeError('hijo2-coordenadas', event)"></iframe>
     
     <!-- Retos iframe -->
@@ -1574,6 +1600,9 @@
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '© OpenStreetMap contributors'
                     }).addTo(map);
+
+                    // Add rotation control
+                    L.control.rotate().addTo(map);
 
                     // Initialize map service - wait for funciones-mapa to be available
                     const initializeMapService = () => {
@@ -1810,14 +1839,30 @@
         const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
         // ============================================================
+        // BLOQUEO DE ORIENTACIÓN EN DISPOSITIVOS MÓVILES
+        // ============================================================
+        if (esMovil && screen.orientation && screen.orientation.lock) {
+            // Intentar bloquear a portrait inmediatamente (puede fallar sin interacción)
+            screen.orientation.lock('portrait').catch(function(error) {
+                console.log('Bloqueo de orientación falló inicialmente: ', error);
+                // Si falla, intentar después del primer click del usuario
+                document.addEventListener('click', function() {
+                    screen.orientation.lock('portrait').catch(function(error) {
+                        console.log('Bloqueo de orientación falló después de click: ', error);
+                    });
+                }, { once: true });
+            });
+        }
+
+        // ============================================================
         // ESTADO GLOBAL DE LA APLICACIÓN (compartido con Script 2)
         // ============================================================
         window.estadoPadre = {
+            hijosInicializados: new Set(),
             modo: { actual: MODOS.CASA, anterior: null },
             paradaActual: 0,
             mensajeriaInicializada: false,
             mapaInicializado: false,
-            hijosInicializados: new Set(),
             paradas: [],
             inicializacionPromises: new Map(),
             conectado: true,
@@ -2836,7 +2881,7 @@
                             hideGpsOutOfRangeOverlay();
                         }, (err) => {
                             logger.warn('[PADRE][GPS][OVERLAY] getCurrentPosition desde overlay falló:', err && err.message);
-                        }, { enableHighAccuracy: true, timeout: ajustarTimeoutPorConexion_S1(10000), maximumAge: 0 });
+                        }, { enableHighAccuracy: true, timeout: ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION), maximumAge: 0 });
                     } catch (gerr) { logger.warn('[PADRE][GPS][OVERLAY] Error invocando getCurrentPosition:', gerr); }
 
                     // If a custom callback was registered, call it too
@@ -3242,6 +3287,70 @@
                 } catch (e) { /* ignore */ }
 
         // ============================================================
+        // CONTROLADOR CRÍTICO: SISTEMA.HIJO_PREPARADO
+        // ============================================================
+        // Se registra ANTES de cargar iframes para sincronizar la inicialización
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.HIJO_PREPARADO, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[HIJO_PREPARADO]`;
+            const timestamp = Date.now();
+
+            console.log(`🔥 [PADRE] HIJO_PREPARADO RECIBIDO de ${mensaje?.origen}:`, mensaje);
+
+            try {
+                if (!mensaje?.origen) {
+                    logger.warn(`${logPrefix} Mensaje sin origen`);
+                    return;
+                }
+
+                const hijoId = mensaje.origen;
+                const { version = '1.0.0', capacidades = [] } = mensaje.datos || {};
+
+                logger.info(`${logPrefix} Hijo preparado: ${hijoId}`, {
+                    version,
+                    capacidades: capacidades.length
+                });
+
+                // Marcar hijo como preparado
+                if (!window.estadoPadre) {
+                    logger.error(`${logPrefix} estadoPadre no inicializado`);
+                    return;
+                }
+                window.estadoPadre.hijosPreparados = window.estadoPadre.hijosPreparados || new Set();
+                window.estadoPadre.hijosPreparados.add(hijoId);
+
+                const estadoHijo = window.estadoPadre.estadoHijos.get(hijoId) || {};
+                window.estadoPadre.estadoHijos.set(hijoId, {
+                    ...estadoHijo,
+                    preparado: true,
+                    ultimoPing: timestamp,
+                    version,
+                    capacidades
+                });
+
+                logger.success(`${logPrefix} ✅ ${hijoId} marcado como preparado`);
+
+                // Enviar PADRE_DATOS para completar el handshake
+                try {
+                    await enviarMensaje_S1({
+                        destino: hijoId,
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_DATOS,
+                        origen: getPadreId(),
+                        datos: {
+                            modo: window.estadoPadre?.modoActual || 'casa',
+                            timestamp: Date.now()
+                        }
+                    });
+                    logger.info(`${logPrefix} PADRE_DATOS enviado a ${hijoId}`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error enviando PADRE_DATOS a ${hijoId}:`, error);
+                }
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HIJO_PREPARADO:`, error);
+            }
+        });
+
+        // ============================================================
         // CONTROLADOR CRÍTICO: SISTEMA.HIJO_LISTO
         // ============================================================
         // IMPORTANTE: Se registra AQUÍ (Script 1) ANTES de cargar iframes
@@ -3259,6 +3368,10 @@
                 }
 
                 const hijoId = mensaje.origen;
+
+                // Inmediatamente actualizar el estado para resolver la promesa de carga
+                estado.hijosInicializados.add(hijoId);
+
                 const { version = '1.0.0', capacidades = [], tiempoInicializacion = 0 } = mensaje.datos || {};
                 
                 logger.info(`${logPrefix} Hijo listo: ${hijoId}`, {
@@ -3266,8 +3379,6 @@
                     capacidades: capacidades.length,
                     tiempoInicializacion
                 });
-
-                estado.hijosInicializados.add(hijoId);
                 
                 const estadoHijo = estado.estadoHijos.get(hijoId) || {};
                 estado.estadoHijos.set(hijoId, {
@@ -3281,33 +3392,28 @@
                     tiempoInicializacion
                 });
 
-                // 🔥 NUEVO: Detectar modo inicial ANTES de confirmar
-                const iframe5Casa = document.getElementById('hijo5-casa');
-                const modoInicial = iframe5Casa && iframe5Casa.src !== '' ? 'casa' : 'aventura';
-                logger.info(`${logPrefix} Modo inicial detectado: ${modoInicial}`);
+                logger.info(`${logPrefix} ✅ ${hijoId} listo y estado actualizado.`);
 
-                // 🔥 NUEVO: Enviar confirmación CON modo inicial (A TODOS LOS HIJOS)
+                // Confirmar al hijo que está listo
                 try {
                     await enviarMensaje_S1({
-                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
                         destino: hijoId,
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
                         origen: getPadreId(),
                         datos: {
-                            modoInicial: modoInicial,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            mensaje: 'Hijo confirmado como listo'
                         }
                     });
-                    logger.debug(`${logPrefix} Confirmación con modo inicial enviada a ${hijoId}`);
+                    logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${hijoId}`);
                 } catch (error) {
-                    logger.error(`${logPrefix} Error enviando confirmación a ${hijoId}:`, error);
+                    logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${hijoId}:`, error);
                 }
 
                 // Si es hijo2, enviar datos de paradas para inicializar funciones-mapa
                 if (hijoId === 'hijo2') {
                     try {
-                        // Enviar una copia normalizada de AVENTURA_PARADAS con campo `id` (usar helper central)
                         const paradasNormalizadas = normalizarParadas_S1(window.AVENTURA_PARADAS || []);
-
                         await enviarMensaje_S1({
                             destino: 'hijo2',
                             tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
@@ -3323,11 +3429,8 @@
                     }
                 }
 
-                // NOTE: hijo1-hamburguesa and hijo1-opciones are non-critical UI components.
-                // They are still loaded sequentially via cargarIframeSecuencial() but
-                // they are not required for `todosHijosListos` or for the system to mark initial sync.
                 const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
-                const todosListos = hijosCriticos.every(id => estado.hijosInicializados.has(id));
+                const todosListos = hijosCriticos.every(id => estado.hijosInicializados && estado.hijosInicializados.has(id));
 
                 if (todosListos && !estado.todosHijosListos) {
                     estado.todosHijosListos = true;
@@ -3339,18 +3442,17 @@
                         tiempoTotal: Date.now() - (estado.tiempoInicio || timestamp)
                     });
                     
-                    // 🔥 SINCRONIZACIÓN INICIAL DE MODO - Enviar CAMBIO_MODO inicial
+                    // Sincronización inicial de modo
                     try {
-                        const modoActual = estado.modo.actual;
+                        const modoActual = estado.modo?.actual || MODOS.CASA;
                         logger.info(`${logPrefix} Enviando sincronización inicial de modo: ${modoActual}`);
                         
-                        const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
-                        for (const hijoId of hijosCriticos) {
+                        for (const criticoId of hijosCriticos) {
                             try {
                                 await enviarMensaje_S1({
                                     tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
                                     origen: CONFIG_PADRE.ID,
-                                    destino: hijoId,
+                                    destino: criticoId,
                                     datos: {
                                         modo: modoActual,
                                         timestamp: Date.now(),
@@ -3358,16 +3460,16 @@
                                         secuenciaCompleta: true
                                     }
                                 });
-                                logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${hijoId}`);
+                                logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${criticoId}`);
                             } catch (error) {
-                                logger.error(`${logPrefix} Error enviando CAMBIO_MODO inicial a ${hijoId}:`, error);
+                                logger.error(`${logPrefix} Error enviando CAMBIO_MODO inicial a ${criticoId}:`, error);
                             }
                         }
                     } catch (error) {
                         logger.error(`${logPrefix} Error en sincronización inicial de modo:`, error);
                     }
 
-                    // Después de la sincronización inicial de modo, actualizar distancias de pendings
+                    // Actualizar distancias de pendings
                     try {
                         if (estado.gps && estado.gps.posicionUsuario) updatePendingDistances(estado.gps.posicionUsuario);
                     } catch (err) { logger.warn('[PADRE][PENDING] updatePendingDistances error:', err); }
@@ -3563,6 +3665,28 @@
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
                 return { exito: false, error: error.message };
+            }
+        });
+
+        // CONTROLADOR: AUDIO.FIN_REPRODUCCION (habilitar retosBtn en hijo3 solo en modo aventura)
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[AUDIO.FIN_REPRODUCCION]`;
+            try {
+                // Solo habilitar retosBtn si estamos en modo aventura
+                const modoActual = estado.modo?.actual || (window.MODOS && window.MODOS.CASA);
+                if (modoActual === (window.MODOS && window.MODOS.AVENTURA)) {
+                    logger.info(`${logPrefix} Audio finalizado, habilitando retosBtn en hijo3 (modo aventura)`);
+                    await enviarMensaje_S1({
+                        tipo: TIPOS_MENSAJE_S1.CONTROL.HABILITAR,
+                        origen: CONFIG_PADRE.ID,
+                        destino: 'hijo3',
+                        datos: { boton: 'retosBtn', timestamp: Date.now(), razon: 'audio_fin_reproduccion' }
+                    });
+                } else {
+                    logger.info(`${logPrefix} Audio finalizado, pero modo actual no es aventura. No se habilita retosBtn.`);
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando AUDIO.FIN_REPRODUCCION:`, error);
             }
         });
 
@@ -3780,6 +3904,11 @@
 
         // Función para carga secuencial de iframes
         async function cargarIframeSecuencial() {
+            // Asegurarse de que el Map estadoHijos existe
+            if (!window.estadoPadre.estadoHijos) {
+                window.estadoPadre.estadoHijos = new Map();
+            }
+
             const iframes = [
                 { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
                 { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
@@ -3791,60 +3920,44 @@
 
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
             
-            // Array para rastrear hijos fallidos
             const hijosFallidos = [];
 
             for (const iframe of iframes) {
                 logger.info(`${CONFIG_PADRE.LOG_PREFIX} Cargando iframe: ${iframe.id}`);
                 
                 try {
-                    // Cargar el iframe
-                    document.getElementById(iframe.id).src = iframe.src;
-
-                    // Esperar que el iframe cargue su HTML y registre controladores
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Esperando 3s a que ${iframe.id} termine de inicializar...`);
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Enviando PADRE_LISTO a ${iframe.id}...`);
-
-                    // Enviar PADRE_LISTO inmediatamente después de cargar
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Enviando PADRE_LISTO a ${iframe.id}...`);
-                    try {
-                        await enviarMensaje_S1({
-                            destino: iframe.id,
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                            origen: CONFIG_PADRE.ID,
-                            datos: {
-                                version: CONFIG_PADRE.VERSION,
-                                timestamp: new Date().toISOString(),
-                                modo: estado.modo?.actual || MODOS.CASA
-                            }
-                        });
-                        logger.success(`${CONFIG_PADRE.LOG_PREFIX} PADRE_LISTO enviado a ${iframe.id}`);
-                    } catch (error) {
-                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} Error enviando PADRE_LISTO a ${iframe.id}:`, error);
+                    const iframeEl = document.getElementById(iframe.id);
+                    if (!iframeEl) {
+                        throw new Error(`Iframe ${iframe.id} no encontrado en DOM`);
                     }
 
-                    // Esperar a que el hijo se registre en estado.hijosInicializados
-                    // El controlador HIJO_LISTO (registrado arriba) agregará el hijo al Set
+                    iframeEl.style.display = 'none';
+                    iframeEl.style.visibility = 'hidden';
+
+                    // Iniciar la carga
+                    iframeEl.src = iframe.src;
+
+                    // Esperar a que el hijo esté listo
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
-                            logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ TIMEOUT: No se recibió HIJO_LISTO de ${iframe.id} en 10s`);
                             reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
-                        }, ajustarTimeoutPorConexion_S1(10000)); // Timeout ajustado según conexión (corregido a _S1)
+                        }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
 
-                        // Verificar cada 100ms si el hijo ya está registrado
-                        const checkInterval = setInterval(() => {
-                            if (estado.hijosInicializados.has(iframe.id)) {
-                                logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ HIJO_LISTO recibido de ${iframe.id}`);
+                        const check = () => {
+                            if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
                                 clearTimeout(timeout);
-                                clearInterval(checkInterval);
                                 resolve();
+                            } else {
+                                setTimeout(check, 100);
                             }
-                        }, 100);
+                        };
+                        check();
                     });
 
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} listo, pasando al siguiente`);
-                    
+                    logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} listo y confirmado.`);
+                    iframeEl.style.display = '';
+                    iframeEl.style.visibility = 'visible';
+
                 } catch (error) {
                     // Si un hijo falla, registrarlo pero continuar con los demás
                     logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error cargando ${iframe.id}: ${error.message}`);
@@ -3859,17 +3972,19 @@
                     });
                     
                     // Inicializar estado del hijo fallido
-                    if (!estado.estadoHijos.has(iframe.id)) {
-                        estado.estadoHijos.set(iframe.id, {
+                    if (!window.estadoPadre.estadoHijos.has(iframe.id)) {
+                        window.estadoPadre.estadoHijos.set(iframe.id, {
                             activo: false,
                             fallosConsecutivos: 1,
                             ultimoPing: null,
                             ultimoError: error.message
                         });
                     } else {
-                        const estadoHijo = estado.estadoHijos.get(iframe.id);
-                        estadoHijo.fallosConsecutivos = (estadoHijo.fallosConsecutivos || 0) + 1;
-                        estadoHijo.ultimoError = error.message;
+                        const estadoHijo = window.estadoPadre.estadoHijos.get(iframe.id);
+                        if (estadoHijo) {
+                            estadoHijo.fallosConsecutivos = (estadoHijo.fallosConsecutivos || 0) + 1;
+                            estadoHijo.ultimoError = error.message;
+                        }
                     }
                 }
             }
@@ -3879,7 +3994,7 @@
             // RECONEXIÓN: Intentar reconectar hijos fallidos después de cargar todos los exitosos
             if (hijosFallidos.length > 0) {
                 logger.warn(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Detectados ${hijosFallidos.length} hijos fallidos, iniciando reconexión...`);
-                await intentarReconectarHijosFallidos(estado, hijosFallidos);
+                await intentarReconectarHijosFallidos(hijosFallidos);
             } else {
                 logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Todos los iframes conectados exitosamente`);
             }
@@ -3888,12 +4003,11 @@
         /**
          * Intenta reconectar hijos que fallaron durante la carga inicial
          * Implementa reintentos secuenciales con límite de 3 intentos por hijo
-         * @param {Object} estado - Estado global del padre
          * @param {Array} hijosFallidos - Lista de hijos que fallaron inicialmente
          */
-        async function intentarReconectarHijosFallidos(estado, hijosFallidos) {
+        async function intentarReconectarHijosFallidos(hijosFallidos) {
             const MAX_REINTENTOS = 3;
-            const TIMEOUT_RECONEXION = ajustarTimeoutPorConexion_S1(10000); // Timeout ajustado según conexión
+            const TIMEOUT_RECONEXION = ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION); // Timeout ajustado según conexión
             
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} 🔄 SISTEMA DE RECONEXIÓN ACTIVADO`);
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} Hijos a reconectar: ${hijosFallidos.map(h => h.id).join(', ')}`);
@@ -3915,6 +4029,8 @@
                             break;
                         }
                         
+                        // Ocultar iframe mientras se intenta reconectar
+                        try { iframeElement.style.display = 'none'; iframeElement.style.visibility = 'hidden'; console.log(`[PADRE] Ocultando iframe ${id} para reconexión intento ${intento}`); } catch (e) {}
                         iframeElement.src = src;
                         await new Promise(resolve => setTimeout(resolve, 500));
                         
@@ -3926,7 +4042,7 @@
                             datos: {
                                 version: CONFIG_PADRE.VERSION,
                                 timestamp: new Date().toISOString(),
-                                modo: estado.modo?.actual || MODOS.CASA,
+                                modo: window.estadoPadre.modo?.actual || MODOS.CASA,
                                 reconexion: true,
                                 intento: intento
                             }
@@ -3939,7 +4055,8 @@
                             }, TIMEOUT_RECONEXION);
                             
                             const checkInterval = setInterval(() => {
-                                if (estado.hijosInicializados.has(id)) {
+                                if (!window.estadoPadre || !window.estadoPadre.hijosInicializados) return;
+                                if (window.estadoPadre.hijosInicializados.has(id)) {
                                     clearTimeout(timeout);
                                     clearInterval(checkInterval);
                                     resolve();
@@ -3952,7 +4069,7 @@
                         logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${id} RECONECTADO en intento ${intento}`);
                         
                         // Actualizar estado del hijo
-                        const estadoHijo = estado.estadoHijos.get(id);
+                        const estadoHijo = window.estadoPadre.estadoHijos.get(id);
                         if (estadoHijo) {
                             estadoHijo.activo = true;
                             estadoHijo.fallosConsecutivos = 0;
@@ -3964,7 +4081,7 @@
                         logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ ${id} - Intento ${intento} falló: ${error.message}`);
                         
                         // Actualizar contador de fallos
-                        const estadoHijo = estado.estadoHijos.get(id);
+                        const estadoHijo = window.estadoPadre.estadoHijos.get(id);
                         if (estadoHijo) {
                             estadoHijo.fallosConsecutivos++;
                         }
@@ -3984,7 +4101,7 @@
                     logger.error(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ La aplicación continuará sin ${id} - Funcionalidad reducida`);
                     
                     // Marcar hijo como definitivamente fallido
-                    const estadoHijo = estado.estadoHijos.get(id);
+                    const estadoHijo = window.estadoPadre.estadoHijos.get(id);
                     if (estadoHijo) {
                         estadoHijo.activo = false;
                         estadoHijo.reconexionFallida = true;
@@ -3993,8 +4110,8 @@
             }
             
             // Reporte final
-            const hijosReconectados = hijosFallidos.filter(h => estado.hijosInicializados.has(h.id));
-            const hijosPermanentementeFallidos = hijosFallidos.filter(h => !estado.hijosInicializados.has(h.id));
+            const hijosReconectados = hijosFallidos.filter(h => window.estadoPadre && window.estadoPadre.hijosInicializados && window.estadoPadre.hijosInicializados.has(h.id));
+            const hijosPermanentementeFallidos = hijosFallidos.filter(h => !window.estadoPadre || !window.estadoPadre.hijosInicializados || !window.estadoPadre.hijosInicializados.has(h.id));
             
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} 📊 REPORTE DE RECONEXIÓN:`);
             logger.info(`${CONFIG_PADRE.LOG_PREFIX}    ✅ Reconectados: ${hijosReconectados.length}/${hijosFallidos.length}`);
@@ -4043,7 +4160,7 @@
                 logger.success(`${logPrefix} ✅ Iframes cargados`);
                 
                 // 4. Marcar sistema como inicializado
-                estado.sistemaInicializado = true;
+                window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
                 logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
                 
@@ -4074,8 +4191,8 @@
             
             // 2. Verificar estado en padre
             console.log('2. Estado en padre:');
-            console.log('   - hijosInicializados:', Array.from(estado.hijosInicializados || new Set()));
-            console.log('   - ¿hijo4 inicializado?', estado.hijosInicializados?.has('hijo4') || false);
+            console.log('   - hijosInicializados:', Array.from(window.estadoPadre.hijosInicializados || new Set()));
+            console.log('   - ¿hijo4 inicializado?', window.estadoPadre.hijosInicializados?.has('hijo4') || false);
             
             // 3. Cargar manualmente si no tiene src
             if (!hijo4Element.src || hijo4Element.src === '' || hijo4Element.src.includes('about:blank')) {
@@ -4830,16 +4947,16 @@
                 await mostrarHijo4();
 
                 // Verificar que hijo4 esté listo antes de enviar el mensaje
-                if (!estado.hijosInicializados.has('hijo4')) {
+                if (!estado.hijosInicializados || !estado.hijosInicializados.has('hijo4')) {
                     logger.warn(`${logPrefix} Hijo4 no está listo, esperando...`);
                     // Esperar hasta 5 segundos a que hijo4 se inicialice
                     let intentos = 0;
-                    while (!estado.hijosInicializados.has('hijo4') && intentos < 50) {
+                    while ((!estado.hijosInicializados || !estado.hijosInicializados.has('hijo4')) && intentos < 50) {
                         await new Promise(resolve => setTimeout(resolve, 100));
                         intentos++;
                     }
                     
-                    if (!estado.hijosInicializados.has('hijo4')) {
+                    if (!estado.hijosInicializados || !estado.hijosInicializados.has('hijo4')) {
                         logger.error(`${logPrefix} Hijo4 no se inicializó después de esperar, abortando`);
                         await enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.SISTEMA.NACK,
@@ -5144,7 +5261,7 @@
             const hijosListos = Array.from(estado.hijosInicializados || []);
             
             for (const hijoId of hijosListos) {
-                logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Enviando confirmación de controladores listos a ${hijoId}`);
+                console.log(`[PADRE] Enviando PADRE_CONFIRMA_HIJO_LISTO (batch) a ${hijoId}`);
                 await enviarMensajePadre({
                     destino: hijoId,
                     tipo: TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
@@ -5154,6 +5271,10 @@
                         timestamp: Date.now(),
                         mensaje: 'Controladores críticos registrados y listos'
                     }
+                }).then(() => {
+                    console.log(`[PADRE] PADRE_CONFIRMA_HIJO_LISTO (batch) enviado a ${hijoId}`);
+                }).catch((e) => {
+                    console.error(`[PADRE] Error enviando PADRE_CONFIRMA_HIJO_LISTO (batch) a ${hijoId}:`, e);
                 });
             }
         } catch (error) {
@@ -5525,7 +5646,7 @@
                                     },
                                     {
                                         enableHighAccuracy: true,
-                                        timeout: ajustarTimeoutPorConexion_S1(10000),
+                                        timeout: ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION),
                                         maximumAge: 30000
                                     }
                                 );
@@ -5651,7 +5772,8 @@
                     }
                 }
 
-            } catch (error) {
+            } 
+            catch (error) {
                 logger.error(`${logPrefix} Error procesando centrado GPS:`, error);
             }
         });
@@ -6541,7 +6663,7 @@
 
                 // Luego continuar con la lógica anterior de habilitación/avanzado
                 if (estado.elementoActual && estado.elementoActual.audio_id === audioId) {
-                    if (estado.elementoActual.reto_id && estado.modo.actual === MODOS.AVENTURA && estado.hijosInicializados.has('hijo4')) {
+                    if (estado.elementoActual.reto_id && estado.modo.actual === MODOS.AVENTURA && estado.hijosInicializados && estado.hijosInicializados.has('hijo4')) {
                         // Hay reto disponible: habilitar botón de retos (solo en modo aventura y si hijo4 está listo)
                         logger.info(`${logPrefix} Audio finalizado en modo aventura, habilitando botón de retos para ${estado.elementoActual.reto_id}`);
                         
@@ -6559,7 +6681,7 @@
                                 retoId: estado.elementoActual.reto_id
                             }
                         });
-                    } else if (estado.elementoActual.reto_id && estado.modo.actual === MODOS.AVENTURA && !estado.hijosInicializados.has('hijo4')) {
+                    } else if (estado.elementoActual.reto_id && estado.modo.actual === MODOS.AVENTURA && (!estado.hijosInicializados || !estado.hijosInicializados.has('hijo4'))) {
                         // Hay reto disponible pero hijo4 no está listo: no habilitar botón y loggear
                         logger.warn(`${logPrefix} Audio finalizado en modo aventura, reto disponible (${estado.elementoActual.reto_id}) pero hijo4 no está listo - botón no habilitado`);
                         estado.retoActual.id = estado.elementoActual.reto_id;
