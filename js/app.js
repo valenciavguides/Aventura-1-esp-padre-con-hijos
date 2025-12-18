@@ -22,16 +22,20 @@ import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './func
  */
 export async function registrarControladoresApp() {
     try {
-        const { registrarControlador } = await import('./mensajeria.js');
-        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
-            globalThis.__vv_manejadores.forEach((cb, tipo) => {
-                try { registrarControlador(tipo, cb); } catch (e) { logger.warn('[APP] error registrando controlador', tipo, e); }
-            });
-            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        try {
+            const migrated = migrarManejadoresTempranos();
+            // Agregar verificación para evitar duplicados
+            if (migrated && migrated.length > 0) {
+                logger.info('[APP][registrarControladores] Controladores migrados (sin duplicados):', migrated.filter(m => !m.duplicado));
+            } else {
+                logger.debug('[APP][registrarControladores] No hay controladores tempranos para migrar');
+            }
+        } catch (e) {
+            logger.warn('[APP][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
         }
-        logger.info('[APP][registrarControladores] Controladores migrados (si existían)');
     } catch (error) {
-        logger.warn('[APP][registrarControladores] No se pudo migrar controladores:', error.message);
+        logger.warn('[APP][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
     }
 }
 
@@ -107,6 +111,17 @@ function generarDatosHistoricos() {
         });
     }
     return datos;
+}
+
+// Helper: wrap a promise with a conservative timeout that resolves to null on timeout
+function withTimeout(promise, ms = 5000, desc = 'operation') {
+    return Promise.race([
+        promise,
+        new Promise(resolve => setTimeout(() => {
+            logger.warn(`[withTimeout] ${desc} timed out after ${ms}ms`);
+            resolve(null);
+        }, ms))
+    ]);
 }
 
 /**
@@ -311,21 +326,28 @@ export async function actualizarInterfazModo(estado, modo) {
 
     for (const hijoId of estado.hijosInicializados) {
         try {
-            const resultado = enviarMensaje({
+            const resultado = await enviarMensajeConReintento({
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: getPadreId(),
-                datos: {
-                    modo,
-                    // Indicar si la secuencia de inicialización global ya se
-                    // completó. Muchos hijos esperan esta bandera para evitar
-                    // aplicar cambios antes de terminar su carga.
-                    secuenciaCompleta: !!(estado && estado.todosHijosListos)
-                }
+                datos: { modo, secuenciaCompleta: !!(estado && estado.todosHijosListos) }
             });
             if (resultado && typeof resultado.then === 'function') await resultado;
         } catch (error) {
-            logger.error(`Error al actualizar modo en ${hijoId}:`, error);
+            logger.error(`Error al actualizar modo en ${hijoId} tras reintentos:`, error);
+        }
+    }
+}
+
+// Agregar función auxiliar para reintentos en broadcasts
+async function enviarMensajeConReintento(mensaje, maxReintentos = 3) {
+    for (let intento = 1; intento <= maxReintentos; intento++) {
+        try {
+            return await enviarMensaje(mensaje);
+        } catch (error) {
+            if (intento === maxReintentos) throw error;
+            logger.warn(`[APP] Reintento ${intento} para mensaje ${mensaje.tipo} a ${mensaje.destino}:`, error);
+            await new Promise(resolve => setTimeout(resolve, 1000 * intento));  // Backoff exponencial
         }
     }
 }
@@ -493,7 +515,7 @@ export async function manejarCambioModo(estado, mensaje) {
         // 4. Registrar evento de cambio de modo
         const eventoCambioModo = {
             modoAnterior: modoActual,
-            modoNuevo: modo,
+            modoNuevo: modoNormalized,
             timestamp,
             origen: mensaje.origen,
             motivo,
@@ -515,7 +537,7 @@ export async function manejarCambioModo(estado, mensaje) {
         }
 
         // 6. Notificar inicio del cambio de modo
-        logger.info(`${logPrefix} Iniciando cambio de modo '${modoActual}' a '${modo}'`, {
+        logger.info(`${logPrefix} Iniciando cambio de modo '${modoActual}' a '${modoNormalized}'`, {
             motivo,
             origen: mensaje.origen,
             timestamp: new Date(timestamp).toISOString()
@@ -532,9 +554,26 @@ export async function manejarCambioModo(estado, mensaje) {
         estado.sistema = estado.sistema || {};
         estado.sistema.cambiandoModo = true;
 
+        // OPTIMISTIC UPDATE: actualizar estado de modo inmediatamente (normalizado)
         try {
-            // 8. Notificar a los componentes del cambio inminente
-            await notificarCambioModoInminente(modoActual, modo, motivo);
+            estado.modo = estado.modo || {};
+            estado.modo.anterior = modoActual;
+            estado.modo.actual = modoNormalized;
+            estado.modo.ultimoCambio = {
+                timestamp,
+                origen: mensaje.origen,
+                motivo,
+                opciones
+            };
+        } catch (e) {
+            logger.warn(`${logPrefix} No se pudo aplicar optimistic update:`, e && e.message);
+        }
+
+        try {
+            // 8. Notificar a los componentes del cambio inminente (no bloquear>5s)
+            await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 5000, 'notificarCambioModoInminente');
+
+            // 8.1 Preparar pre-warm / pausar según el modo (usar valores normalizados)
 
             // 8.1 Preparar pre-warm / pausar según el modo (usar valores normalizados)
             try {
@@ -567,7 +606,7 @@ export async function manejarCambioModo(estado, mensaje) {
                     try {
                         const race = await Promise.race([
                             (async () => { await Promise.allSettled(promises); return hijosPromise; })(),
-                            new Promise(resolve => setTimeout(() => resolve({ timeout: true }), cfgConfirmTimeout))
+                            new Promise(resolve => setTimeout(() => resolve({ timeout: true }), cfgConfirmTimeout * 2))  // Timeout extendido
                         ]);
 
                         if (race && race.timeout) {
@@ -627,23 +666,23 @@ export async function manejarCambioModo(estado, mensaje) {
                 logger.warn('[APP][CAMBIO_MODO] Error en flujo de pre-warm:', e);
             }
 
-            // 9. Actualizar el estado global
+                // (Estado ya actualizado de forma optimista antes) - asegurar campos mínimos
             estado.modo = estado.modo || {};
-            estado.modo.anterior = modoActual;
-            estado.modo.actual = modoNormalized;
-            estado.modo.ultimoCambio = {
+            estado.modo.anterior = estado.modo.anterior || modoActual;
+            estado.modo.actual = estado.modo.actual || modoNormalized;
+            estado.modo.ultimoCambio = estado.modo.ultimoCambio || {
                 timestamp,
                 origen: mensaje.origen,
                 motivo,
                 opciones
             };
 
-            // 10. Actualizar interfaz y limpiar recursos según el modo
-            await actualizarInterfazModo(estado, modoNormalized);
+            // 10. Actualizar interfaz y limpiar recursos según el modo (no bloquear>5s por interfaz)
+            await withTimeout(actualizarInterfazModo(estado, modoNormalized), 5000, 'actualizarInterfazModo');
             await limpiarRecursosPorModo(estado, modoNormalized, opciones);
 
-            // 11. Notificar a los componentes del cambio completado
-            await notificarCambioModoCompletado(modoActual, modoNormalized, motivo);
+            // 11. Notificar a los componentes del cambio completado (no bloquear>5s)
+            await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 5000, 'notificarCambioModoCompletado');
 
             // 12. Registrar �xito
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`, {
@@ -666,7 +705,7 @@ export async function manejarCambioModo(estado, mensaje) {
                 error: errorCambio,
                 stack: errorCambio.stack,
                 modoActual,
-                modoSolicitado: modo
+                modoSolicitado: modoNormalized
             });
 
             // Intentar restaurar el estado anterior
@@ -754,14 +793,14 @@ export async function iniciarPrewarmEnCasa(estado = window.estadoPadre) {
         // Pre-iniciar heartbeat (preparado pero pausado)
         try {
             if (window.mensajeria && typeof window.mensajeria.preiniciarHeartbeat === 'function') {
-                await window.mensajeria.preiniciarHeartbeat();
+                await withTimeout(window.mensajeria.preiniciarHeartbeat(), 5000, 'preiniciarHeartbeat');
                 if (typeof window.mensajeria.pausarHeartbeat === 'function') {
                     window.mensajeria.pausarHeartbeat();
                 }
                 logger.info('[APP][PREWARM] Heartbeat pre-iniciado y pausado');
             }
         } catch (e) {
-            logger.warn('[APP][PREWARM] Error durante preiniciarHeartbeat en CASA:', e);
+            logger.warn('[APP][PREWARM] Fallback: preiniciarHeartbeat falló, continuando sin prewarm');
         }
 
         estado.sistema.prewarmIniciado = true;
@@ -1192,6 +1231,11 @@ window.addEventListener('online', () => manejarReconexion(window.estadoPadre));
 // Limpieza agresiva de globales al descargar la página
 if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', () => {
+        // En pagehide, evitar limpiar durante init
+        if (window.estado?.sistema?.cambiandoModo) {
+            logger.info('Init en curso, omitiendo limpieza agresiva');
+            return;
+        }
         try {
             // Verificar promesas pendientes antes de limpiar
             if (promesasPendientes.size > 0) {
@@ -1573,7 +1617,8 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
     try {
         if (mensaje?.tipo === TIPOS_MENSAJE.SISTEMA.NACK && mensaje?.datos?.esperarPermiso && mensaje?.origen) {
             const hijoId = mensaje.origen;
-            const modo = mensaje.datos?.modoSolicitado || (mensaje.datos?.modo || null);
+            const modoRaw = mensaje.datos?.modoSolicitado || (mensaje.datos?.modo || null);
+            const modo = canonicalizarModo(modoRaw);
 
             const existing = pendingModeChanges.get(hijoId) || { intentos: 0 };
             const intentos = Math.min((existing.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
@@ -1674,4 +1719,43 @@ setInterval(async () => {
         logger.warn('[APP][CAMBIO_MODO][RESEND] Error en loop de reintentos:', err);
     }
 }, 5000);
+
+// ==================== INICIALIZACIÓN AUTOMÁTICA DEL GPS ====================
+
+(function inicializarGPSAlArrancar() {
+    if (navigator.geolocation) {
+        try {
+            navigator.geolocation.watchPosition(
+                function success(pos) {
+                    window.__ultimaPosicionGPS = pos;
+                    // Log detallado de la posición recibida
+                    logger.info('[GPS] Posición recibida:', {
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy,
+                        timestamp: pos.timestamp
+                    });
+                },
+                function error(err) {
+                    logger.warn('[GPS] Error al inicializar automáticamente:', {
+                        code: err && err.code,
+                        message: err && err.message
+                    });
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: CONFIG.GPS && CONFIG.GPS.MAXIMUM_AGE_MS || 0,
+                    timeout: CONFIG.GPS && CONFIG.GPS.TIMEOUT_MS || 15000
+                }
+            );
+            logger.info('[GPS] Inicialización automática de GPS (alta precisión) lanzada al arrancar la app');
+        } catch (e) {
+            logger.error('[GPS] Error inesperado al inicializar GPS:', e && e.message);
+        }
+    } else {
+        logger.error('[GPS] API de geolocalización no soportada en este navegador');
+    }
+})();
+
+
 
