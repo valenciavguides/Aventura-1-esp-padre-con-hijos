@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Panel de control de GPS para la ruta turística">
     <title>Boton-casa (hijo5-casa)</title>
+    <script src="js/suppress-warnings.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         /* Estilos existentes */
@@ -835,9 +836,15 @@
     }
 
     try {
+        // Ocultar UI hasta PADRE_CONFIRMA
+        let _uiConfirmado = false;
+        const _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+        try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+        function mostrarUI() { if (!_uiConfirmado) { console.warn('[hijo5-casa] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; } try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo5-casa] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {} }
+
         console.log(`🚀 [hijo5-casa] INICIANDO MENSAJERIA...`);
         await inicializarMensajeria({
-            iframeId: CONFIG_HIJO.IFRAME_ID,
+            iframeId: window.frameElement.id,
             debug: CONFIG_HIJO.DEBUG
         });
         console.log(`✅ [hijo5-casa] MENSAJERIA INICIALIZADA`);
@@ -863,13 +870,37 @@
 
                 logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
 
-                // NO activar UI aquí - esperar datos iniciales del padre
-                logger.debug(`${logPrefix} Datos del padre:`, mensaje.datos);
-                logger.info(`${logPrefix} Esperando datos iniciales del padre antes de activar UI`);
-                
-                // Deferir envío de HIJO_LISTO hasta que todos los controladores críticos
-                // (especialmente los relacionados con GPS) se hayan registrado.
-                logger.debug(`${logPrefix} HIJO_LISTO aplazado hasta post-inicialización de controladores`);
+                // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                if (mensaje.datos) {
+                    const { modo, paradas, paradaActual } = mensaje.datos;
+
+                    if (modo) {
+                        logger.debug(`${logPrefix} Modo inicial: ${modo}`);
+                        // Procesar modo si necesario
+                    }
+
+                    if (paradas) {
+                        logger.debug(`${logPrefix} Paradas recibidas: ${paradas.length}`);
+                    }
+
+                    if (paradaActual) {
+                        logger.debug(`${logPrefix} Parada actual: ${paradaActual}`);
+                    }
+                }
+
+                // Enviar HIJO_LISTO directamente
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        version: '1.0.0',
+                        capacidades: ['modo-selector', 'gps', 'paradas-list'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
@@ -886,6 +917,7 @@
             const logPrefix = `[hijo5-casa][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
             
             try {
+                console.log('[hijo5-casa] PADRE_CONFIRMA_HIJO_LISTO recibido:', mensaje);
                 logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
                 
                 // 🔥 NUEVO: Procesar modo inicial si viene en datos
@@ -936,6 +968,10 @@
             } catch (err) {
                 logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
             }
+
+            // Mostrar UI ahora que el padre confirmó
+            try { _uiConfirmado = true; mostrarUI(); } catch (e) { /* ignore */ }
+            try { await enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }); } catch (e) { /* ignore */ }
         });
 
         // ============================================
@@ -1681,17 +1717,23 @@
             logger.debug('[hijo5-casa] Controladores GPS registrados y listos para recibir mensajes');
         } catch (e) { /* ignore */ }
 
-        await enviarMensaje({
-            destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            datos: {
-                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                version: '1.0.0',
-                capacidades: ['modo-selector', 'gps', 'paradas-list'],
-                timestamp: Date.now()
-            }
-        });
+        // Enviar HIJO_PREPARADO y esperar PADRE_DATOS antes de enviar HIJO_LISTO
+        try {
+            await enviarMensaje({
+                destino: getPadreId(),
+                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: {
+                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                    version: '1.0.0',
+                    capacidades: ['modo-selector', 'gps', 'paradas-list'],
+                    timestamp: Date.now()
+                }
+            });
+            logger.debug('[hijo5-casa] HIJO_PREPARADO enviado; esperando PADRE_LISTO');
+        } catch (e) {
+            logger.warn('[hijo5-casa] Error enviando HIJO_PREPARADO:', e);
+        }
 
         // ============================================
         // INICIALIZACIÓN DE EVENTOS Y DATOS
