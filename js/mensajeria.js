@@ -42,6 +42,34 @@ function __vv_getManejadores() {
 // TDZ al leer una variable de módulo que aún no se inicializó.
 globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
 
+/**
+ * Migrar manejadores tempranos desde el fallback global al Map interno.
+ * Esta función es idempotente y segura de llamar múltiples veces.
+ * Devuelve true si se migraron entradas, false si no había nada que migrar.
+ */
+export function migrarManejadoresTempranos() {
+    try {
+        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
+            const migrated = [];
+            globalThis.__vv_manejadores.forEach((cb, key) => {
+                try {
+                    if (!manejadores.has(key)) {
+                        manejadores.set(key, cb);
+                        migrated.push({ tipo: key, duplicado: false });
+                    } else {
+                        migrated.push({ tipo: key, duplicado: true });
+                    }
+                } catch (e) { /* ignore individual failures */ }
+            });
+            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+            return migrated;
+        }
+    } catch (e) {
+        // non-fatal
+    }
+    return [];
+}
+
 // Para evitar spam de logs, sólo advertimos una vez si un caller usa la forma objeto
 // sin proveer `origen` explícito. Esto facilita migrar el código sin generar demasiados warnings.
 let _warnedMissingOrigen = false;
@@ -162,6 +190,17 @@ export function hijosConCapability(capability) {
  */
 export function broadcastToCapability(capability, mensajeObj) {
     if (!capability || !mensajeObj) return { enviados: 0 };
+    // Security: only allow GPS capability broadcasts from the parent
+    try {
+        if (capability === 'gps') {
+            const padreId = (typeof getPadreId === 'function') ? getPadreId() : 'padre';
+            if (mensajeObj.origen !== padreId && estadoMensajeria.rol !== 'padre') {
+                console.warn(`[MENSAJERIA] Broadcast 'gps' rechazado: solo el padre (${padreId}) puede emitir broadcasts de gps`);
+                try { typeof window.incrementarContador === 'function' && window.incrementarContador('mensajeria.rejected_broadcast_gps'); } catch (e) { /* ignore */ }
+                return { enviados: 0 };
+            }
+        }
+    } catch (e) { /* ignore safety check errors */ }
     const targets = hijosConCapability(capability);
     const origenSeguro = window.location.origin;
     let enviados = 0;
@@ -258,18 +297,9 @@ export async function inicializarMensajeria(config = {}) {
             console.log(`[MENSAJERIA] Inicializado - Rol: ${rol}, ID: ${estadoMensajeria.componenteId || estadoMensajeria.iframeId || 'desconocido'}`);
         }
 
-        // Migrar controladores que pudieron haberse registrado antes de
-        // que este módulo terminara de evaluarse (import cycles). Los
-        // módulos que llamaron `registrarControlador` temprano añadieron
-        // entradas en `window.__vv_manejadores`; aquí los migramos al Map
-        // principal `manejadores` y limpiamos el fallback.
+        // Migrar controladores tempranos usando la función exportada (idempotente)
         try {
-            if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
-                globalThis.__vv_manejadores.forEach((cb, key) => {
-                    try { manejadores.set(key, cb); } catch (e) { /* ignore */ }
-                });
-                globalThis.__vv_manejadores.clear();
-            }
+            migrarManejadoresTempranos();
         } catch (e) {
             // No crítico; seguimos adelante
             console.warn('[MENSAJERIA] Error migrando manejadores tempranos:', e);
@@ -716,6 +746,20 @@ function manejarMensajeEntrante(event) {
     
     console.log(`✅ [MENSAJERIA] Mensaje aceptado - destino: ${mensaje.destino}, tipo: ${mensaje.tipo}, origen: ${mensaje.origen}`);
 
+    // Security: only allow the parent to emit GPS-originated updates (ubicación/estado/error).
+    try {
+        const gpsOutgoing = new Set([
+            TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
+            TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
+            TIPOS_MENSAJE.NAVEGACION.GPS.ERROR
+        ]);
+        const padreId = (typeof getPadreId === 'function') ? getPadreId() : 'padre';
+        if (gpsOutgoing.has(mensaje.tipo) && mensaje.origen !== padreId) {
+            console.warn(`[MENSAJERIA] Mensaje GPS rechazado: solo el padre (${padreId}) puede emitir ${mensaje.tipo} - origen: ${mensaje.origen}`);
+            try { typeof window.incrementarContador === 'function' && window.incrementarContador('mensajeria.rejected_gps_message'); } catch (e) { /* ignore */ }
+            return; // Drop the message to avoid spoofing between children
+        }
+    } catch (e) { /* don't block on security check errors */ }
     // Compat: detectar respuestas que referencian un mensaje original en el payload
     // (datos.mensajeOriginal, idSolicitud, solicitudOriginalId) y resolver la
     // confirmación pendiente por mensajeId.
@@ -773,7 +817,7 @@ function manejarMensajeEntrante(event) {
 
     // Procesar mensajes de registro de capacidades (handshake) enviados por hijos
     try {
-        if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.COMPONENTE_INICIALIZADO || mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_LISTO) {
+        if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.COMPONENTE_INICIALIZADO || mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_LISTO || mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO) {
             const capacidades = mensaje.datos && mensaje.datos.capacidades ? mensaje.datos.capacidades : null;
             if (capacidades) {
                 registrarCapacidadesHijo(mensaje.origen, capacidades);
@@ -781,28 +825,23 @@ function manejarMensajeEntrante(event) {
             // Registrar al hijo como conectado para heartbeat si estamos en el padre
             if (window.parent === window && mensaje.origen) {
                 estadoMensajeria.heartbeat.hijosConectados.add(mensaje.origen);
-                
                 // Registrar hijo crítico si está en la lista de esperados
                 if (estadoMensajeria.hijosEsperados.includes(mensaje.origen)) {
                     estadoMensajeria.hijosListos.add(mensaje.origen);
                     console.log(`✅ [MENSAJERIA] Hijo crítico listo: ${mensaje.origen} (${estadoMensajeria.hijosListos.size}/${estadoMensajeria.hijosEsperados.length})`);
                 }
-                
                 // Procesar broadcasts pendientes cuando TODOS los hijos críticos están listos
                 const todosListos = estadoMensajeria.hijosEsperados.every(h => estadoMensajeria.hijosListos.has(h));
                 if (todosListos && estadoMensajeria.broadcastsPendientes.length > 0) {
                     const pendientes = estadoMensajeria.broadcastsPendientes.length;
                     console.log(`🔄 [MENSAJERIA] ¡TODOS los hijos listos! Procesando ${pendientes} broadcast(s) pendiente(s)`);
-                    
                     const cola = [...estadoMensajeria.broadcastsPendientes];
                     estadoMensajeria.broadcastsPendientes = [];
-                    
                     cola.forEach(mensajePendiente => {
                         try {
                             const iframes = Array.from(document.getElementsByTagName('iframe'));
                             let enviados = 0;
                             const origenSeguro = window.location.origin;
-                            
                             iframes.forEach(iframe => {
                                 try {
                                     if (iframe && iframe.contentWindow) {
@@ -813,12 +852,62 @@ function manejarMensajeEntrante(event) {
                                     console.warn(`[MENSAJERIA] Error enviando broadcast pendiente:`, e);
                                 }
                             });
-                            
                             console.log(`📤 [MENSAJERIA] Broadcast pendiente enviado - tipo: ${mensajePendiente.tipo}, enviados: ${enviados}`);
                         } catch (e) {
                             console.warn('[MENSAJERIA] Error procesando broadcast pendiente:', e);
                         }
                     });
+                }
+                // --- PATCH: Propagar HIJO_LISTO a todos los controladores registrados ---
+                if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_LISTO) {
+                    try {
+                        const mapa = __vv_getManejadores();
+                        if (mapa && typeof mapa.forEach === 'function') {
+                            mapa.forEach((cb, key) => {
+                                if (key === TIPOS_MENSAJE.SISTEMA.HIJO_LISTO && typeof cb === 'function') {
+                                    try {
+                                        cb(mensaje);
+                                    } catch (e) {
+                                        console.warn('[MENSAJERIA] Error en controlador HIJO_LISTO propagado:', e);
+                                    }
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[MENSAJERIA] Error propagando HIJO_LISTO a controladores:', e);
+                    }
+                }
+                // --- END PATCH ---
+            }
+            // Si el hijo indica que está PREPARADO para recibir datos (handshake explícito),
+            // el padre responde inmediatamente con PADRE_LISTO (si somos el padre real).
+            if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO && window.parent === window && mensaje.origen) {
+                // Evitar enviar PADRE_LISTO más de una vez por hijo para prevenir loops
+                if (!window.estadoPadre) window.estadoPadre = {};
+                if (!window.estadoPadre.hijosQueRecibieronPadreListo) window.estadoPadre.hijosQueRecibieronPadreListo = new Set();
+                if (window.estadoPadre.hijosQueRecibieronPadreListo.has(mensaje.origen)) {
+                    if (estadoMensajeria.debug) console.debug(`[MENSAJERIA] PADRE_LISTO ya enviado previamente a ${mensaje.origen}, omitiendo`);
+                    return;
+                }
+                window.estadoPadre.hijosQueRecibieronPadreListo.add(mensaje.origen);
+                
+                try {
+                    const datosPadre = {
+                        modo: (window.estadoPadre && window.estadoPadre.modo) ? window.estadoPadre.modo : null,
+                        paradaActual: (window.estadoPadre && window.estadoPadre.paradaActual) ? window.estadoPadre.paradaActual : null,
+                        paradas: (window.AVENTURA_PARADAS || []),
+                        timestamp: Date.now()
+                    };
+                    // No esperar respuesta, enviar en background
+                    enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.PADRE_LISTO,
+                        origen: estadoMensajeria.componenteId || getPadreId(),
+                        datos: datosPadre
+                    }).catch(() => {});
+                    if (estadoMensajeria.debug) console.debug(`[MENSAJERIA] PADRE_LISTO enviado a ${mensaje.origen}`);
+                } catch (e) {
+                    console.warn('[MENSAJERIA] Error enviando PADRE_LISTO:', e && e.message ? e.message : e);
                 }
             }
             // Enviar confirmación de padre al hijo (no bloquear) - SOLO si NO es el padre real
@@ -835,6 +924,8 @@ function manejarMensajeEntrante(event) {
                     // ignorar errores en confirmación
                 }
             }
+            // Ya procesamos este handshake especial; no intentar buscar un controlador genérico
+            return;
         }
     } catch (e) {
         console.warn('[MENSAJERIA] Error procesando handshake de capacidades:', e);
@@ -1935,4 +2026,3 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (
 });
 
 export { estadoMensajeria };
-
