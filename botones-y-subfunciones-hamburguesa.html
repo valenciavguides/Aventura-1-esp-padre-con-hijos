@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Menú Hamburguesa</title>
+  <script src="js/suppress-warnings.js"></script>
   <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
 
@@ -59,6 +60,23 @@
     };
 
     // ============================================================
+    // FUNCIÓN PARA MOSTRAR UI
+    // ============================================================
+    window._uiConfirmado = false;
+    let _originalDisplay = '';
+
+    function mostrarUI() { 
+        if (!window._uiConfirmado) { 
+            console.warn(`${CONFIG_HIJO.IFRAME_ID} mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO`); 
+            return; 
+        } 
+        try { 
+            if (document.body) document.body.style.display = _originalDisplay || 'block'; 
+            console.log(`${CONFIG_HIJO.IFRAME_ID} UI visible tras PADRE_CONFIRMA_HIJO_LISTO`); 
+        } catch (e) {} 
+    }
+
+    // ============================================================
     // FUNCIÓN DE INICIALIZACIÓN PRINCIPAL
     // ============================================================
     /**
@@ -92,8 +110,13 @@
             }
 
             // 2. Inicializar mensajería
+            // Ocultar UI hasta recibir PADRE_CONFIRMA_HIJO_LISTO
+            window._uiConfirmado = false;
+            _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+            try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+
             await inicializarMensajeria({
-                iframeId: CONFIG_HIJO.IFRAME_ID,
+                iframeId: window.frameElement.id,
                 debug: CONFIG_HIJO.DEBUG
             });
 
@@ -102,25 +125,28 @@
             // 3. Registrar controladores
             registrarControladores();
 
-            // 4. Inicializar lógica de menú
-            inicializarLogicaMenu();
-
-            // 5. Enviar HIJO_LISTO al padre
-            await enviarMensaje({
-                destino: getPadreId(),
-                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                datos: {
-                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                    timestamp: Date.now(),
-                    version: '2.0',
-                    parentReady: estadoMenu.parentReady,
-                    capacidades: ['menu', 'navegacion']
-                }
-            });
+            // Nota: la lógica de menú (parte visible) se inicializa solo cuando el padre
+            // confirma que los controladores están listos (PADRE_CONFIRMA_HIJO_LISTO).
 
             estadoMenu.inicializado = true;
             logger.info(`${logPrefix} Componente inicializado correctamente`);
+
+            // Enviar HIJO_PREPARADO después de inicialización
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: CONFIG_HIJO.VERSION,
+                        capacidades: ['menu', 'navegacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_PREPARADO enviado al padre`);
+            } catch (error) {
+                console.error(`❌ [${CONFIG_HIJO.IFRAME_ID}] Error enviando HIJO_PREPARADO:`, error);
+            }
 
         } catch (error) {
             logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
@@ -177,23 +203,36 @@
 
                     logger.info(`${logPrefixCtrl} Padre listo confirmado`);
 
-                    // 3. Enviar HIJO_LISTO al padre para confirmar que estamos listos
-                    try {
-                        await enviarMensaje({
-                            destino: getPadreId(),
-                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                            origen: CONFIG_HIJO.IFRAME_ID,
-                            datos: {
-                                version: CONFIG_HIJO.VERSION,
-                                capacidades: ['menu', 'navegacion'],
-                                tiempoInicializacion: Date.now() - (window.tiempoInicio || Date.now()),
-                                timestamp: Date.now()
-                            }
-                        });
-                        console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_LISTO enviado al padre`);
-                    } catch (error) {
-                        console.error(`❌ [${CONFIG_HIJO.IFRAME_ID}] Error enviando HIJO_LISTO:`, error);
+                    // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                    if (mensaje.datos) {
+                        const { modo, paradas, paradaActual } = mensaje.datos;
+
+                        if (modo) {
+                            logger.debug(`${logPrefixCtrl} Modo inicial: ${modo}`);
+                            // Procesar modo si necesario
+                        }
+
+                        if (paradas) {
+                            logger.debug(`${logPrefixCtrl} Paradas recibidas: ${paradas.length}`);
+                        }
+
+                        if (paradaActual) {
+                            logger.debug(`${logPrefixCtrl} Parada actual: ${paradaActual}`);
+                        }
                     }
+
+                    // Enviar HIJO_LISTO directamente
+                    await enviarMensaje({
+                        destino: getPadreId(),
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            version: CONFIG_HIJO.VERSION,
+                            capacidades: ['menu', 'navegacion'],
+                            timestamp: Date.now()
+                        }
+                    });
+                    console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_LISTO enviado al padre`);
 
                     return { 
                         exito: true, 
@@ -228,12 +267,90 @@
             });
 
             // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_DATOS
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
+                const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_DATOS]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
+                        throw new Error('Mensaje sin origen válido');
+                    }
+
+                    logger.info(`${logPrefixCtrl} Recibido de ${mensaje.origen}`);
+
+                    // 2. Validar estructura del mensaje
+                    if (!mensaje.tipo || mensaje.tipo !== TIPOS_MENSAJE.SISTEMA.PADRE_DATOS) {
+                        logger.warn(`${logPrefixCtrl} Tipo de mensaje inesperado:`, mensaje.tipo);
+                    }
+
+                    logger.info(`${logPrefixCtrl} Datos del padre recibidos`);
+
+                    // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                    if (mensaje.datos) {
+                        const { modo, timestamp } = mensaje.datos;
+
+                        if (modo) {
+                            logger.debug(`${logPrefixCtrl} Modo inicial: ${modo}`);
+                            // Procesar modo si necesario
+                        }
+                    }
+
+                    // Enviar HIJO_LISTO directamente
+                    await enviarMensaje({
+                        destino: getPadreId(),
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            version: CONFIG_HIJO.VERSION,
+                            capacidades: ['menu', 'navegacion'],
+                            timestamp: Date.now()
+                        }
+                    });
+                    console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_LISTO enviado al padre`);
+
+                    return { 
+                        exito: true, 
+                        estado: 'confirmado',
+                        timestamp: Date.now()
+                    };
+
+                } catch (error) {
+                    logger.error(`${logPrefixCtrl} Error en controlador:`, error);
+                    
+                    // Notificar error al padre
+                    try {
+                        await enviarMensaje({
+                            destino: getPadreId(),
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { 
+                                error: error.message,
+                                controlador: 'PADRE_DATOS',
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (notifyError) {
+                        logger.error(`${logPrefixCtrl} Error notificando al padre:`, notifyError);
+                    }
+
+                    return { 
+                        exito: false, 
+                        error: error.message 
+                    };
+                }
+            });
+
+            // ============================================================
             // CONTROLADOR: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
             // ============================================================
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
                 const logPrefixCtrl = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_CONFIRMA_HIJO_LISTO]`;
 
                 try {
+                    console.log(`${CONFIG_HIJO.IFRAME_ID} PADRE_CONFIRMA_HIJO_LISTO recibido:`, mensaje);
                     // 1. Validación de origen
                     if (!mensaje || !mensaje.origen) {
                         logger.error(`${logPrefixCtrl} Mensaje sin origen válido`, mensaje);
@@ -250,6 +367,12 @@
 
                     // Preparado para futuras solicitudes de datos adicionales del padre
                     logger.debug(`${logPrefixCtrl} Componente listo para recibir datos adicionales si es necesario`);
+
+                    // Inicializar la lógica de menú visible y mostrar UI ahora que el padre confirmó
+                    try { if (typeof inicializarLogicaMenu === 'function') inicializarLogicaMenu(); } catch (e) { logger.warn(`${logPrefixCtrl} inicializarLogicaMenu falló:`, e); }
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                    try { await enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }); } catch (e) { /* ignore */ }
 
                     return {
                         exito: true,
@@ -931,6 +1054,7 @@
     // ============================================================
     // EJECUTAR INICIALIZACIÓN
     // ============================================================
+
     init();
 
     // Implementar pagehide para limpiar recursos
