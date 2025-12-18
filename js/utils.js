@@ -2320,16 +2320,15 @@ export function ajustarTimeoutPorConexion(timeoutBase) {
  */
 export async function registrarControladoresUtils() {
     try {
-        const { registrarControlador } = await import('./mensajeria.js');
-        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
-            globalThis.__vv_manejadores.forEach((cb, tipo) => {
-                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[UTILS] error registrando controlador', tipo, e); }
-            });
-            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        try {
+            const migrated = migrarManejadoresTempranos();
+            logger.info('[UTILS][registrarControladores] Controladores migrados (si existían):', migrated);
+        } catch (e) {
+            logger.warn('[UTILS][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
         }
-        logger.info('[UTILS][registrarControladores] Controladores migrados (si existían)');
     } catch (error) {
-        logger.warn('[UTILS][registrarControladores] No se pudo migrar controladores:', error.message);
+        logger.warn('[UTILS][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
     }
 }
 
