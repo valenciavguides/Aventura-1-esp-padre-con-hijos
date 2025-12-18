@@ -90,7 +90,7 @@ export const CONFIG = {
         // a low-power watchPosition to prime the geolocation subsystem so
         // switching to 'aventura' is faster and smoother.
         PREWARM: {
-            ENABLE: true,
+            ENABLE: false,
             TIMEOUT_MS: 15000,
             // Options used for the warmup watchPosition call (low accuracy / low power)
             WATCH_OPTIONS: {
