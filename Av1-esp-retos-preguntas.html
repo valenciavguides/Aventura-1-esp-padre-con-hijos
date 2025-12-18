@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Retos y Preguntas hijo4</title>
+    <script src="js/suppress-warnings.js"></script>
     <style>
         body {
             font-family: "Book Antiqua", "Palatino Linotype", "Palatino", Georgia, serif;
@@ -82,14 +83,12 @@
         }
         #btnMostrarRespuesta {
             background-color: #28a745;
-            display: none;
         }
         #btnMostrarRespuesta:hover {
             background-color: #1e7e34;
         }
         #btnNextAfterReto {
             background-color: #0077cc;
-            display: none;
         }
 
 
@@ -509,6 +508,17 @@
 
     let retoActual = null; // Objeto del reto actual
 
+    // Helper: ocultar controles comunes de forma segura
+    function ocultarControles() {
+        try {
+            if (btnEnviar) btnEnviar.style.display = 'none';
+            // btnMostrarRespuesta y btnNext permanecen visibles siempre
+            if (divRespuestaCorrecta) { divRespuestaCorrecta.style.display = 'none'; divRespuestaCorrecta.textContent = ''; }
+        } catch (e) {
+            logger && logger.warn && logger.warn('[hijo4] ocultarControles error:', e);
+        }
+    }
+
     /* Función: fuegosArtificiales()
        Muestra una animación de fuegos artificiales en la pantalla.
     */
@@ -535,7 +545,7 @@
                 for (let i = 0; i < NUM_CHISPAS_POR_FUEGO; i++) {
                     let chispa = document.createElement("div");
                     chispa.style.position = "absolute";
-                    chispa.borderRadius = "50%";
+                    chispa.style.borderRadius = "50%";
                     chispa.style.width = "12px";
                     chispa.style.height = "12px";
                     chispa.style.background = `hsl(${Math.random() * 360}, 100%, 70%)`;
@@ -618,11 +628,11 @@
             estado.retoActualId = retoId;
 
             // Ocultar todos los botones y mensajes al inicio de un nuevo reto
-            btnNext.style.display = "none";
-            btnMostrarRespuesta.style.display = "none";
-            btnEnviar.style.display = "none";
-            divRespuestaCorrecta.style.display = "none";
-            divRespuestaCorrecta.textContent = "";
+            ocultarControles();
+
+            // Los botones están siempre visibles, pero btnNext está deshabilitado hasta respuesta correcta
+            if (btnNext) btnNext.disabled = true;
+            if (btnMostrarRespuesta) btnMostrarRespuesta.disabled = false;
 
             retoDiv.classList.remove("correct", "incorrect");
             fuegosDiv.innerHTML = "";
@@ -657,7 +667,7 @@
                 // Insertar btnEnviar en el button-container para mantener estilos consistentes
                 const buttonContainer = document.getElementById('button-container');
                 if (buttonContainer && !buttonContainer.contains(btnEnviar)) {
-                    buttonContainer.appendChild(btnEnviar);
+                    buttonContainer.insertBefore(btnEnviar, buttonContainer.firstChild);
                 }
                 btnEnviar.style.display = "inline-block"; // Mostrar el botón Enviar
                 btnEnviar.disabled = false;
@@ -676,7 +686,7 @@
                 // Insertar btnEnviar en el button-container para mantener estilos consistentes
                 const buttonContainer = document.getElementById('button-container');
                 if (buttonContainer && !buttonContainer.contains(btnEnviar)) {
-                    buttonContainer.appendChild(btnEnviar);
+                    buttonContainer.insertBefore(btnEnviar, buttonContainer.firstChild);
                 }
                 btnEnviar.style.display = "inline-block"; // Mostrar el botón Enviar
                 btnEnviar.disabled = false;
@@ -692,9 +702,7 @@
                 retoDiv.appendChild(puzzleIframe);
 
                 // Ocultar botones de la página principal para puzzles, ya que el puzzle gestiona su propia lógica.
-                btnEnviar.style.display = "none";
-                btnMostrarRespuesta.style.display = "none";
-                btnNext.style.display = "none";
+                ocultarControles();
             }
         }
 
@@ -739,11 +747,10 @@
                 retoDiv.classList.add("correct");
                 fuegosArtificiales(); // Llama a la animación
 
-                // Mostrar botones después de una respuesta correcta
-                btnNext.style.display = "inline-block";
-                if (!estado.paradaPendiente) btnMostrarRespuesta.style.display = "inline-block";
+                // Habilitar btnNext después de una respuesta correcta
+                if (btnNext) btnNext.disabled = false;
 
-                btnEnviar.style.display = "none"; // Ocultar el botón Enviar
+                ocultarControles(); // Ocultar todos los controles (incluye btnEnviar)
 
                 // Enviar mensaje al padre indicando que el reto se completó
                 // Actualizar estado de progreso
@@ -768,7 +775,6 @@
                 retoDiv.classList.add("incorrect");
                 vibrar();
                 btnEnviar.disabled = false; // Permitir reintentar
-                if (!estado.paradaPendiente) btnMostrarRespuesta.style.display = "inline-block"; // Mostrar botón de respuesta aunque sea incorrecto
             }
         }
 
@@ -778,10 +784,8 @@
         btnMostrarRespuesta.addEventListener("click", () => {
             const reto = retoActual;
             if (!reto) return; // Verificar que retoActual existe
-            if (reto.tipo === "opcion" || reto.tipo === "opcion-multiple") {
-                divRespuestaCorrecta.textContent = "Respuesta correcta: " + reto.correctas.join(", ");
-            } else if (reto.tipo === "texto") {
-                divRespuestaCorrecta.textContent = "Respuesta correcta: " + reto.correctas.join(", ");
+            if (reto.tipo === "opcion" || reto.tipo === "opcion-multiple" || reto.tipo === "texto") {
+                divRespuestaCorrecta.textContent = "Respuesta correcta: " + ((reto.correctas || []).join(", "));
             } else {
                 divRespuestaCorrecta.textContent = "No hay respuesta correcta disponible para este tipo de reto.";
             }
@@ -838,7 +842,7 @@
                         completado: true
                     }
                 });
-                btnNext.style.display = "inline-block";
+                if (btnNext) btnNext.disabled = false;
             }
             else if (event.data === "puzzle-state-timeout") {
                 retoDiv.classList.add("incorrect");
@@ -849,52 +853,86 @@
             else if (event.data === "advance-to-next") {
                 divRespuestaCorrecta.style.display = "none";
                 indiceReto++;
-                if (indiceReto >= retos.length) {
+                if (indiceReto >= retosAventura1Es.length) {
                     alert("¡Has terminado todos los retos de la Aventura 1!");
                     indiceReto = 0; // Opcional: Reiniciar o redirigir
                 }
-                mostrarReto(); // Carga y muestra el siguiente reto
+                const siguiente = retosAventura1Es[indiceReto];
+                if (siguiente) {
+                    mostrarReto(siguiente.id);
+                } else {
+                    logger.warn('[hijo4] No hay siguiente reto para índice', indiceReto);
+                }
             }
         });
+
+        /* Función: normalizarModo(modo)
+           Acepta string u objeto y devuelve una cadena segura para usos en clases/dataset
+        */
+        function normalizarModo(modo) {
+            try {
+                if (typeof modo === 'string') {
+                    modo = modo.trim();
+                } else if (modo && typeof modo === 'object') {
+                    modo = modo.actual || modo.modo || modo.nombre || Object.values(modo).find(v => typeof v === 'string') || '';
+                } else if (modo === null || typeof modo === 'undefined') {
+                    modo = '';
+                } else {
+                    modo = String(modo);
+                }
+                modo = String(modo || '').trim().toLowerCase();
+                modo = modo.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+                return modo;
+            } catch (e) {
+                return '';
+            }
+        }
 
         /* Función: actualizarInterfazModo(modo)
            Actualiza la interfaz según el modo (aventura/casa)
         */
         function actualizarInterfazModo(modo) {
-            console.log(`[RETOS] Actualizando interfaz para modo: ${modo}`);
+            const modoSeguro = normalizarModo(modo);
+            console.log(`[RETOS] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
             const body = document.body;
 
             // Actualizar estado local
-            estado.modoActual = modo;
+            estado.modoActual = modoSeguro || modo;
 
             // Actualizar clases CSS
             body.classList.remove('modo-casa', 'modo-aventura');
-            body.classList.add(`modo-${modo}`);
+            if (modoSeguro) body.classList.add(`modo-${modoSeguro}`);
 
             // Ajustes específicos según el modo
             const retoContainer = document.getElementById('reto-container');
             if (retoContainer) {
-                retoContainer.dataset.modo = modo;
+                if (modoSeguro) retoContainer.dataset.modo = modoSeguro;
 
                 // Ajustar estilos según el modo
-                if (modo === 'casa') {
+                if (modoSeguro === 'casa') {
                     retoContainer.style.borderColor = '#3498db'; // Azul para modo casa
-                } else {
-                    retoContainer.style.borderColor = '#e67e22'; // Naranja para modo aventura
+                } else if (modoSeguro) {
+                    retoContainer.style.borderColor = '#e67e22'; // Naranja para modo aventura u otros
                 }
             }
 
             // Si hay un reto abierto, actualizar su visualización
             if (estado.retoActualId) {
-                console.log(`[RETOS] Se está mostrando el reto ${estado.retoActualId} en modo ${modo}`);
+                console.log(`[RETOS] Se está mostrando el reto ${estado.retoActualId} en modo ${modoSeguro || modo}`);
             }
         }
 
         // Inicializar mensajería y controladores
         try {
+            // Ocultar la UI hasta que el padre confirme que los controladores están listos
+            let _uiConfirmado = false;
+            const _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+            try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+            function mostrarUI() { if (!_uiConfirmado) { console.warn('[hijo4] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; } try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo4] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {} }
+
             // Inicializar mensajería con estructura correcta para hijo4
             await inicializarMensajeria({
-                iframeId: CONFIG_HIJO.IFRAME_ID,
+                iframeId: window.frameElement.id,
                 debug: CONFIG_HIJO.DEBUG
             });
 
@@ -905,16 +943,41 @@
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
                 logger.info(`[hijo4] PADRE_LISTO recibido desde ${mensaje.origen}`);
 
-                // Procesar modo inicial si viene en el mensaje
-                if (mensaje.datos && mensaje.datos.modo) {
-                    const modoInicial = mensaje.datos.modo;
-                    logger.info(`[hijo4] Procesando modo inicial del padre: ${modoInicial}`);
-                    actualizarInterfazModo(modoInicial);
+                // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                if (mensaje.datos) {
+                    const { modo, paradas, paradaActual } = mensaje.datos;
+
+                    if (modo) {
+                        logger.info(`[hijo4] Procesando modo inicial del padre: ${modo}`);
+                        actualizarInterfazModo(modo);
+                    }
+
+                    if (paradas) {
+                        logger.debug(`[hijo4] Paradas recibidas: ${paradas.length}`);
+                    }
+
+                    if (paradaActual) {
+                        logger.debug(`[hijo4] Parada actual: ${paradaActual}`);
+                    }
                 }
+
+                // Enviar HIJO_LISTO directamente
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['retos', 'preguntas', 'validacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`[hijo4] HIJO_LISTO enviado al padre`);
             });
 
             // Controlador para confirmación del padre
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+                console.log('[hijo4] PADRE_CONFIRMA_HIJO_LISTO recibido:', mensaje);
                 logger.info(`[hijo4] PADRE_CONFIRMA_HIJO_LISTO recibido desde ${mensaje.origen}`);
 
                 // Aplicar modo pendiente si estaba encolado
@@ -942,6 +1005,10 @@
                     actualizarInterfazModo(modoInicial);
                     logger.debug(`[hijo4] Interfaz actualizada según modo inicial`);
                 }
+
+                // Mostrar UI ahora que el padre confirmó
+                try { _uiConfirmado = true; mostrarUI(); } catch (e) { /* ignore */ }
+                try { await enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }); } catch (e) { /* ignore */ }
             });
 
             // Controlador para mostrar reto específico
@@ -1007,26 +1074,9 @@
                         }
                         
                         // Ocultar botones
-                        if (btnEnviar) btnEnviar.style.display = "none";
-                        if (btnMostrarRespuesta) btnMostrarRespuesta.style.display = "none";
-                        if (btnNext) btnNext.style.display = "none";
-                        if (divRespuestaCorrecta) {
-                            divRespuestaCorrecta.style.display = "none";
-                            divRespuestaCorrecta.textContent = "";
+                            ocultarControles();
                         }
-                    }
-
-                    // Aplicar lógica específica del componente
                     actualizarInterfazModo(modo);
-
-                    // Paso 5: Enviar confirmación
-                    await enviarMensaje({
-                        tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        destino: mensaje.origen,
-                        datos: { modo, exito: true, timestamp: Date.now() }
-                    });
-
                 } catch (error) {
                     logger.error(`${logPrefix} Error:`, error);
                     await enviarMensaje({
@@ -1097,13 +1147,7 @@
                 }
                 
                 // Ocultar todos los botones
-                if (btnEnviar) btnEnviar.style.display = "none";
-                if (btnMostrarRespuesta) btnMostrarRespuesta.style.display = "none";
-                if (btnNext) btnNext.style.display = "none";
-                if (divRespuestaCorrecta) {
-                    divRespuestaCorrecta.style.display = "none";
-                    divRespuestaCorrecta.textContent = "";
-                }
+                ocultarControles();
                 
                 // Limpiar fuegos artificiales
                 if (fuegosDiv) {
@@ -1204,8 +1248,7 @@
                                 estado.retoActualId = null;
                                 estado.paradaPendiente = false;
                                 // Hide controls
-                                try { if (typeof btnMostrarRespuesta !== 'undefined' && btnMostrarRespuesta) btnMostrarRespuesta.style.display = 'none'; } catch (e) {}
-                                try { if (typeof btnNext !== 'undefined' && btnNext) btnNext.style.display = 'none'; } catch (e) {}
+                                ocultarControles();
                                 // Notify parent that the child processed the notification
                                 await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_CANCELADO procesado', padreId, motivo } });
                             } catch (errPR) { logger.warn(`${logPrefix} Error limpiando UI reto por pending cancelado:`, errPR); }
@@ -1220,8 +1263,7 @@
                             try {
                                 estado.retoActualId = null;
                                 estado.paradaPendiente = true;
-                                if (typeof btnMostrarRespuesta !== 'undefined' && btnMostrarRespuesta) btnMostrarRespuesta.style.display = 'none';
-                                if (typeof btnNext !== 'undefined' && btnNext) btnNext.style.display = 'none';
+                                ocultarControles();
                                 await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_INICIADO recibid' } });
                             } catch (err) { logger.warn(`${logPrefix} Error procesando PENDING_INICIADO:`, err); }
                         }
@@ -1231,11 +1273,11 @@
                 }
             });
 
-            // Enviar HIJO_LISTO ahora que todos los controladores críticos han sido registrados
+            // Enviar HIJO_PREPARADO ahora que todos los controladores críticos han sido registrados
             try {
                 await enviarMensaje({
                     destino: getPadreId(),
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     datos: {
                         version: '1.0.0',
@@ -1243,77 +1285,76 @@
                         timestamp: Date.now()
                     }
                 });
-
-                // ============================================================
-                // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
-                // ============================================================
-                registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
-                    try {
-                        console.debug(`[hijo4][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-                        return { exito: true };
-                    } catch (e) {
-                        console.error('[hijo4][GPS.ACTIVAR] Error en handler no-op:', e);
-                        return { exito: false, error: e.message };
-                    }
-                });
-
-                registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
-                    try {
-                        console.debug(`[hijo4][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-                        return { exito: true };
-                    } catch (e) {
-                        console.error('[hijo4][GPS.DESACTIVAR] Error en handler no-op:', e);
-                        return { exito: false, error: e.message };
-                    }
-                });
-
-                registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
-                    try {
-                        console.debug(`[hijo4][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
-                        return { exito: true };
-                    } catch (e) {
-                        console.error('[hijo4][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
-                        return { exito: false, error: e.message };
-                    }
-                });
-
-                registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
-                    try {
-                        console.debug(`[hijo4][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
-                        return { exito: true };
-                    } catch (e) {
-                        console.error('[hijo4][GPS.ESTADO_ACTUALIZADO] Error en handler no-op:', e);
-                        return { exito: false, error: e.message };
-                    }
-                });
-
-                registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
-                    try {
-                        const datos = mensaje?.datos || {};
-                        const { codigo } = datos;
-                        const errorMensaje = datos.mensaje || datos.message || null;
-                        const contexto = datos.contexto || datos.context || 'desconocido';
-                        const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
-                        const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
-                        let details;
-                        try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
-                        logger.error(`[hijo4][GPS.ERROR] Error GPS recibido: ${details}`);
-                        // Telemetría: incrementar contador por código de error GPS en hijo4
-                        try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
-                        // Enviar métrica a monitoreo
-                        try { if (typeof enviarMensaje === 'function') { enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo4', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {}); } } catch (ignore) { /* ignore */ }
-                        // Telemetría: incrementar contador por código de error GPS en hijo4
-                        try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
-                        return { exito: true };
-                    } catch (e) {
-                        logger.error('[hijo4][GPS.ERROR] Error en handler no-op:', e);
-                        return { exito: false, error: e.message };
-                    }
-                });
-                logger.info(`[hijo4] HIJO_LISTO enviado exitosamente tras registrar controladores`);
-            } catch (error) {
-                logger.error(`[hijo4] Error enviando HIJO_LISTO:`, error);
+                logger.debug('[hijo4] HIJO_PREPARADO enviado; esperando PADRE_LISTO');
+            } catch (e) {
+                logger.warn('[hijo4] Error enviando HIJO_PREPARADO:', e);
             }
+
+            // ============================================================
+            // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.ACTIVAR] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.DESACTIVAR] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.ESTADO_ACTUALIZADO] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+                try {
+                    const datos = mensaje?.datos || {};
+                    const { codigo } = datos;
+                    const errorMensaje = datos.mensaje || datos.message || null;
+                    const contexto = datos.contexto || datos.context || 'desconocido';
+                    const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+                    const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
+                    let details;
+                    try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
+                    logger.error(`[hijo4][GPS.ERROR] Error GPS recibido: ${details}`);
+                    // Telemetría: incrementar contador por código de error GPS en hijo4
+                    try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                    // Enviar métrica a monitoreo
+                    try { if (typeof enviarMensaje === 'function') { enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo4', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {}); } } catch (ignore) { /* ignore */ }
+                return { exito: true };
+            } catch (e) {
+                logger.error('[hijo4][GPS.ERROR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+            logger.info(`[hijo4] HIJO_LISTO enviado exitosamente tras registrar controladores`);
 
             estado.inicializado = true;
             logger.info(`[hijo4] Inicialización completada exitosamente`);
@@ -1337,3 +1378,5 @@
 <div id="respuestaCorrectaTexto"></div>
 
 <div id="fuegos"></div>
+</body>
+</html>
