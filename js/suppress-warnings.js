@@ -8,13 +8,15 @@
 // Detectar dispositivo móvil (inline para evitar imports)
 const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// TTL de limpieza (inline para evitar imports)
-const TTL_LIMPIEZA = {
-    SUPPRESS: {
-        MOVIL: 120000,
-        DESKTOP: 300000
-    }
-};
+// TTL de limpieza: preferir la constante centralizada si está disponible
+const TTL_LIMPIEZA = (typeof window !== 'undefined' && window.TTL_LIMPIEZA)
+    ? window.TTL_LIMPIEZA
+    : {
+        SUPPRESS: {
+            MOVIL: 120000,
+            DESKTOP: 300000
+        }
+    };
 
 let errorCounter = 0;
 let errorMessages = new Set();
@@ -47,6 +49,8 @@ window.addEventListener('error', function (event) {
         // Ignorar errores genéricos de recursos (imágenes, scripts externos, etc.)
         return;
     }
+    // Prevenir que el depurador se detenga
+    event.preventDefault();
     // Si el error tiene mensaje relevante, mostrarlo
     if (event.message && event.message.match(/(critical|mensajeria|app|padre|hijo|coordenada|reto|audio|mapa|comunicacion|centralizada|bidireccional)/i)) {
         console.error('[Error interceptado relevante]', event.message, event);
