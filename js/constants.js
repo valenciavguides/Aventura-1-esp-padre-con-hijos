@@ -58,6 +58,11 @@ export const TTL_LIMPIEZA = {
     }
 };
 
+// Make TTL_LIMPIEZA available to legacy scripts that expect a global variable
+if (typeof window !== 'undefined') {
+    try { window.TTL_LIMPIEZA = TTL_LIMPIEZA; } catch (e) { /* ignore in restricted environments */ }
+}
+
 /**
  * Tipos de mensajes para la comunicación entre iframes
  * Organizados por categorías para mejor mantenimiento
@@ -73,6 +78,8 @@ export const TIPOS_MENSAJE = {
         INICIALIZACION_FINALIZADA: 'SISTEMA.INICIALIZACION_FINALIZADA',
         PADRE_LISTO: 'SISTEMA.PADRE_LISTO',
         HIJO_LISTO: 'SISTEMA.HIJO_LISTO',
+        HIJO_PREPARADO: 'SISTEMA.HIJO_PREPARADO',
+        PADRE_DATOS: 'SISTEMA.PADRE_DATOS',
         PADRE_CONFIRMA_HIJO_LISTO: 'SISTEMA.PADRE_CONFIRMA_HIJO_LISTO',
         HIJO_FALLIDO: 'SISTEMA.HIJO_FALLIDO',
         HEARTBEAT: 'SISTEMA.HEARTBEAT',
