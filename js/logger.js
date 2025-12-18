@@ -1,4 +1,7 @@
 
+import { TTL_LIMPIEZA } from './constants.js';
+import { CONFIG } from './config.js';
+
 // Definir LOG_LEVELS localmente para evitar ReferenceError si el import falla
 const LOG_LEVELS = {
     DEBUG: 0,
@@ -16,12 +19,10 @@ const DEFAULT_COLORS = {
     error: '#F44336'   // Rojo
 };
 
-import { TTL_LIMPIEZA } from './constants.js';
-
 // Definir esMovil localmente para evitar dependencias de import y ReferenceError
 const esMovil = (typeof navigator !== 'undefined') && /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-const IS_PROD = (typeof CONFIG !== 'undefined' && (CONFIG.ENTORNO === 'produccion' || CONFIG.ENTORNO === 'prod')) || (typeof window !== 'undefined' && window.location && window.location.hostname && !/localhost|127.0.0.1/.test(window.location.hostname));
+const IS_PROD = (CONFIG && (CONFIG.ENTORNO === 'produccion' || CONFIG.ENTORNO === 'prod')) || (typeof window !== 'undefined' && window.location && window.location.hostname && !/localhost|127.0.0.1/.test(window.location.hostname));
 
 const loggerDefaultOptions = {
     level: IS_PROD ? 'warn' : 'info',
