@@ -21,16 +21,15 @@ import logger from './logger.js';
  */
 export async function registrarControladoresMapa() {
     try {
-        const { registrarControlador } = await import('./mensajeria.js');
-        if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
-            globalThis.__vv_manejadores.forEach((cb, tipo) => {
-                try { registrarControlador(tipo, cb); } catch (e) { console.warn('[MAPA] error registrando controlador', tipo, e); }
-            });
-            try { globalThis.__vv_manejadores.clear(); } catch (e) { /* ignore */ }
+        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        try {
+            const migrated = migrarManejadoresTempranos();
+            logger.info('[MAPA][registrarControladores] Controladores migrados (si existían):', migrated);
+        } catch (e) {
+            logger.warn('[MAPA][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
         }
-        logger.info('[MAPA][registrarControladores] Controladores migrados (si existían)');
     } catch (error) {
-        logger.warn('[MAPA][registrarControladores] No se pudo migrar controladores:', error.message);
+        logger.warn('[MAPA][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
     }
 }
 
@@ -180,6 +179,10 @@ let marcadorPosicionActual = null; // Marcador para la posición GPS actual del 
 let rutasTramos = [];
 let rutasActivas = [];
 let marcadorUsuario = null;
+let marcadorFlechaUsuario = null;
+let marcadorHaloUsuario = null;
+let deviceOrientationHeading = 0;
+let flechaActiva = false;
 let _mapaInstance = null; // Instancia del mapa Leaflet
 let _mapaOpciones = null; // Opciones del mapa
 
@@ -886,6 +889,9 @@ function actualizarPosicionUsuario(coordenadas) {
     } catch (error) {
         logger.error('Error al actualizar la posición del usuario:', error);
     }
+
+    // Actualizar flecha si está activa
+    actualizarPosicionFlecha();
 }
 
 /**
@@ -1371,10 +1377,114 @@ export function limpiarPorEstado(nuevoEstado) {
         if (tramoActual !== undefined) estadoMapa.tramoActual = tramoActual;
         estadoMapa.timestamp = Date.now();
 
+        // Activar/desactivar flecha de usuario
+        toggleFlechaUsuario(tramoActual !== null);
+
         return limpiado;
     } catch (error) {
         logger.error('Error en limpiarPorEstado:', error);
         return false;
+    }
+}
+
+/**
+ * Activa o desactiva la flecha de dirección del usuario en el tramo.
+ * @param {boolean} activar - True para activar, false para desactivar
+ */
+function toggleFlechaUsuario(activar) {
+    if (activar && !flechaActiva && estadoMapa.tramoActual && estadoMapa.modo === MODOS.AVENTURA) {
+        flechaActiva = true;
+        // Añadir event listener para deviceorientation
+        if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', actualizarOrientacionFlecha);
+        }
+        // Añadir event listener para zoom del mapa
+        if (_mapaInstance) {
+            _mapaInstance.on('zoomend', actualizarPosicionFlecha);
+        }
+        logger.info('Flecha de usuario activada');
+    } else if (!activar && flechaActiva) {
+        flechaActiva = false;
+        // Remover event listeners
+        window.removeEventListener('deviceorientation', actualizarOrientacionFlecha);
+        if (_mapaInstance) {
+            _mapaInstance.off('zoomend', actualizarPosicionFlecha);
+        }
+        // Remover marcador
+        if (marcadorFlechaUsuario && _mapaInstance) {
+            _mapaInstance.removeLayer(marcadorFlechaUsuario);
+            marcadorFlechaUsuario = null;
+        }
+        // Remover halo
+        if (marcadorHaloUsuario && _mapaInstance) {
+            _mapaInstance.removeLayer(marcadorHaloUsuario);
+            marcadorHaloUsuario = null;
+        }
+        logger.info('Flecha de usuario desactivada');
+    }
+}
+
+/**
+ * Actualiza la orientación de la flecha según la brújula del dispositivo.
+ * @param {DeviceOrientationEvent} event
+ */
+function actualizarOrientacionFlecha(event) {
+    if (event.alpha !== null) {
+        deviceOrientationHeading = event.alpha; // 0-360 grados
+        actualizarPosicionFlecha();
+    }
+}
+
+/**
+ * Actualiza la posición y rotación de la flecha del usuario.
+ */
+function actualizarPosicionFlecha() {
+    if (!flechaActiva || !estadoMapa.tramoActual || !estadoMapa.posicionUsuario || !_mapaInstance) return;
+
+    // Encontrar el tramo actual
+    const tramo = arrayParadasLocal.find(p => p.id === estadoMapa.tramoActual);
+    if (!tramo || !tramo.waypoints) return;
+
+    // Calcular punto más cercano en la polyline
+    const userLatLng = L.latLng(estadoMapa.posicionUsuario.lat, estadoMapa.posicionUsuario.lng);
+    const waypointsLatLng = tramo.waypoints.map(wp => L.latLng(wp.lat, wp.lng));
+    const polyline = L.polyline(waypointsLatLng);
+    const closestPoint = L.GeometryUtil.closest(_mapaInstance, userLatLng, polyline);
+
+    if (closestPoint) {
+        // Calcular tamaño basado en zoom
+        const zoom = _mapaInstance.getZoom();
+        const baseSize = 15;
+        const sizeMultiplier = Math.max(1, (zoom - 13) * 0.5 + 1); // Crece con zoom
+        const size = Math.round(baseSize * sizeMultiplier);
+
+        // Crear o actualizar marcador
+        const arrowIcon = L.divIcon({
+            html: `<div style="font-size: ${size}px; color: #0066cc; text-shadow: 1px 1px 2px rgba(0,0,0,0.7), 0 0 4px rgba(0,0,0,0.3); transform: rotate(${deviceOrientationHeading}deg); filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.5));">↑</div>`,
+            className: 'user-direction-arrow',
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2]
+        });
+
+        if (marcadorFlechaUsuario) {
+            marcadorFlechaUsuario.setLatLng(closestPoint);
+            marcadorFlechaUsuario.setIcon(arrowIcon);
+        } else {
+            marcadorFlechaUsuario = L.marker(closestPoint, { icon: arrowIcon }).addTo(_mapaInstance);
+        }
+
+        // Actualizar o crear halo (círculo de 21m)
+        if (marcadorHaloUsuario) {
+            marcadorHaloUsuario.setLatLng(closestPoint);
+        } else {
+            marcadorHaloUsuario = L.circle(closestPoint, {
+                radius: 21, // 21 metros
+                color: 'red',
+                fillColor: 'yellow',
+                fillOpacity: 0.2,
+                weight: 1
+            }).addTo(_mapaInstance);
+        }
     }
 }
 
