@@ -1601,8 +1601,12 @@
                         attribution: '© OpenStreetMap contributors'
                     }).addTo(map);
 
-                    // Add rotation control
-                    L.control.rotate().addTo(map);
+                    // Add rotation control (if available)
+                    if (L.control.rotate) {
+                        L.control.rotate().addTo(map);
+                    } else {
+                        console.warn('L.control.rotate not available, rotation control not added');
+                    }
 
                     // Initialize map service - wait for funciones-mapa to be available
                     const initializeMapService = () => {
@@ -4127,7 +4131,7 @@
         function waitForLeafletAndInitialize() {
             return new Promise((resolve) => {
                 const checkLeaflet = () => {
-                    if (typeof L !== 'undefined' && L.map) {
+                    if (typeof L !== 'undefined' && L.map && typeof L.control !== 'undefined' && L.control.rotate) {
                         initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
                     } else {
                         setTimeout(checkLeaflet, 100);
@@ -5541,6 +5545,23 @@
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando error GPS:`, error);
+            }
+        });
+
+        /**
+         * Controlador: NAVEGACION.GPS.RESTRINGIDO
+         * Descripción: Maneja notificaciones de GPS restringido desde hijos
+         * Origen esperado: hijo2
+         * Respuesta: Registra la restricción
+         */
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.RESTRINGIDO][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                logger.info(`${logPrefix} GPS restringido notificado desde ${mensaje.origen}`);
+                // Aquí se puede agregar lógica adicional si es necesario, como actualizar estado o notificar a otros componentes
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando GPS restringido:`, error);
             }
         });
 
