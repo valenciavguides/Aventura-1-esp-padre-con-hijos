@@ -1720,42 +1720,5 @@ setInterval(async () => {
     }
 }, 5000);
 
-// ==================== INICIALIZACIÓN AUTOMÁTICA DEL GPS ====================
-
-(function inicializarGPSAlArrancar() {
-    if (navigator.geolocation) {
-        try {
-            navigator.geolocation.watchPosition(
-                function success(pos) {
-                    window.__ultimaPosicionGPS = pos;
-                    // Log detallado de la posición recibida
-                    logger.info('[GPS] Posición recibida:', {
-                        lat: pos.coords.latitude,
-                        lng: pos.coords.longitude,
-                        accuracy: pos.coords.accuracy,
-                        timestamp: pos.timestamp
-                    });
-                },
-                function error(err) {
-                    logger.warn('[GPS] Error al inicializar automáticamente:', {
-                        code: err && err.code,
-                        message: err && err.message
-                    });
-                },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: CONFIG.GPS && CONFIG.GPS.MAXIMUM_AGE_MS || 0,
-                    timeout: CONFIG.GPS && CONFIG.GPS.TIMEOUT_MS || 15000
-                }
-            );
-            logger.info('[GPS] Inicialización automática de GPS (alta precisión) lanzada al arrancar la app');
-        } catch (e) {
-            logger.error('[GPS] Error inesperado al inicializar GPS:', e && e.message);
-        }
-    } else {
-        logger.error('[GPS] API de geolocalización no soportada en este navegador');
-    }
-})();
-
 
 
