@@ -1602,10 +1602,14 @@
                     }).addTo(map);
 
                     // Add rotation control (if available)
-                    if (L.control.rotate) {
-                        L.control.rotate().addTo(map);
-                    } else {
-                        console.warn('L.control.rotate not available, rotation control not added');
+                    try {
+                        if (typeof L.control.rotate === 'function') {
+                            L.control.rotate().addTo(map);
+                        } else {
+                            console.warn('L.control.rotate not available or not a function, rotation control not added');
+                        }
+                    } catch (error) {
+                        console.warn('Error adding rotation control:', error);
                     }
 
                     // Initialize map service - wait for funciones-mapa to be available
@@ -4131,7 +4135,7 @@
         function waitForLeafletAndInitialize() {
             return new Promise((resolve) => {
                 const checkLeaflet = () => {
-                    if (typeof L !== 'undefined' && L.map && typeof L.control !== 'undefined' && L.control.rotate) {
+                    if (typeof L !== 'undefined' && L.map && typeof L.control !== 'undefined' && typeof L.control.rotate === 'function') {
                         initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
                     } else {
                         setTimeout(checkLeaflet, 100);
