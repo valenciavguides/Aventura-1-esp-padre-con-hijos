@@ -773,18 +773,44 @@
             }
         }
         
-        /* Responsive para pantallas pequeñas horizontal */
-        @media (max-height: 400px) and (orientation: landscape) {
-            .media-contenedor, #hijo4 {
-                width: 90vw;
-                height: 90vh;
+        /* Mensaje de rotación para móviles */
+        .rotation-message {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .rotation-message.show {
+            display: flex;
+        }
+        
+        .rotation-message .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        
+        /* Ocultar mensaje en portrait */
+        @media (orientation: portrait) {
+            .rotation-message {
+                display: none !important;
             }
-            .btn-cerrar-overlay {
-                top: -10px;
-                right: -10px;
-                width: 50px;
-                height: 50px;
-                font-size: 28px;
+        }
+        
+        /* Mostrar mensaje en landscape en móviles */
+        @media (orientation: landscape) and (max-height: 500px) {
+            .rotation-message {
+                display: flex !important;
             }
         }
         
@@ -1458,6 +1484,15 @@
 </head>
 <body>
 
+    <!-- Mensaje de rotación para móviles -->
+    <div id="rotation-message" class="rotation-message">
+        <div>
+            <div class="icon">📱</div>
+            <div>Por favor, rota tu dispositivo a modo vertical (portrait) para una mejor experiencia.</div>
+            <div style="font-size: 18px; margin-top: 10px; opacity: 0.8;">Esta aplicación está optimizada para uso en vertical</div>
+        </div>
+    </div>
+
     <!-- Contenedores de la UI -->
     <div id="mapa"></div>
     <div id="map-debug"></div>
@@ -1870,18 +1905,83 @@
         // ============================================================
         // BLOQUEO DE ORIENTACIÓN EN DISPOSITIVOS MÓVILES
         // ============================================================
-        if (esMovil && screen.orientation && screen.orientation.lock) {
-            // Intentar bloquear a portrait inmediatamente (puede fallar sin interacción)
-            screen.orientation.lock('portrait').catch(function(error) {
-                console.log('Bloqueo de orientación falló inicialmente: ', error);
-                // Si falla, intentar después del primer click del usuario
-                document.addEventListener('click', function() {
-                    screen.orientation.lock('portrait').catch(function(error) {
-                        console.log('Bloqueo de orientación falló después de click: ', error);
-                    });
-                }, { once: true });
-            });
+        if (esMovil) {
+            console.log('📱 Dispositivo móvil detectado. Intentando bloquear orientación...');
+            console.log('Screen orientation API disponible:', !!screen.orientation);
+            console.log('Lock method disponible:', !!(screen.orientation && screen.orientation.lock));
+
+            if (screen.orientation && screen.orientation.lock) {
+                // Intentar bloquear a portrait inmediatamente (puede fallar sin interacción)
+                screen.orientation.lock('portrait').then(function() {
+                    console.log('✅ Orientación bloqueada exitosamente a portrait');
+                }).catch(function(error) {
+                    console.warn('⚠️ Bloqueo de orientación falló inicialmente:', error.message);
+                    // Si falla, intentar después del primer click del usuario
+                    document.addEventListener('click', function() {
+                        console.log('👆 Primer click detectado, intentando bloquear orientación...');
+                        screen.orientation.lock('portrait').then(function() {
+                            console.log('✅ Orientación bloqueada después de interacción');
+                        }).catch(function(error) {
+                            console.error('❌ Bloqueo de orientación falló después de click:', error.message);
+                            console.log('💡 Nota: Algunos navegadores (especialmente iOS) no permiten bloquear orientación desde web apps');
+                        });
+                    }, { once: true });
+                });
+            } else {
+                console.warn('❌ API screen.orientation.lock no disponible en este navegador');
+                console.log('💡 Alternativas: Usar CSS @media queries para adaptar la UI a landscape');
+            }
+
+            // Agregar listener para cambios de orientación
+            if (screen.orientation) {
+                screen.orientation.addEventListener('change', function() {
+                    const orientation = screen.orientation.type;
+                    console.log('🔄 Orientación cambió a:', orientation);
+
+                    if (orientation.includes('landscape')) {
+                        console.warn('⚠️ Usuario rotó a landscape - mostrando mensaje de advertencia');
+                        showRotationMessage();
+                    } else {
+                        hideRotationMessage();
+                    }
+                });
+            }
+
+            // También verificar orientación inicial
+            if (window.innerHeight < window.innerWidth && window.innerWidth < 1000) {
+                // Probablemente landscape en móvil
+                console.log('📱 Orientación inicial parece landscape en móvil');
+                showRotationMessage();
+            }
+        } else {
+            console.log('💻 Dispositivo desktop - no se intenta bloquear orientación');
         }
+
+        // Funciones para mostrar/ocultar mensaje de rotación
+        function showRotationMessage() {
+            const message = document.getElementById('rotation-message');
+            if (message) {
+                message.classList.add('show');
+            }
+        }
+
+        function hideRotationMessage() {
+            const message = document.getElementById('rotation-message');
+            if (message) {
+                message.classList.remove('show');
+            }
+        }
+
+        // Listener adicional para cambios de tamaño de ventana (backup)
+        window.addEventListener('resize', function() {
+            if (esMovil) {
+                if (window.innerHeight < window.innerWidth && window.innerWidth < 1000) {
+                    showRotationMessage();
+                } else {
+                    hideRotationMessage();
+                }
+            }
+        });
 
         // ============================================================
         // ESTADO GLOBAL DE LA APLICACIÓN (compartido con Script 2)
