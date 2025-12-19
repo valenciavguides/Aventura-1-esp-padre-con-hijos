@@ -19,7 +19,7 @@
     <!-- Carga de Leaflet desde CDN -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-rotate@0.1.4/dist/leaflet-rotate.min.js"></script>
+    <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js"></script>
     <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
 
         <!-- Add warning suppression script early in the head -->
@@ -1570,7 +1570,13 @@
                         zoom: 13,
                         minZoom: 12,
                         maxZoom: 18,
-                        zoomControl: false
+                        zoomControl: false,
+                        rotate: true,
+                        rotateControl: {
+                            closeOnZeroBearing: false
+                        },
+                        bearing: 0,
+                        touchRotate: true
                     });
                     
                     // Guardar instancia INMEDIATAMENTE después de crear el mapa
@@ -1582,17 +1588,6 @@
                         attribution: '© OpenStreetMap contributors'
                     }).addTo(map);
 
-                    // Add rotation control (if available)
-                    try {
-                        if (typeof L.control.rotate === 'function') {
-                            L.control.rotate().addTo(map);
-                        } else {
-                            console.warn('L.control.rotate not available or not a function, rotation control not added');
-                        }
-                    } catch (error) {
-                        console.warn('Error adding rotation control:', error);
-                    }
-
                     // Initialize map service - wait for funciones-mapa to be available
                     const initializeMapService = () => {
                         const tryInit = () => {
@@ -1601,6 +1596,51 @@
                                     const ok = window.funcionesMapa.inicializarServicioMapa(map);
                                     if (ok === true) {
                                         console.log('Map initialized successfully');
+                                        
+                                        // Initialize GPS after map is ready (non-blocking)
+                                        if (navigator.geolocation) {
+                                            function initGPS(retryCount = 0) {
+                                                const maxRetries = 3;
+                                                const timeout = 60000; // 60 seconds
+                                                
+                                                navigator.geolocation.watchPosition(
+                                                    function success(pos) {
+                                                        window.__ultimaPosicionGPS = pos;
+                                                        console.log('[GPS] Posición recibida:', {
+                                                            lat: pos.coords.latitude,
+                                                            lng: pos.coords.longitude,
+                                                            accuracy: pos.coords.accuracy,
+                                                            timestamp: pos.timestamp
+                                                        });
+                                                    },
+                                                    function error(err) {
+                                                        console.warn(`[GPS] Error al inicializar (intento ${retryCount + 1}/${maxRetries + 1}):`, {
+                                                            code: err.code,
+                                                            message: err.message
+                                                        });
+                                                        
+                                                        // Retry on timeout, up to maxRetries times
+                                                        if (err.code === 3 && retryCount < maxRetries) {
+                                                            console.log(`[GPS] Reintentando GPS en 5 segundos...`);
+                                                            setTimeout(() => initGPS(retryCount + 1), 5000);
+                                                        } else if (err.code === 1) {
+                                                            console.warn('[GPS] Permisos denegados - GPS no disponible');
+                                                        } else {
+                                                            console.warn('[GPS] GPS falló definitivamente');
+                                                        }
+                                                    },
+                                                    {
+                                                        enableHighAccuracy: true,
+                                                        maximumAge: 0,
+                                                        timeout: timeout
+                                                    }
+                                                );
+                                            }
+                                            
+                                            initGPS();
+                                            console.log('[GPS] Inicialización automática lanzada después del mapa (con reintentos)');
+                                        }
+                                        
                                         resolve(map);
                                         return;
                                     } else {
@@ -5247,7 +5287,8 @@
         // ============================================================
         // Después de registrar NAVEGACION.SOLICITAR_DATOS_PARADAS, confirmar a hijos que ya enviaron HIJO_LISTO
         try {
-            const hijosListos = Array.from(estado.hijosInicializados || []);
+            const estadoPadre = window.estadoPadre || {};
+            const hijosListos = Array.from(estadoPadre.hijosInicializados || []);
             
             for (const hijoId of hijosListos) {
                 console.log(`[PADRE] Enviando PADRE_CONFIRMA_HIJO_LISTO (batch) a ${hijoId}`);
