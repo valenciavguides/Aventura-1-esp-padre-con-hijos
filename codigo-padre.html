@@ -4135,7 +4135,7 @@
         function waitForLeafletAndInitialize() {
             return new Promise((resolve) => {
                 const checkLeaflet = () => {
-                    if (typeof L !== 'undefined' && L.map && typeof L.control !== 'undefined' && typeof L.control.rotate === 'function') {
+                    if (typeof L !== 'undefined' && L.map) {
                         initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
                     } else {
                         setTimeout(checkLeaflet, 100);
@@ -6885,7 +6885,27 @@
         // ============================================================
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Esperando inicialización del mapa...`);
 
-        setTimeout(() => {
+        // Esperar a que el mapa esté realmente inicializado antes de invalidar tamaño
+        const esperarMapaListo = () => {
+            return new Promise((resolve) => {
+                const checkMap = () => {
+                    if (window.funcionesMapa && typeof window.funcionesMapa.isMapInitialized === 'function') {
+                        window.funcionesMapa.isMapInitialized().then(initialized => {
+                            if (initialized) {
+                                resolve();
+                            } else {
+                                setTimeout(checkMap, 100);
+                            }
+                        });
+                    } else {
+                        setTimeout(checkMap, 100);
+                    }
+                };
+                checkMap();
+            });
+        };
+
+        esperarMapaListo().then(() => {
             invalidarTamañoMapa().then(success => {
                 if (success) {
                     logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Tamaño del mapa actualizado`);
@@ -6899,7 +6919,7 @@
             diagnosticarMapa().then(result => {
                 logger.debug(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Diagnóstico del mapa completado`);
             });
-        }, 500);
+        });
 
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Proceso de inicialización completado`);
         estado.tiempoInicio = Date.now();
