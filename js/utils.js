@@ -7,6 +7,7 @@
 import logger from './logger.js';
 import { CSS_CLASES, MODOS, ERRORES, TIPOS_MENSAJE } from './constants.js';
 import { promesasPendientes } from './monitoreo.js';
+import { enviarMensaje } from './mensajeria.js';
 
 /**
  * Resolves the best UI destination for notifications/modals/alerts.
