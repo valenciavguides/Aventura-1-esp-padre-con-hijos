@@ -3974,7 +3974,7 @@ window.funcionesMapa = {
     estaInicializado,
     invalidarTamañoMapa,
     diagnosticarMapa,
-    isMapInitialized: estaInicializado,
+    isMapInitialized,
     mostrarTodasLasParadas,
     limpiarRecursos,
     dibujarRutaConMarcadores,
