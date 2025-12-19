@@ -1,22 +1,3 @@
-        // CONTROLADOR: RETO.COMPLETADO (avanzar navegación al recibir notificación de hijo4)
-        registrarControladorSeguro(TIPOS_MENSAJE_S1.RETO.COMPLETADO, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[RETO.COMPLETADO]`;
-            try {
-                logger.info(`${logPrefix} Reto completado recibido de ${mensaje?.origen}`);
-                // Marcar reto como completado en el estado
-                if (estado.retoActual) {
-                    estado.retoActual.completado = true;
-                }
-                // Progresar al siguiente elemento de la aventura
-                if (typeof progresarSiguienteElemento === 'function') {
-                    await progresarSiguienteElemento();
-                } else {
-                    logger.warn(`${logPrefix} progresarSiguienteElemento no está disponible`);
-                }
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando RETO.COMPLETADO:`, error);
-            }
-        });
 <!DOCTYPE html>
 <!-- 
     @ts-nocheck
@@ -226,11 +207,11 @@
         /* Logo styling with exact positioning (responsive) */
         #logo-aventura {
             position: fixed;
-            top: -13px;
+            top: -30px;
             left: 50%;
             transform: translateX(-50%);
             width: 85vw; /* ~85% of the viewport width as requested */
-            height: 18vh; /* responsive height */
+            height: 16vh; /* responsive height */
             z-index: 3000;
             object-fit: contain;
         }
