@@ -1567,9 +1567,8 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
     try {
         setBotonActivo('btnMapaJpg');
 
-        // Determinar url del JPG (fallback a referencia general si no existe)
-        const urlJpg = (estadoComponente.arrayParadasLocal?.find(p => p.id === estadoComponente.idParadaActual)?.imagen)
-            || 'mapas/Av1_mapa.jpg';
+        // Siempre usar el mapa JPG estático
+        const urlJpg = 'mapas/Av1_mapa.jpg';
 
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
