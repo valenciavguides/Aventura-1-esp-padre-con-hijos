@@ -36,6 +36,14 @@
       font-size: 50px !important;
       font-weight: bold;
     }
+
+    /* Estilos para el control de rotación personalizado */
+    .leaflet-control-rotate {
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    }
+    .leaflet-control-rotate button:hover {
+      background-color: rgba(0,0,0,0.1);
+    }
   </style>
 
   <!-- Leaflet CSS -->
@@ -53,6 +61,71 @@
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     crossorigin=""
   ></script>
+
+  <script>
+    // Implementación simple de rotación sin plugin
+    (function() {
+      if (typeof L === 'undefined') return;
+
+      // Extender L.Map para agregar rotación
+      L.Map.include({
+        _bearing: 0,
+
+        setBearing: function(bearing) {
+          this._bearing = bearing;
+          this._updateMapRotation();
+          return this;
+        },
+
+        getBearing: function() {
+          return this._bearing;
+        },
+
+        _updateMapRotation: function() {
+          if (this._container) {
+            this._container.style.transform = `rotate(${this._bearing}deg)`;
+            this._container.style.transformOrigin = 'center center';
+          }
+        }
+      });
+
+      // Agregar control de rotación
+      L.Control.Rotate = L.Control.extend({
+        options: {
+          position: 'bottomleft'
+        },
+
+        onAdd: function(map) {
+          const container = L.DomUtil.create('div', 'leaflet-control-rotate');
+          container.style.backgroundColor = 'white';
+          container.style.padding = '5px';
+          container.style.border = '2px solid rgba(0,0,0,0.2)';
+          container.style.borderRadius = '5px';
+
+          const button = L.DomUtil.create('button', '', container);
+          button.innerHTML = '🔄';
+          button.style.fontSize = '20px';
+          button.style.border = 'none';
+          button.style.background = 'none';
+          button.style.cursor = 'pointer';
+          button.title = 'Rotar mapa';
+
+          L.DomEvent.on(button, 'click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            const currentBearing = map.getBearing();
+            const newBearing = (currentBearing + 90) % 360;
+            map.setBearing(newBearing);
+          });
+
+          return container;
+        }
+      });
+
+      L.control.rotate = function(options) {
+        return new L.Control.Rotate(options);
+      };
+    })();
+  </script>
 
   <script>
    const rutaCompleta = [
@@ -122,8 +195,17 @@
   { tipo: "parada", nombre: "Calle de los Serranos (end)", lat: 39.47773, lng: -0.37671 }
 ];
 
-    // Inicializar mapa
-    const map = L.map('map').setView([39.476, -0.375], 15);
+    // Inicializar mapa con opciones de rotación
+    const map = L.map('map', {
+      center: [39.476, -0.375],
+      zoom: 15
+    });
+
+    // Agregar control de rotación
+    L.control.rotate().addTo(map);
+
+    // Verificar si la rotación está disponible
+    console.log('Control de rotación personalizado agregado');
 
     // Capa base
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
