@@ -7,6 +7,35 @@ import logger from './logger.js';
 export const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 /**
+ * Detecta si el dispositivo es específicamente un teléfono móvil (excluyendo tablets)
+ * @returns {boolean} True si es un teléfono móvil
+ */
+export function esTelefonoMovil() {
+    const ua = navigator.userAgent;
+
+    // Excluir tablets y otros dispositivos no móviles
+    if (ua.includes('iPad') || ua.includes('Tablet') || ua.includes('PlayBook')) {
+        return false;
+    }
+
+    // Detectar teléfonos móviles específicos
+    const esTelefono = /Android.*Mobile|iPhone|IEMobile|Windows Phone|BlackBerry|Opera Mini/i.test(ua);
+
+    // Verificar tamaño de pantalla típico de móviles (menos de 768px de ancho)
+    const anchoPantalla = window.screen.width;
+    const altoPantalla = window.screen.height;
+    const minDimension = Math.min(anchoPantalla, altoPantalla);
+
+    // Los teléfonos móviles típicamente tienen una dimensión menor a 768px
+    const esPantallaMovil = minDimension < 768;
+
+    // Verificar si tiene capacidades de orientación (los móviles las tienen)
+    const tieneOrientacion = typeof screen !== 'undefined' && screen.orientation;
+
+    return esTelefono || (esPantallaMovil && tieneOrientacion);
+}
+
+/**
  * Obtiene información detallada del dispositivo
  * @returns {Object} Información del dispositivo
  */
@@ -52,4 +81,4 @@ export function tieneSuficienteMemoria(minimoMB = 500) {
     return true;
 }
 
-export default { esMovil, obtenerInfoDispositivo, tieneSuficienteMemoria };
+export default { esMovil, esTelefonoMovil, obtenerInfoDispositivo, tieneSuficienteMemoria };
