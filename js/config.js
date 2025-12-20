@@ -78,7 +78,8 @@ export const CONFIG = {
         ENABLE_HIGH_ACCURACY: true,
         TIMEOUT_MS: 15000,
         MAXIMUM_AGE_MS: 0,
-        REJECT_ACCURACY_M: 5000,
+        // REJECT_ACCURACY_M: 5000, // COMENTADO: Regla de 5km que hacía que GPS dejara de funcionar
+        REJECT_ACCURACY_M: 999999, // Temporalmente desactivada - regla de 5km en el tintero
         IDEAL_ACCURACY_M: 7,
         IMMEDIATE_ACCURACY_M: 15,
         SOFT_ACCURACY_M: 300,
