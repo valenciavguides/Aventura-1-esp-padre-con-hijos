@@ -807,7 +807,7 @@
             }
         }
         
-        /* Mostrar mensaje en landscape en móviles */
+        /* Mostrar mensaje en landscape en teléfonos móviles */
         @media (orientation: landscape) and (max-height: 500px) {
             .rotation-message {
                 display: flex !important;
@@ -1484,12 +1484,12 @@
 </head>
 <body>
 
-    <!-- Mensaje de rotación para móviles -->
+    <!-- Mensaje de rotación para teléfonos móviles -->
     <div id="rotation-message" class="rotation-message">
         <div>
             <div class="icon">📱</div>
-            <div>Por favor, rota tu dispositivo a modo vertical (portrait) para una mejor experiencia.</div>
-            <div style="font-size: 18px; margin-top: 10px; opacity: 0.8;">Esta aplicación está optimizada para uso en vertical</div>
+            <div>Por favor, rota tu teléfono a modo vertical (portrait) para una mejor experiencia.</div>
+            <div style="font-size: 18px; margin-top: 10px; opacity: 0.8;">Esta aplicación está optimizada para uso en vertical en teléfonos móviles</div>
         </div>
     </div>
 
@@ -1903,10 +1903,33 @@
         const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
         // ============================================================
-        // BLOQUEO DE ORIENTACIÓN EN DISPOSITIVOS MÓVILES
+        // BLOQUEO DE ORIENTACIÓN EN TELÉFONOS MÓVILES (NO TABLETS)
         // ============================================================
-        if (esMovil) {
-            console.log('📱 Dispositivo móvil detectado. Intentando bloquear orientación...');
+        // Importar la función específica para teléfonos móviles
+        let esTelefonoMovil = false;
+        try {
+            // Intentar importar desde el módulo si está disponible
+            if (typeof window.esTelefonoMovil !== 'undefined') {
+                esTelefonoMovil = window.esTelefonoMovil;
+            } else {
+                // Fallback: detectar manualmente teléfonos móviles (excluyendo tablets)
+                const ua = navigator.userAgent;
+                const esTelefono = /Android.*Mobile|iPhone|IEMobile|Windows Phone|BlackBerry|Opera Mini/i.test(ua);
+                const anchoPantalla = window.screen.width;
+                const altoPantalla = window.screen.height;
+                const minDimension = Math.min(anchoPantalla, altoPantalla);
+                const esPantallaMovil = minDimension < 768;
+                const tieneOrientacion = typeof screen !== 'undefined' && screen.orientation;
+                esTelefonoMovil = esTelefono || (esPantallaMovil && tieneOrientacion);
+            }
+        } catch (e) {
+            // Fallback básico si falla la importación
+            esTelefonoMovil = /Android.*Mobile|iPhone|IEMobile|Windows Phone|BlackBerry|Opera Mini/i.test(navigator.userAgent) &&
+                             Math.min(window.screen.width, window.screen.height) < 768;
+        }
+
+        if (esTelefonoMovil) {
+            console.log('📱 Teléfono móvil detectado. Intentando bloquear orientación...');
             console.log('Screen orientation API disponible:', !!screen.orientation);
             console.log('Lock method disponible:', !!(screen.orientation && screen.orientation.lock));
 
@@ -1948,13 +1971,13 @@
             }
 
             // También verificar orientación inicial
-            if (window.innerHeight < window.innerWidth && window.innerWidth < 1000) {
+            if (window.innerHeight < window.innerWidth && window.innerWidth < 1000 && esTelefonoMovil) {
                 // Probablemente landscape en móvil
-                console.log('📱 Orientación inicial parece landscape en móvil');
+                console.log('📱 Orientación inicial parece landscape en teléfono móvil');
                 showRotationMessage();
             }
         } else {
-            console.log('💻 Dispositivo desktop - no se intenta bloquear orientación');
+            console.log('💻 Dispositivo no móvil (desktop/tablet/laptop) - no se intenta bloquear orientación');
         }
 
         // Funciones para mostrar/ocultar mensaje de rotación
@@ -1974,7 +1997,7 @@
 
         // Listener adicional para cambios de tamaño de ventana (backup)
         window.addEventListener('resize', function() {
-            if (esMovil) {
+            if (esTelefonoMovil) {
                 if (window.innerHeight < window.innerWidth && window.innerWidth < 1000) {
                     showRotationMessage();
                 } else {
