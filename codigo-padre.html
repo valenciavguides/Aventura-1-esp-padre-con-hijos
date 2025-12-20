@@ -5926,6 +5926,181 @@
         });
 
         // ============================================================
+        // CONTROLADOR 9.6: NAVEGACION.MOSTRAR_UBICACION_POLYLINE
+        // Muestra ubicación del usuario y polyline hasta próximo destino
+        // ============================================================
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[MOSTRAR_UBICACION_POLYLINE][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                logger.debug(`${logPrefix} Solicitud de mostrar ubicación y polyline recibida de ${mensaje.origen}`);
+
+                const { ubicacionUsuario, proximoElemento, elementoId, centrar = true, zoom = 15 } = mensaje.datos || {};
+
+                // 1. Obtener ubicación del usuario si no se proporcionó
+                let coordenadasUsuario = ubicacionUsuario;
+                if (!coordenadasUsuario || !coordenadasUsuario.lat || !coordenadasUsuario.lng) {
+                    try {
+                        logger.debug(`${logPrefix} Obteniendo ubicación GPS del usuario...`);
+                        coordenadasUsuario = await new Promise((resolve, reject) => {
+                            if (!navigator.geolocation) {
+                                reject(new Error('Geolocalización no soportada'));
+                                return;
+                            }
+
+                            navigator.geolocation.getCurrentPosition(
+                                (position) => {
+                                    const { latitude: lat, longitude: lng, accuracy } = position.coords;
+                                    resolve({ lat, lng, accuracy, timestamp: position.timestamp });
+                                },
+                                (error) => {
+                                    reject(error);
+                                },
+                                {
+                                    enableHighAccuracy: true,
+                                    timeout: ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION),
+                                    maximumAge: 30000
+                                }
+                            );
+                        });
+                        logger.debug(`${logPrefix} Ubicación obtenida: [${coordenadasUsuario.lat}, ${coordenadasUsuario.lng}]`);
+                    } catch (error) {
+                        logger.warn(`${logPrefix} Error obteniendo ubicación GPS: ${error.message}`);
+                        // Usar ubicación del estado si está disponible
+                        const estadoGPS = getEstadoSafe()?.gps?.posicionUsuario;
+                        if (estadoGPS && estadoGPS.lat && estadoGPS.lng) {
+                            coordenadasUsuario = estadoGPS;
+                            logger.debug(`${logPrefix} Usando ubicación del estado: [${coordenadasUsuario.lat}, ${coordenadasUsuario.lng}]`);
+                        } else {
+                            logger.error(`${logPrefix} No se pudo obtener ubicación del usuario`);
+                            return { exito: false, error: 'No se pudo obtener ubicación del usuario' };
+                        }
+                    }
+                }
+
+                // 2. Determinar coordenadas del próximo elemento
+                let coordenadasDestino = null;
+
+                if (proximoElemento && proximoElemento.lat && proximoElemento.lng) {
+                    // Elemento ya tiene coordenadas
+                    coordenadasDestino = { lat: proximoElemento.lat, lng: proximoElemento.lng };
+                    logger.debug(`${logPrefix} Usando coordenadas del elemento proporcionado: [${coordenadasDestino.lat}, ${coordenadasDestino.lng}]`);
+                } else if (elementoId) {
+                    // Buscar coordenadas del elemento en AVENTURA_PARADAS
+                    const elemento = window.AVENTURA_PARADAS?.find(p =>
+                        p.parada_id === elementoId ||
+                        p.tramo_id === elementoId ||
+                        p.padreid === elementoId ||
+                        p.padreid === `padre-${elementoId}`
+                    );
+
+                    if (elemento && elemento.lat && elemento.lng) {
+                        coordenadasDestino = { lat: elemento.lat, lng: elemento.lng };
+                        logger.debug(`${logPrefix} Coordenadas encontradas para ${elementoId}: [${coordenadasDestino.lat}, ${coordenadasDestino.lng}]`);
+                    } else {
+                        // Solicitar coordenadas a hijo2
+                        logger.debug(`${logPrefix} Solicitando coordenadas de ${elementoId} a hijo2...`);
+                        try {
+                            const coordenadasResponse = await new Promise((resolve, reject) => {
+                                const timeout = setTimeout(() => {
+                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    reject(new Error('Timeout solicitando coordenadas'));
+                                }, ajustarTimeoutPorConexionSafe(5000));
+
+                                const controladorTemporal = async (mensaje) => {
+                                    clearTimeout(timeout);
+                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    resolve(mensaje.datos);
+                                };
+
+                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+
+                                enviarMensajePadre({
+                                    tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                                    origen: getPadreId(),
+                                    destino: 'hijo2',
+                                    datos: {
+                                        paradaId: elementoId,
+                                        padreId: `padre-${elementoId}`,
+                                        incluirMetadatos: false
+                                    }
+                                });
+                            });
+
+                            if (coordenadasResponse && coordenadasResponse.length > 0) {
+                                coordenadasDestino = coordenadasResponse[0].coordenadas;
+                                logger.debug(`${logPrefix} Coordenadas obtenidas de hijo2: [${coordenadasDestino.lat}, ${coordenadasDestino.lng}]`);
+                            }
+                        } catch (error) {
+                            logger.warn(`${logPrefix} Error solicitando coordenadas a hijo2: ${error.message}`);
+                        }
+                    }
+                }
+
+                // Si no se pudieron obtener coordenadas del destino, usar P-0 como fallback
+                if (!coordenadasDestino) {
+                    const paradaP0 = window.AVENTURA_PARADAS?.find(p =>
+                        p.parada_id === 'P-0' || p.padreid === 'padre-P-0'
+                    );
+                    if (paradaP0 && paradaP0.lat && paradaP0.lng) {
+                        coordenadasDestino = { lat: paradaP0.lat, lng: paradaP0.lng };
+                        logger.info(`${logPrefix} Usando P-0 como destino por defecto: [${coordenadasDestino.lat}, ${coordenadasDestino.lng}]`);
+                    } else {
+                        logger.error(`${logPrefix} No se pudieron obtener coordenadas ni del destino ni de P-0`);
+                        return { exito: false, error: 'No se pudieron obtener coordenadas del destino' };
+                    }
+                }
+
+                // 3. Centrar el mapa si se solicita
+                if (centrar) {
+                    await setMapView([coordenadasUsuario.lat, coordenadasUsuario.lng], zoom, { animate: true });
+                    logger.debug(`${logPrefix} Mapa centrado en ubicación del usuario: [${coordenadasUsuario.lat}, ${coordenadasUsuario.lng}]`);
+                }
+
+                // 4. Dibujar polyline desde ubicación del usuario hasta el destino
+                try {
+                    await dibujarPolylineNavegacion({
+                        origen: coordenadasUsuario,
+                        destino: coordenadasDestino,
+                        opciones: {
+                            color: '#FF6B35',
+                            weight: 4,
+                            opacity: 0.8,
+                            dashArray: '10, 10'
+                        }
+                    });
+
+                    logger.info(`${logPrefix} ✅ Polyline dibujada desde ubicación del usuario hasta ${elementoId || 'destino'}`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error dibujando polyline: ${error.message}`);
+                    return { exito: false, error: `Error dibujando polyline: ${error.message}` };
+                }
+
+                // 5. Marcar ubicacionActiva = true en hijo2
+                await enviarMensajePadre({
+                    tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO,
+                    origen: getPadreId(),
+                    destino: 'hijo2',
+                    datos: {
+                        ubicacionActiva: true,
+                        timestamp: Date.now()
+                    }
+                });
+
+                return {
+                    exito: true,
+                    ubicacionUsuario: coordenadasUsuario,
+                    destino: coordenadasDestino,
+                    elementoId: elementoId
+                };
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando mostrar ubicación y polyline:`, error);
+                return { exito: false, error: error.message };
+            }
+        });
+
+        // ============================================================
         // CONTROLADOR 10: NAVEGACION.CAMBIO_PARADA
         // Coordina cambios de parada solicitando datos a hijos expertos
         // ============================================================
