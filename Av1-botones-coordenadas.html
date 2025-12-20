@@ -1508,26 +1508,84 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
             return;
         }
 
-        if (estadoComponente.distanciaAlDestino === null || estadoComponente.distanciaAlDestino <= 10.50) {
-            actualizarEstado('Ubicación solo disponible a más de 10.50m de la parada', 'warn');
-            return;
-        }
-
         setBotonActivo('btnUbicacion');
 
-        // Enviar mensaje al padre para centrar en ubicación
+        // Obtener ubicación real del usuario
+        let ubicacionUsuario = null;
+        try {
+            // Solicitar ubicación GPS al padre
+            const respuestaGPS = await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Timeout GPS')), 10000);
+
+                const handlerGPS = (mensaje) => {
+                    if (mensaje.tipo === TIPOS_MENSAJE.NAVEGACION.UBICACION_ACTUALIZADA) {
+                        clearTimeout(timeout);
+                        resolve(mensaje.datos);
+                    }
+                };
+
+                // Registrar handler temporal
+                window.addEventListener('message', function tempHandler(e) {
+                    if (e.data && e.data.tipo === TIPOS_MENSAJE.NAVEGACION.UBICACION_ACTUALIZADA) {
+                        window.removeEventListener('message', tempHandler);
+                        clearTimeout(timeout);
+                        resolve(e.data.datos);
+                    }
+                });
+
+                // Solicitar ubicación al padre
+                enviarMensaje({
+                    tipo: TIPOS_MENSAJE.NAVEGACION.SOLICITAR_UBICACION,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: getPadreId(),
+                    datos: { contexto: 'btn-ubicacion' }
+                });
+            });
+
+            if (respuestaGPS && respuestaGPS.lat && respuestaGPS.lng) {
+                ubicacionUsuario = respuestaGPS;
+                logger.debug(`🧭 Ubicación obtenida: [${ubicacionUsuario.lat}, ${ubicacionUsuario.lng}]`);
+            }
+        } catch (error) {
+            logger.warn(`🧭 Error obteniendo ubicación GPS: ${error.message}`);
+        }
+
+        // Determinar próximo elemento (parada/tramo) - P-0 por defecto si no hay ninguno completado
+        let proximoElemento = null;
+        let elementoId = null;
+
+        // Buscar el elemento actual del padre
+        if (window.parent && window.parent.estadoPadre && window.parent.estadoPadre.elementoActual) {
+            proximoElemento = window.parent.estadoPadre.elementoActual;
+            elementoId = proximoElemento.parada_id || proximoElemento.tramo_id || proximoElemento.padreid;
+            logger.debug(`🎯 Próximo elemento desde padre: ${elementoId}`);
+        } else {
+            // Si no hay elemento actual, usar P-0 como defecto
+            elementoId = 'P-0';
+            // Buscar P-0 en las paradas disponibles
+            if (window.parent && window.parent.AVENTURA_PARADAS) {
+                proximoElemento = window.parent.AVENTURA_PARADAS.find(p =>
+                    p.parada_id === 'P-0' || p.padreid === 'padre-P-0'
+                );
+            }
+            logger.debug(`🎯 Usando P-0 como elemento por defecto`);
+        }
+
+        // Enviar mensaje al padre para mostrar ubicación y polyline
         await enviarMensaje({
-            tipo: TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION,
+            tipo: TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE,
             origen: CONFIG_HIJO.IFRAME_ID,
             destino: getPadreId(),
             datos: {
+                ubicacionUsuario: ubicacionUsuario,
+                proximoElemento: proximoElemento,
+                elementoId: elementoId,
                 centrar: true,
-                paradaActual: estadoComponente.idParadaActual,
-                distancia: estadoComponente.distanciaAlDestino
+                zoom: 15
             }
         });
 
-        actualizarEstado('Centrando ubicación', 'success');
+        actualizarEstado(`Mostrando ruta hacia ${elementoId || 'próximo destino'}`, 'success');
         logger.info(`[hijo2] Solicitado centrar en ubicación`);
     } catch (error) {
         logger.error(`[hijo2] Error al centrar ubicación:`, error);
