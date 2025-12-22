@@ -258,7 +258,7 @@
     function ejecutarValidacion(reto, respuestaUsuario) {
         // Validación personalizada por defecto - siempre pasa
         // Esta función puede ser sobrescrita por código personalizado para agregar validaciones específicas
-        logger.debug(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto.id}`);
+        console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
         return true;
     }
 
