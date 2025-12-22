@@ -529,11 +529,6 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
 
         destino = canonicalizarDestino(destino);
 
-        // VALIDACIÓN DE CENTRALIZACIÓN: Los hijos solo pueden enviar al padre o broadcasts
-        if (estadoMensajeria.rol !== 'padre' && destino !== 'padre' && destino !== 'broadcast' && destino !== 'todos') {
-            throw new Error(`Comunicación no centralizada: Los hijos solo pueden enviar mensajes al padre. Destino '${destino}' no permitido desde rol '${estadoMensajeria.rol}'`);
-        }
-
         if (!validarDestino(destino)) {
             // Increment a monitoring counter so we can track how often invalid destinations occur
             try { typeof window.incrementarContador === 'function' && window.incrementarContador('mensajeria.destino_invalido'); } catch (e) { /* ignore */ }
