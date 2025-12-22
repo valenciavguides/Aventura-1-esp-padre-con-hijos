@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Retos y Preguntas hijo4</title>
     <script src="js/suppress-warnings.js"></script>
+    <script>
+        // Definir ejecutarValidacion globalmente lo antes posible para evitar errores de "not defined"
+        window.ejecutarValidacion = function(reto, respuestaUsuario) {
+            try {
+                console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
+                // Validación personalizada por defecto - siempre pasa
+                return true;
+            } catch (error) {
+                console.error('Error en ejecutarValidacion:', error);
+                return false;
+            }
+        };
+    </script>
     <style>
         body {
             font-family: "Book Antiqua", "Palatino Linotype", "Palatino", Georgia, serif;
@@ -192,14 +205,6 @@
     <script type="module">
     /* --- Integración con Sistema de Mensajería --- */
     
-    // Definir ejecutarValidacion inmediatamente para evitar problemas de dependencias
-    window.ejecutarValidacion = function(reto, respuestaUsuario) {
-        // Validación personalizada por defecto - siempre pasa
-        // Esta función puede ser sobrescrita por código personalizado para agregar validaciones específicas
-        console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
-        return true;
-    };
-
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
