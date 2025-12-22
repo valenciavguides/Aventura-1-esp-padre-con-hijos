@@ -1486,7 +1486,10 @@
 
     <!-- Mensaje de rotación para teléfonos móviles -->
     <div id="rotation-message" class="rotation-message">
-        <img src="fotos-botones/movil-vertical.png" alt="Rota tu teléfono a vertical" style="max-width: 90%; max-height: 90%; object-fit: contain;">
+        <div class="rotation-inner">
+            <div class="icon">📱</div>
+            <p>Por favor, rota tu dispositivo a vertical para una mejor experiencia.</p>
+        </div>
     </div>
 
     <!-- Contenedores de la UI -->
@@ -1798,9 +1801,9 @@
             if (typeof window.ajustarTimeoutPorConexion === 'undefined' && typeof ajustarTimeoutPorConexion_S1 !== 'undefined') {
                 window.ajustarTimeoutPorConexion = ajustarTimeoutPorConexion_S1;
             }
-            // Provide a seguro wrapper to avoid ReferenceErrors when code references ajustarTimeoutPorConexionSeguro
-            if (typeof window.ajustarTimeoutPorConexionSeguro === 'undefined') {
-                window.ajustarTimeoutPorConexionSeguro = function(ms) {
+            // Provide a safe wrapper to avoid ReferenceErrors when code references ajustarTimeoutPorConexionSafe
+            if (typeof window.ajustarTimeoutPorConexionSafe === 'undefined') {
+                window.ajustarTimeoutPorConexionSafe = function(ms) {
                     try {
                         if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
                         if (typeof ajustarTimeoutPorConexion_S1 === 'function') return ajustarTimeoutPorConexion_S1(ms);
@@ -1937,12 +1940,22 @@
                 screen.orientation.addEventListener('change', function() {
                     const orientation = screen.orientation.type;
                     console.log('🔄 Orientación cambió a:', orientation);
-                    toggleRotationMessage();
+
+                    if (orientation.includes('landscape')) {
+                        console.warn('⚠️ Usuario rotó a landscape - mostrando mensaje de advertencia');
+                        showRotationMessage();
+                    } else {
+                        hideRotationMessage();
+                    }
                 });
             }
 
             // También verificar orientación inicial
-            toggleRotationMessage();
+            if (window.innerHeight < window.innerWidth && window.innerWidth < 1000 && esTelefonoMovil) {
+                // Probablemente landscape en móvil
+                console.log('📱 Orientación inicial parece landscape en teléfono móvil');
+                toggleRotationMessage();
+            }
         } else {
             console.log('💻 Dispositivo no móvil (desktop/tablet/laptop) - no se intenta bloquear orientación');
         }
@@ -1952,17 +1965,19 @@
             const rotationMessage = document.getElementById('rotation-message');
             if (!rotationMessage) return;
             
-            // Usar la función de detección mejorada
-            const isLandscape = window.innerHeight < window.innerWidth;
-            const isSmallHeight = window.innerHeight < 500;
-            const isMobileWidth = window.innerWidth <= 1024;
-            
-            // Mostrar solo en teléfonos móviles en landscape con altura pequeña
-            if (esTelefonoMovil && isLandscape && isSmallHeight && isMobileWidth) {
-                rotationMessage.classList.add('show');
-            } else {
-                rotationMessage.classList.remove('show');
-            }
+            // Importar la función de detección
+            import('./js/device-detection.js').then(({ esTelefonoMovil }) => {
+                const isLandscape = window.innerHeight < window.innerWidth;
+                const isSmallHeight = window.innerHeight < 500;
+                const isMobileWidth = window.innerWidth <= 1024;
+                
+                // Mostrar solo en teléfonos móviles en landscape con altura pequeña
+                if (esTelefonoMovil() && isLandscape && isSmallHeight && isMobileWidth) {
+                    rotationMessage.classList.add('show');
+                } else {
+                    rotationMessage.classList.remove('show');
+                }
+            }).catch(err => console.warn('Error cargando device-detection:', err));
         }
 
         // Escuchar cambios de orientación y tamaño
@@ -2059,21 +2074,21 @@
         // eslint-disable-next-line no-undef
         var estado = window.estadoPadre;
 
-        // Helper runtime-seguro para obtener el estado del padre sin lanzar si aún no existe
-        function getEstadoSeguro() {
+        // Helper runtime-safe para obtener el estado del padre sin lanzar si aún no existe
+        function getEstadoSafe() {
             return (typeof window !== 'undefined' && window.estadoPadre) ? window.estadoPadre : {};
         }
 
-        // Expose `getEstadoSeguro` to other scripts that may run in different scopes
+        // Expose `getEstadoSafe` to other scripts that may run in different scopes
         try {
-            if (typeof window !== 'undefined' && typeof window.getEstadoSeguro === 'undefined') {
-                window.getEstadoSeguro = getEstadoSeguro;
+            if (typeof window !== 'undefined' && typeof window.getEstadoSafe === 'undefined') {
+                window.getEstadoSafe = getEstadoSafe;
             }
         } catch (e) { /* ignore */ }
         // Definir early fallback seguro para ajustarTimeoutPorConexion si no está presente
-        if (typeof window !== 'undefined' && typeof window.ajustarTimeoutPorConexionSeguro === 'undefined') {
+        if (typeof window !== 'undefined' && typeof window.ajustarTimeoutPorConexionSafe === 'undefined') {
             // Función segura que devuelve un timeout en ms (comportamiento por defecto)
-            window.ajustarTimeoutPorConexionSeguro = function(ms) {
+            window.ajustarTimeoutPorConexionSafe = function(ms) {
                 return Number(ms) || 10000;
             };
         }
@@ -2398,32 +2413,13 @@
         }
 
         /**
-         * Registrar un controlador de manera segura usando mensajería disponible
-         * Primero intenta usar window.mensajeria.registrarControlador, luego
-         * fallback a registrarControlador global si está disponible.
-         */
-        function registrarControladorSeguro(tipo, handler, opciones) {
-            try {
-                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
-                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
-            } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSeguro error', e && e.message); }
-        }
-
-        function desregistrarControladorSeguro(tipo, handler) {
-            try {
-                if (window.mensajeria && typeof window.mensajeria.desregistrarControlador === 'function') return window.mensajeria.desregistrarControlador(tipo, handler);
-                if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
-            } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSeguro error', e && e.message); }
-        }
-
-        /**
          * Activa GPS usando navigator.geolocation.watchPosition
          */
         async function activarGPS() {
             const logPrefix = '[PADRE][GPS][ACTIVAR]';
 
             // Mutex: si ya hay una activación en curso, devolver la promesa existente
-            const est = getEstadoSeguro();
+            const est = getEstadoSafe();
             est.gps = est.gps || {};
             if (est.gps.activando) {
                 logger.debug(`${logPrefix} Activación ya en progreso, esperando resultado existente`);
@@ -2474,7 +2470,7 @@
                     logger.debug(`${logPrefix} userAgent: ${navigator.userAgent}`);
                 } catch (diagErr) { /* ignore diagnostics */ }
 
-                // Runtime-seguro estado + gps subobj (re-using 'est' definido arriba)
+                // Runtime-safe estado + gps subobj (re-using 'est' definido arriba)
                 est.gps = est.gps || {};
 
                 // Verificar permisos
@@ -2548,21 +2544,21 @@
                             }
                         }
 
-                        // If after attempts we still don't have an acceptable position, try to obtain seguro fallback coords (P-0) from hijo2
+                        // If after attempts we still don't have an acceptable position, try to obtain safe fallback coords (P-0) from hijo2
                         if (!initialAccepted) {
                             logger.warn(`${logPrefix} No se obtuvo posición inicial aceptable tras ${maxAttempts} intentos; intentando fallback a coordenadas de inicio (P-0)`);
                             try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_intento_hijo2'); } catch (e) { /* ignore */ }
                             try {
                                 const coordenadasResponse = await new Promise((resolve, reject) => {
-                                    const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2 (fallback)')), ajustarTimeoutPorConexionSeguro(5000));
+                                    const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2 (fallback)')), ajustarTimeoutPorConexionSafe(5000));
 
                                     const controladorTemporal = async (mensaje) => {
                                         clearTimeout(timeout);
-                                        desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                        desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                         resolve(mensaje.datos);
                                     };
 
-                                    registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                     enviarMensajePadre({
                                         tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -4495,7 +4491,7 @@
         const registrarEvento = registrarEventoScript2;
         let logger = loggerScript2;
 
-        // SEGURIDAD: helper para obtener el ID del padre guardando contra ReferenceErrors
+        // SAFETY: helper para obtener el ID del padre guardando contra ReferenceErrors
         function getPadreIdLocal() {
             try {
                 // Prefer the canonical helper if available
@@ -4505,7 +4501,7 @@
             return 'padre';
         }
 
-        // Aliases seguros for common messaging symbols in Script 2 (only define if not already present on window)
+        // Safe aliases for common messaging symbols in Script 2 (only define if not already present on window)
         if (typeof window.TIPOS_MENSAJE === 'undefined') { window.TIPOS_MENSAJE = TIPOS_MENSAJE_S2; }
         if (typeof window.MODOS === 'undefined') { window.MODOS = MODOS_S2; }
         if (typeof window.registrarControlador === 'undefined') { window.registrarControlador = registrarControlador_S2 || window.registrarControlador; }
@@ -4539,7 +4535,7 @@
                         }
                         return enviarMensaje(payload);
                     } catch (e) {
-                        // Fallback to adding a seguro padre origin
+                        // Fallback to adding a safe padre origin
                         payload.origen = payload.origen || ((window.CONFIG_PADRE && window.CONFIG_PADRE.ID) || 'padre');
                         return enviarMensaje(payload);
                     }
@@ -4558,18 +4554,36 @@
         // ============================================================
         
         /**
-         * Seguro wrapper to obtain an adjusted timeout for cross-frame connections.
+         * Safe wrapper to obtain an adjusted timeout for cross-frame connections.
          * Some helpers are defined later (in Script 2) and exposed as
          * `window.ajustarTimeoutPorConexion`. Calling the function directly
          * (e.g. ajustarTimeoutPorConexion_S2) from Script 1 can produce
          * ReferenceError if the symbol is not yet defined. Use this wrapper
          * to avoid runtime errors and to provide a sensible default.
          */
-        function ajustarTimeoutPorConexionSeguro(ms) {
+        function ajustarTimeoutPorConexionSafe(ms) {
             try {
                 if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
             } catch (e) { /* ignore and fall back to default */ }
             return ms;
+        }
+        /**
+         * Registrar un controlador de manera segura usando mensajería disponible
+         * Primero intenta usar window.mensajeria.registrarControlador, luego
+         * fallback a registrarControlador global si está disponible.
+         */
+        function registrarControladorSafe(tipo, handler, opciones) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
+                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+            } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSafe error', e && e.message); }
+        }
+
+        function desregistrarControladorSafe(tipo, handler) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.desregistrarControlador === 'function') return window.mensajeria.desregistrarControlador(tipo, handler);
+                if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
+            } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSafe error', e && e.message); }
         }
         // Local `registrarMetrica` duplicate removed: use central `window.registrarMetrica`
 
@@ -4678,18 +4692,18 @@
                 const timeoutMs = (window.Config && window.Config.PENDING && window.Config.PENDING.CLEANUP_INTERVAL_MS) ? Math.max(window.Config.PENDING.CLEANUP_INTERVAL_MS * 0.5, 2000) : 5000;
                 const coordsResponse = await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
                         reject(new Error('Timeout solicitando coordenadas'));
                     }, timeoutMs);
 
                     const temporal = async (mensaje) => {
                         clearTimeout(timeout);
-                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
                         resolve(mensaje.datos);
                     };
 
                     try {
-                        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
+                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
                         // Request coordinates from hijo2, making sure `origen` is set to the local padre ID
                         enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -5492,7 +5506,7 @@
                             origen: getPadreId(),
                             datos: {
                                 activo: false,
-                                permisos: (getEstadoSeguro().gps && getEstadoSeguro().gps.permisos) || null,
+                                permisos: (getEstadoSafe().gps && getEstadoSafe().gps.permisos) || null,
                                 precision: null,
                                 error: null
                             }
@@ -5505,7 +5519,7 @@
                             destino: 'todos',
                             datos: {
                                 activo: false,
-                                permisos: (getEstadoSeguro().gps && getEstadoSeguro().gps.permisos) || null,
+                                permisos: (getEstadoSafe().gps && getEstadoSafe().gps.permisos) || null,
                                 precision: null,
                                 error: null
                             }
@@ -5723,17 +5737,17 @@
                         try {
                                 const coordenadasResponse = await new Promise((resolve, reject) => {
                                 const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                     reject(new Error('Timeout solicitando coordenadas a hijo2'));
-                                }, ajustarTimeoutPorConexionSeguro(5000));
+                                }, ajustarTimeoutPorConexionSafe(5000));
 
                                 const controladorTemporal = async (mensaje) => {
                                     clearTimeout(timeout);
-                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                     resolve(mensaje.datos);
                                 };
 
-                                registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                 enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -5830,7 +5844,7 @@
                 logger.info(`${logPrefix} ✅ Estado ubicacionActiva marcado como TRUE`);
 
                 // Si estamos en modo aventura, dibujar polyline hasta la siguiente parada
-                const est = getEstadoSeguro();
+                const est = getEstadoSafe();
                 if (est.modo?.actual === MODOS.AVENTURA) {
                     try {
                         // Obtener la siguiente parada
@@ -5857,18 +5871,18 @@
                                 try {
                                         const coordenadasResponse = await new Promise((resolve, reject) => {
                                         const timeout = setTimeout(() => {
-                                            try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                            try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                             reject(new Error('Timeout solicitando coordenadas'));
-                                        }, ajustarTimeoutPorConexionSeguro(5000));
+                                        }, ajustarTimeoutPorConexionSafe(5000));
 
                                         // Controlador temporal para respuesta
                                         const controladorTemporal = async (mensaje) => {
                                             clearTimeout(timeout);
-                                            desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                            desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                             resolve(mensaje.datos);
                                         };
 
-                                        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                         // Enviar solicitud
                                         enviarMensajePadre({
@@ -5961,7 +5975,7 @@
                     } catch (error) {
                         logger.warn(`${logPrefix} Error obteniendo ubicación GPS: ${error.message}`);
                         // Usar ubicación del estado si está disponible
-                        const estadoGPS = getEstadoSeguro()?.gps?.posicionUsuario;
+                        const estadoGPS = getEstadoSafe()?.gps?.posicionUsuario;
                         if (estadoGPS && estadoGPS.lat && estadoGPS.lng) {
                             coordenadasUsuario = estadoGPS;
                             logger.debug(`${logPrefix} Usando ubicación del estado: [${coordenadasUsuario.lat}, ${coordenadasUsuario.lng}]`);
@@ -5997,17 +6011,17 @@
                         try {
                             const coordenadasResponse = await new Promise((resolve, reject) => {
                                 const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                     reject(new Error('Timeout solicitando coordenadas'));
-                                }, ajustarTimeoutPorConexionSeguro(5000));
+                                }, ajustarTimeoutPorConexionSafe(5000));
 
                                 const controladorTemporal = async (mensaje) => {
                                     clearTimeout(timeout);
-                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                     resolve(mensaje.datos);
                                 };
 
-                                registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
 
                                 enviarMensajePadre({
                                     tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
@@ -6522,7 +6536,7 @@
                 try {
                     const padreId = (mensaje.datos && (mensaje.datos.padreId || mensaje.datos.padreid || mensaje.datos.padre)) || null;
                     if (padreId) {
-                        const est = getEstadoSeguro();
+                        const est = getEstadoSafe();
                         est.paradasConfirmaciones = est.paradasConfirmaciones || {};
                         est.paradasConfirmaciones[padreId] = est.paradasConfirmaciones[padreId] || [];
                         est.paradasConfirmaciones[padreId].push({ origen: mensaje.origen, timestamp: Date.now(), datos: mensaje.datos });
@@ -6840,7 +6854,7 @@
             window.__VV_PENDING_CLEANUP = setInterval(() => {
                 try {
                         const now = Date.now();
-                        const est = getEstadoSeguro();
+                        const est = getEstadoSafe();
                         if (!est || !est.pendingCompleciones) return;
                         for (const [clave, pending] of Object.entries(est.pendingCompleciones)) {
                             if (!pending) continue;
