@@ -32,7 +32,10 @@ export function esTelefonoMovil() {
     // Verificar si tiene capacidades de orientación (los móviles las tienen)
     const tieneOrientacion = typeof screen !== 'undefined' && screen.orientation;
 
-    return esTelefono || (esPantallaMovil && tieneOrientacion);
+    // Añadir verificación adicional: excluir si el ancho es mayor a 1024px (tablets grandes y desktops)
+    const noEsTabletGrande = anchoPantalla <= 1024;
+
+    return esTelefono || (esPantallaMovil && tieneOrientacion && noEsTabletGrande);
 }
 
 /**
