@@ -2577,7 +2577,7 @@
                                     est.gps.ultimaUbicacion = est.gps.posicionUsuario;
                                     est.gps.precision = 1000;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_p0'); } catch (e) { /* ignore */ }
-                                    logger.info(`${logPrefix} Fallback a inicio (P-0) aplicado: [${estado.gps.posicionUsuario.lat}, ${estado.gps.posicionUsuario.lng}]`);
+                                    logger.info(`${logPrefix} Fallback a inicio (P-0) aplicado: [${est.gps.posicionUsuario.lat}, ${est.gps.posicionUsuario.lng}]`);
                                 }
                                 } catch (err) {
                                 // En caso de timeout o error al solicitar a hijo2, fallback a P-0
@@ -2594,20 +2594,20 @@
                 }
 
                 // Iniciar watchPosition
-                estado.gps.watchId = navigator.geolocation.watchPosition(
+                est.gps.watchId = navigator.geolocation.watchPosition(
                     // Success callback
                     (position) => {
                         const { latitude: lat, longitude: lng, accuracy } = position.coords;
 
                         // Actualizar estado GPS
-                        estado.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
-                        estado.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
-                        estado.gps.precision = accuracy;
-                        estado.gps.error = null;
-                        estado.gps.activo = true;
+                        est.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
+                        est.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
+                        est.gps.precision = accuracy;
+                        est.gps.error = null;
+                        est.gps.activo = true;
                         // Reset retries after successful update
-                        estado.gps.retries = 0;
-                        estado.gps.permisos = true;
+                        est.gps.retries = 0;
+                        est.gps.permisos = true;
 
                         logger.debug(`${logPrefix} 📍 Ubicación GPS: [${lat.toFixed(6)}, ${lng.toFixed(6)}] (±${Math.round(accuracy)}m)`);
 
@@ -2645,9 +2645,9 @@
                                                 // Actualizar estado con la posición fresca y procesarla
                                                 const fLat = fresh.coords.latitude;
                                                 const fLng = fresh.coords.longitude;
-                                                estado.gps.posicionUsuario = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
-                                                estado.gps.ultimaUbicacion = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
-                                                estado.gps.precision = a2;
+                                                est.gps.posicionUsuario = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
+                                                est.gps.ultimaUbicacion = { lat: fLat, lng: fLng, accuracy: a2, timestamp: fresh.timestamp };
+                                                est.gps.precision = a2;
                                                 logger.debug(`${logPrefix} ✅ Posición fresca aceptada y procesada`);
                                                 try {
                                                     if (window.funcionesMapa && typeof window.funcionesMapa.procesarPosicionGPSParaAventura === 'function') {
@@ -2751,7 +2751,7 @@
                         switch (error.code) {
                             case error.PERMISSION_DENIED:
                                 errorMsg = 'Permisos GPS denegados';
-                                estado.gps.permisos = false;
+                                est.gps.permisos = false;
                                 break;
                             case error.POSITION_UNAVAILABLE:
                                 errorMsg = 'GPS no disponible';
@@ -2761,50 +2761,50 @@
                                 break;
                         }
 
-                        estado.gps.error = errorMsg;
-                        estado.gps.activo = false;
+                        est.gps.error = errorMsg;
+                        est.gps.activo = false;
 
                         logger.error(`${logPrefix} Error GPS: ${errorMsg} (código: ${error.code})`);
 
                         // Retry strategy for TIMEOUT (code 3): try again with degraded options up to N attempts
                         try {
                             const MAX_REINTENTOS_GPS = (window.Config && window.Config.GPS && window.Config.GPS.REINTENTOS) || 3;
-                            estado.gps.retries = estado.gps.retries || 0;
-                            if (error.code === error.TIMEOUT && estado.gps.retries < MAX_REINTENTOS_GPS) {
-                                estado.gps.retries += 1;
+                            est.gps.retries = est.gps.retries || 0;
+                            if (error.code === error.TIMEOUT && est.gps.retries < MAX_REINTENTOS_GPS) {
+                                est.gps.retries += 1;
                                 const gpsCfg = (window.Config && window.Config.GPS) ? window.Config.GPS : { ENABLE_HIGH_ACCURACY: true, TIMEOUT_MS: 15000 };
                                 const newOptions = {
                                     enableHighAccuracy: false, // disable high accuracy to improve chance of success
-                                    timeout: Math.min((gpsCfg.TIMEOUT_MS || 15000) * Math.pow(2, estado.gps.retries - 1), 60000),
+                                    timeout: Math.min((gpsCfg.TIMEOUT_MS || 15000) * Math.pow(2, est.gps.retries - 1), 60000),
                                     maximumAge: gpsCfg.MAXIMUM_AGE_MS || 0
                                 };
-                                logger.info(`${logPrefix} Reintentando watchPosition (intento ${estado.gps.retries}/${MAX_REINTENTOS_GPS}) con opciones:`, newOptions);
+                                logger.info(`${logPrefix} Reintentando watchPosition (intento ${est.gps.retries}/${MAX_REINTENTOS_GPS}) con opciones:`, newOptions);
                                 // Clear previous watch if any
-                                try { if (estado.gps.watchId !== null) navigator.geolocation.clearWatch(estado.gps.watchId); } catch (e) { /* ignore */ }
+                                try { if (est.gps.watchId !== null) navigator.geolocation.clearWatch(est.gps.watchId); } catch (e) { /* ignore */ }
                                 setTimeout(() => {
                                     try {
                                         // Re-invoke watchPosition with fallback options
-                                        estado.gps.watchId = navigator.geolocation.watchPosition(
+                                        est.gps.watchId = navigator.geolocation.watchPosition(
                                             (position) => {
                                                 // Reuse existing success handler code by calling activarGPS again? Simple approach: directly update state.
                                                 const { latitude: lat, longitude: lng, accuracy } = position.coords;
-                                                estado.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
-                                                estado.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
-                                                estado.gps.precision = accuracy;
-                                                estado.gps.error = null;
-                                                estado.gps.activo = true;
-                                                logger.info(`${logPrefix} watchPosition reintento exitoso (intento ${estado.gps.retries})`);
+                                                est.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
+                                                est.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
+                                                est.gps.precision = accuracy;
+                                                est.gps.error = null;
+                                                est.gps.activo = true;
+                                                logger.info(`${logPrefix} watchPosition reintento exitoso (intento ${est.gps.retries})`);
                                                 try { if (window.funcionesMapa && typeof window.funcionesMapa.procesarPosicionGPSParaAventura === 'function') window.funcionesMapa.procesarPosicionGPSParaAventura(position); } catch (e) { logger.warn(`${logPrefix} Error procesando posición tras reintento:`, e); }
                                             },
                                             (e2) => {
-                                                logger.warn(`${logPrefix} Reintento watchPosition falló (intento ${estado.gps.retries}):`, e2 && e2.message ? e2.message : e2);
+                                                logger.warn(`${logPrefix} Reintento watchPosition falló (intento ${est.gps.retries}):`, e2 && e2.message ? e2.message : e2);
                                             },
                                             newOptions
                                         );
                                     } catch (retryErr) {
                                         logger.warn(`${logPrefix} Error al reintentar watchPosition:`, retryErr);
                                     }
-                                }, 500 * estado.gps.retries);
+                                }, 500 * est.gps.retries);
                             }
                         } catch (retryErr) {
                             logger.warn(`${logPrefix} Error gestionando reintento GPS:`, retryErr);
@@ -2852,11 +2852,11 @@
                             logger.info(`${logPrefix} Ubicación inmediata obtenida: [${lat.toFixed(6)}, ${lng.toFixed(6)}] (±${Math.round(accuracy)}m)`);
 
                             // Actualizar estado inmediatamente
-                            estado.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
-                            estado.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
-                            estado.gps.precision = accuracy;
-                            estado.gps.activo = true;
-                            estado.gps.permisos = true;
+                            est.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
+                            est.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
+                            est.gps.precision = accuracy;
+                            est.gps.activo = true;
+                            est.gps.permisos = true;
                         },
                         (error) => {
                             logger.debug(`${logPrefix} No se pudo obtener ubicación inmediata: ${error.message}`);
@@ -2867,7 +2867,7 @@
                     logger.debug(`${logPrefix} Error en getCurrentPosition inmediata:`, error);
                 }
 
-                logger.info(`${logPrefix} GPS activado exitosamente (watchId: ${estado.gps.watchId})`);
+                logger.info(`${logPrefix} GPS activado exitosamente (watchId: ${est.gps.watchId})`);
 
                 // Resolución exitosa de la promesa de activación
                 resolveActivacion(true);
@@ -2904,12 +2904,16 @@
                     logger.error(`${logPrefix} Error notificando estado GPS:`, error);
                 }
 
+                // Sincronizar estado local con global
+                window.estadoPadre = window.estadoPadre || {};
+                window.estadoPadre.gps = est.gps;
+
                 return true;
 
             } catch (error) {
                 logger.error(`${logPrefix} Error activando GPS:`, error);
-                estado.gps.activo = false;
-                estado.gps.error = error.message;
+                est.gps.activo = false;
+                est.gps.error = error.message;
                 try { rejectActivacion && rejectActivacion(error); } catch (e) { /* ignore */ }
                 throw error;
             } finally {
