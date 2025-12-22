@@ -191,6 +191,15 @@
 
     <script type="module">
     /* --- Integración con Sistema de Mensajería --- */
+    
+    // Definir ejecutarValidacion inmediatamente para evitar problemas de dependencias
+    window.ejecutarValidacion = function(reto, respuestaUsuario) {
+        // Validación personalizada por defecto - siempre pasa
+        // Esta función puede ser sobrescrita por código personalizado para agregar validaciones específicas
+        console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
+        return true;
+    };
+
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
@@ -247,20 +256,6 @@
         paradaIdActual: null
         ,paradaPendiente: false
     };
-
-    /* Función: ejecutarValidacion()
-       Hook para validación personalizada adicional. Puede ser sobrescrita por código personalizado.
-       Parámetros:
-       - reto: El objeto del reto actual
-       - respuestaUsuario: La respuesta proporcionada por el usuario (depende del tipo de reto)
-       Retorna: true si la validación personalizada pasa, false o lanza excepción si falla
-    */
-    function ejecutarValidacion(reto, respuestaUsuario) {
-        // Validación personalizada por defecto - siempre pasa
-        // Esta función puede ser sobrescrita por código personalizado para agregar validaciones específicas
-        console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
-        return true;
-    }
 
     // Array de retos - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear retos/puzzles. Cualquier cambio debe coordinarse con el padre.
     const retosAventura1Es = [
@@ -752,13 +747,13 @@
                 }
 
                 // Llamar a la validación personalizada
-                const validacionPersonalizada = ejecutarValidacion(reto, respuestaUsuario);
+                const validacionPersonalizada = window.ejecutarValidacion(reto, respuestaUsuario);
                 if (validacionPersonalizada === false) {
-                    logger.warn(`[hijo4] Validación personalizada falló para reto ${reto.id}`);
+                    console.warn(`[hijo4] Validación personalizada falló para reto ${reto?.id || 'desconocido'}`);
                     throw new Error("Validación personalizada falló");
                 }
             } catch (error) {
-                logger.error(`[hijo4] Error en ejecutarValidacion para reto ${reto.id}:`, error.message);
+                console.error(`[hijo4] Error en window.ejecutarValidacion para reto ${reto?.id || 'desconocido'}:`, error.message);
                 // Si la validación personalizada falla, mostrar error y permitir reintentar
                 alert("Error en la validación: " + error.message);
                 btnEnviar.disabled = false;
