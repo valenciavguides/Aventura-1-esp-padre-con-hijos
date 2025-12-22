@@ -808,7 +808,7 @@
         }
         
         /* Mostrar mensaje en landscape en teléfonos móviles */
-        @media (orientation: landscape) and (max-height: 500px) {
+        @media (orientation: landscape) and (max-height: 500px) and (max-width: 1024px) {
             .rotation-message {
                 display: flex !important;
             }
@@ -1937,51 +1937,40 @@
                 screen.orientation.addEventListener('change', function() {
                     const orientation = screen.orientation.type;
                     console.log('🔄 Orientación cambió a:', orientation);
-
-                    if (orientation.includes('landscape')) {
-                        console.warn('⚠️ Usuario rotó a landscape - mostrando mensaje de advertencia');
-                        showRotationMessage();
-                    } else {
-                        hideRotationMessage();
-                    }
+                    toggleRotationMessage();
                 });
             }
 
             // También verificar orientación inicial
-            if (window.innerHeight < window.innerWidth && window.innerWidth < 1000 && esTelefonoMovil) {
-                // Probablemente landscape en móvil
-                console.log('📱 Orientación inicial parece landscape en teléfono móvil');
-                showRotationMessage();
-            }
+            toggleRotationMessage();
         } else {
             console.log('💻 Dispositivo no móvil (desktop/tablet/laptop) - no se intenta bloquear orientación');
         }
 
-        // Funciones para mostrar/ocultar mensaje de rotación
-        function showRotationMessage() {
-            const message = document.getElementById('rotation-message');
-            if (message) {
-                message.classList.add('show');
+        // Función para mostrar/ocultar mensaje de rotación
+        function toggleRotationMessage() {
+            const rotationMessage = document.getElementById('rotation-message');
+            if (!rotationMessage) return;
+            
+            // Usar la función de detección mejorada
+            const isLandscape = window.innerHeight < window.innerWidth;
+            const isSmallHeight = window.innerHeight < 500;
+            const isMobileWidth = window.innerWidth <= 1024;
+            
+            // Mostrar solo en teléfonos móviles en landscape con altura pequeña
+            if (esTelefonoMovil && isLandscape && isSmallHeight && isMobileWidth) {
+                rotationMessage.classList.add('show');
+            } else {
+                rotationMessage.classList.remove('show');
             }
         }
 
-        function hideRotationMessage() {
-            const message = document.getElementById('rotation-message');
-            if (message) {
-                message.classList.remove('show');
-            }
-        }
-
-        // Listener adicional para cambios de tamaño de ventana (backup)
-        window.addEventListener('resize', function() {
-            if (esTelefonoMovil) {
-                if (window.innerHeight < window.innerWidth && window.innerWidth < 1000) {
-                    showRotationMessage();
-                } else {
-                    hideRotationMessage();
-                }
-            }
-        });
+        // Escuchar cambios de orientación y tamaño
+        window.addEventListener('orientationchange', toggleRotationMessage);
+        window.addEventListener('resize', toggleRotationMessage);
+        
+        // Inicializar al cargar
+        document.addEventListener('DOMContentLoaded', toggleRotationMessage);
 
         // ============================================================
         // ESTADO GLOBAL DE LA APLICACIÓN (compartido con Script 2)
