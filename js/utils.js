@@ -570,7 +570,7 @@ export function normalizarParadas(arr) {
     }
 }
     /**
-     * Devuelve el ID canónico del padre (runtime-safe)
+     * Devuelve el ID canónico del padre (runtime-seguro)
      * - Intenta, en orden: window.CONFIG_PADRE.ID, window.Config.ID_PADRE, window.CONFIG_PADRE_LOCAL.ID
      * - Fallback: 'padre'
      * @returns {string}
@@ -589,7 +589,7 @@ export function normalizarParadas(arr) {
     }
 
     /**
-     * Devuelve un ID local de hijo si está disponible (runtime-safe)
+     * Devuelve un ID local de hijo si está disponible (runtime-seguro)
      * @returns {string|null}
      */
     export function getLocalHijoId() {
