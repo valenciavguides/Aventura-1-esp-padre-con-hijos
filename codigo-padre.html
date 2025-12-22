@@ -2603,6 +2603,12 @@
                     (position) => {
                         const { latitude: lat, longitude: lng, accuracy } = position.coords;
 
+                        // Agregar verificación de precisión al inicio
+                        if (accuracy > 100) { // Solo actualizar si precisión < 100m
+                            logger.warn(`${logPrefix} Precisión GPS insuficiente (${accuracy}m), ignorando actualización`);
+                            return;
+                        }
+
                         // Actualizar estado GPS
                         est.gps.posicionUsuario = { lat, lng, accuracy, timestamp: position.timestamp };
                         est.gps.ultimaUbicacion = { lat, lng, accuracy, timestamp: position.timestamp };
@@ -2842,9 +2848,9 @@
 
                     // Options
                     {
-                        enableHighAccuracy: true,
-                        timeout: ajustarTimeoutPorConexion_S1(15000),
-                        maximumAge: 30000
+                        enableHighAccuracy: true,  // Forzar alta precisión (usa GPS si disponible)
+                        timeout: 10000,            // Timeout de 10s
+                        maximumAge: 60000          // Usar posiciones de hasta 1 min de antigüedad
                     }
                 );
 
