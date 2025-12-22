@@ -311,47 +311,8 @@
         datosRecibidos: false // Flag para evitar procesamiento duplicado
     };
 
-    // --- CONTROLADORES ESENCIALES ---
-    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
-        const modo = mensaje?.datos?.modo;
-        if (!modo) return;
-        estado.modo = modo;
-        const win = document.getElementById('paradas-window');
-        if (win) win.style.display = modo === 'casa' ? 'block' : 'none';
-        if (modo === 'casa') {
-            if (typeof generarBotonesParadas === 'function') generarBotonesParadas();
-        }
-    });
-
-    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS, async (mensaje) => {
-        estado.datosRecibidos = true;
-        // Guarda los datos si es necesario
-        if (mensaje?.datos?.paradas) {
-            estado.aventuraParadas = mensaje.datos.paradas;
-        }
-        if (typeof generarBotonesParadas === 'function') generarBotonesParadas();
-        const win = document.getElementById('paradas-window');
-        if (win && estado.modo === 'casa') win.style.display = 'block';
-    });
-
-    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
-        // Resalta el botón de la parada actual
-        const paradaId = mensaje?.datos?.paradaId || mensaje?.datos?.parada_id;
-        if (!paradaId) return;
-        const botones = document.querySelectorAll('.parada-tramo-btn');
-        botones.forEach(btn => {
-            if (btn.dataset.puntoId == paradaId) {
-                btn.classList.add('actual');
-            } else {
-                btn.classList.remove('actual');
-            }
-        });
-    });
-
-    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ERROR, async (mensaje) => {
-        // Log de errores
-        console.error('[hijo5-casa] Error recibido:', mensaje?.datos?.error);
-    });
+    // Controladores se registrarán después de la confirmación del padre
+    // para evitar duplicados y asegurar inicialización completa
 
     // Array local de paradas y tramos con IDs únicos de hijo5-casa
     const puntosRuta = [
