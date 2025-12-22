@@ -73,7 +73,7 @@ window.addEventListener('unhandledrejection', function(event) {
 }, true);
 
 // Función segura para serializar objetos (evitando referencias circulares)
-function safeStringify(obj) {
+function seguroStringify(obj) {
     try {
         if (obj === null) return 'null';
         if (obj === undefined) return 'undefined';
@@ -93,8 +93,8 @@ function safeStringify(obj) {
     }
 }
 
-// Safe console method fallback
-const safeConsoleMethod = (typeof console !== 'undefined' && console.log) 
+// Seguro console method fallback
+const seguroConsoleMethod = (typeof console !== 'undefined' && console.log) 
   ? console.log.bind(console) 
   : () => {};
 
@@ -170,7 +170,7 @@ console.error = function(...args) {
                         ? arg.message.slice(0, 100) 
                         : 'sin-mensaje';
                 }
-                return safeStringify(arg).slice(0, 100);
+                return seguroStringify(arg).slice(0, 100);
             }).join('|');
         } catch (e) {
             errorKey = 'error-key-creation-failed';
