@@ -706,6 +706,20 @@
             }
         }
 
+        /* Función: ejecutarValidacion()
+           Hook para validación personalizada adicional. Puede ser sobrescrita por código personalizado.
+           Parámetros:
+           - reto: El objeto del reto actual
+           - respuestaUsuario: La respuesta proporcionada por el usuario (depende del tipo de reto)
+           Retorna: true si la validación personalizada pasa, false o lanza excepción si falla
+        */
+        function ejecutarValidacion(reto, respuestaUsuario) {
+            // Validación personalizada por defecto - siempre pasa
+            // Esta función puede ser sobrescrita por código personalizado para agregar validaciones específicas
+            logger.debug(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto.id}`);
+            return true;
+        }
+
         /* Función: verificar()
            Comprueba si la respuesta del usuario para el reto actual es correcta.
         */
@@ -721,6 +735,35 @@
             fuegosDiv.style.display = "none";
 
             let esCorrecto = false;
+
+            // Ejecutar validación personalizada primero
+            let respuestaUsuario = null;
+            try {
+                // Obtener la respuesta del usuario según el tipo de reto
+                if (reto.tipo === "opcion") {
+                    const seleccion = document.querySelector('input[name="op"]:checked');
+                    respuestaUsuario = seleccion ? seleccion.value : null;
+                } else if (reto.tipo === "opcion-multiple") {
+                    respuestaUsuario = Array.from(document.querySelectorAll('input[name="op"]:checked')).map(i => i.value);
+                } else if (reto.tipo === "texto") {
+                    // Para retos de texto, la respuesta se obtiene del input correspondiente
+                    const inputTexto = document.querySelector('input[type="text"], textarea');
+                    respuestaUsuario = inputTexto ? inputTexto.value : null;
+                }
+
+                // Llamar a la validación personalizada
+                const validacionPersonalizada = ejecutarValidacion(reto, respuestaUsuario);
+                if (validacionPersonalizada === false) {
+                    logger.warn(`[hijo4] Validación personalizada falló para reto ${reto.id}`);
+                    throw new Error("Validación personalizada falló");
+                }
+            } catch (error) {
+                logger.error(`[hijo4] Error en ejecutarValidacion para reto ${reto.id}:`, error.message);
+                // Si la validación personalizada falla, mostrar error y permitir reintentar
+                alert("Error en la validación: " + error.message);
+                btnEnviar.disabled = false;
+                return;
+            }
 
             if (reto.tipo === "opcion") {
                 const seleccion = document.querySelector('input[name="op"]:checked');
