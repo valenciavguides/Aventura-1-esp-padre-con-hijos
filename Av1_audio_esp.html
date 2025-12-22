@@ -1156,38 +1156,6 @@
             destino: getPadreId(),
             datos: { audioId: currentAudioId, error: audioPlayer.error?.message || 'Error desconocido' }
         });
-
-        // CONTROLADOR: SISTEMA.NOTIFICACION - manejar PENDING_CANCELADO
-        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
-            const logPrefix = `[hijo3][NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
-            try {
-                const evento = mensaje.datos?.evento;
-                if (!evento) return;
-                if (evento === 'PENDING_INICIADO') {
-                    const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
-                    const ttlMs = mensaje.datos?.ttlMs || null;
-                    logger.info(`${logPrefix} PENDING_INICIADO para ${padreId} ttl=${ttlMs}`);
-                    // Optionally pause playback and prepare UI
-                    try { if (!audioPlayer.paused) { audioPlayer.pause(); logger.debug(`${logPrefix} Audio pausado por PENDING_INICIADO`); } } catch (err) {}
-                    try { if (typeof showAlert === 'function') showAlert('Pendiente creado: esperando condiciones'); } catch (e) {}
-                    // ACK handled below
-                    try { await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_INICIADO procesado', padreId, ttlMs } }); } catch (e) {}
-                } else if (evento === 'PENDING_CANCELADO') {
-                    const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
-                    const motivo = mensaje.datos?.motivo || 'sin_motivo';
-                    logger.info(`${logPrefix} PENDING_CANCELADO recibido para ${padreId}: ${motivo}`);
-                    // Seguridad: pausar audio si este corresponde al elemento afectado
-                    try {
-                        if (!audioPlayer.paused) { audioPlayer.pause(); logger.debug(`${logPrefix} Audio pausado por PENDING_CANCELADO`); }
-                        try { if (typeof showAlert === 'function') showAlert('La parada ha sido cancelada: ' + motivo); } catch (e) {}
-                        // Enviar ACK al padre
-                        try { await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_CANCELADO procesado', padreId, motivo } }); } catch (e) {}
-                    } catch (errNote) { logger.warn(`${logPrefix} Error procesando PENDING_CANCELADO:`, errNote); }
-                }
-            } catch (err) {
-                logger.warn(`${logPrefix} Error procesando NOTIFICACION:`, err);
-            }
-        });
     });
 
     // Normaliza un valor de modo (acepta string u objeto) y devuelve
