@@ -200,7 +200,7 @@ export function broadcastToCapability(capability, mensajeObj) {
                 return { enviados: 0 };
             }
         }
-    } catch (e) { /* ignore safety check errors */ }
+    } catch (e) { /* ignore seguridad check errors */ }
     const targets = hijosConCapability(capability);
     const origenSeguro = window.location.origin;
     let enviados = 0;
@@ -384,7 +384,7 @@ export function esperarHijosListos(timeoutMs = 10000) {
 export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
     // Compute default origin with more robust parent canonicalization.
     // Prefer explicit componenteId; if not available, and we're running in the parent
-    // prefer a canonical parent id via getPadreId() (runtime-safe helper), then fall back to 'padre'.
+    // prefer a canonical parent id via getPadreId() (runtime-seguro helper), then fall back to 'padre'.
     let defaultOrigen = estadoMensajeria.componenteId || null;
     try {
         if (!defaultOrigen) {
@@ -528,6 +528,11 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
         };
 
         destino = canonicalizarDestino(destino);
+
+        // VALIDACIÓN DE CENTRALIZACIÓN: Los hijos solo pueden enviar al padre o broadcasts
+        if (estadoMensajeria.rol !== 'padre' && destino !== 'padre' && destino !== 'broadcast' && destino !== 'todos') {
+            throw new Error(`Comunicación no centralizada: Los hijos solo pueden enviar mensajes al padre. Destino '${destino}' no permitido desde rol '${estadoMensajeria.rol}'`);
+        }
 
         if (!validarDestino(destino)) {
             // Increment a monitoring counter so we can track how often invalid destinations occur
