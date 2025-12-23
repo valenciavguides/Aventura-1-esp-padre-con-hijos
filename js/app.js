@@ -324,17 +324,24 @@ export async function actualizarInterfazModo(estado, modo) {
         return;
     }
 
+    const hijosList = Array.from(estado.hijosInicializados);
+    logger.info(`[actualizarInterfazModo] Enviando cambio de modo '${modo}' a ${hijosList.length} hijos: ${hijosList.join(', ')}`);
+
     for (const hijoId of estado.hijosInicializados) {
         try {
+            logger.debug(`[actualizarInterfazModo] Enviando a ${hijoId}`);
+            const startTime = Date.now();
             const resultado = await enviarMensajeConReintento({
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: getPadreId(),
                 datos: { modo, secuenciaCompleta: !!(estado && estado.todosHijosListos) }
             });
+            const duration = Date.now() - startTime;
+            logger.debug(`[actualizarInterfazModo] Confirmación recibida de ${hijoId} en ${duration}ms`);
             if (resultado && typeof resultado.then === 'function') await resultado;
         } catch (error) {
-            logger.error(`Error al actualizar modo en ${hijoId} tras reintentos:`, error);
+            logger.error(`[actualizarInterfazModo] Error al enviar a ${hijoId} tras reintentos:`, error);
         }
     }
 }
@@ -571,7 +578,7 @@ export async function manejarCambioModo(estado, mensaje) {
 
         try {
             // 8. Notificar a los componentes del cambio inminente (no bloquear>5s)
-            await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 5000, 'notificarCambioModoInminente');
+            await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 10000, 'notificarCambioModoInminente');
 
             // 8.1 Preparar pre-warm / pausar según el modo (usar valores normalizados)
 
@@ -678,11 +685,13 @@ export async function manejarCambioModo(estado, mensaje) {
             };
 
             // 10. Actualizar interfaz y limpiar recursos según el modo (no bloquear>5s por interfaz)
-            await withTimeout(actualizarInterfazModo(estado, modoNormalized), 5000, 'actualizarInterfazModo');
+            const hijosInicializados = estado.hijosInicializados ? Array.from(estado.hijosInicializados) : [];
+            logger.info(`${logPrefix} Iniciando actualización de interfaz para ${hijosInicializados.length} hijos: ${hijosInicializados.join(', ')}`);
+            await withTimeout(actualizarInterfazModo(estado, modoNormalized), 10000, 'actualizarInterfazModo');
             await limpiarRecursosPorModo(estado, modoNormalized, opciones);
 
             // 11. Notificar a los componentes del cambio completado (no bloquear>5s)
-            await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 5000, 'notificarCambioModoCompletado');
+            await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 10000, 'notificarCambioModoCompletado');
 
             // 12. Registrar �xito
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`, {
@@ -857,6 +866,7 @@ async function validarPermisosCambioModo(origen, modo) {
  * @private
  */
 async function notificarCambioModoInminente(modoAnterior, modoNuevo, motivo) {
+    logger.info(`[notificarCambioModoInminente] Notificando cambio inminente: ${modoAnterior} → ${modoNuevo} (motivo: ${motivo})`);
     // Notificar a los componentes
     await enviarMensaje({
         tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
@@ -872,6 +882,7 @@ async function notificarCambioModoInminente(modoAnterior, modoNuevo, motivo) {
             timestamp: Date.now()
         }
     });
+    logger.debug(`[notificarCambioModoInminente] Notificación broadcast enviada`);
 }
 
 /**
@@ -879,6 +890,7 @@ async function notificarCambioModoInminente(modoAnterior, modoNuevo, motivo) {
  * @private
  */
 async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
+    logger.info(`[notificarCambioModoCompletado] Notificando cambio completado: ${modoAnterior} → ${modoNuevo} (motivo: ${motivo})`);
     // Notificar a los componentes
     await enviarMensaje({
         tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
@@ -894,6 +906,7 @@ async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
             timestamp: Date.now()
         }
     });
+    logger.debug(`[notificarCambioModoCompletado] Notificación broadcast enviada`);
 }
 
 /**
