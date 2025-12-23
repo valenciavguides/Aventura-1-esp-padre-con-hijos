@@ -3983,6 +3983,7 @@ window.funcionesMapa = {
     calcularToleranciaGPS,
     verificarLlegadaADestino,
     procesarPosicionGPSParaAventura,
+    iniciarGPSAventura,
     // Exponer la API pública centralizada para cambiar la vista
     setMapView
     ,
