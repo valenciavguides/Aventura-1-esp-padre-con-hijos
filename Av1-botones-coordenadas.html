@@ -1105,8 +1105,7 @@ function actualizarEstado(mensaje, tipo = 'info') {
 
 // Función para actualizar la interfaz según el modo
 function actualizarInterfazModo(modo) {
-    const modoSeguro = normalizarModo(modo);
-    console.log(`[COORDENADAS] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
+    const modoSeguro = (modo === 'casa' || modo === 'aventura') ? modo : '';
     const body = document.body;
 
     // Actualizar clases CSS
@@ -1800,7 +1799,7 @@ try {
                 const { modo, paradas, paradaActual } = mensaje.datos;
 
                 if (modo) {
-                    const modoSeguro = normalizarModo(modo);
+                    const modoSeguro = (modo === 'casa' || modo === 'aventura') ? modo : '';
                     logger.info(`${logPrefix} Procesando modo inicial del padre:`, { original: modo, normalizado: modoSeguro });
                     estadoComponente.modo = modoSeguro || modo;
                     if (modoSeguro) document.body.className = `modo-${modoSeguro} hijo2-container`;
@@ -2798,21 +2797,9 @@ try {
         logger.warn('[hijo2] Error enviando HIJO_PREPARADO:', e && e.message ? e.message : e);
     }
 
-    // Helper local: normalizar modo recibido del padre
-    function normalizarModo(modo) {
-        try {
-            if (typeof modo === 'string') modo = modo.trim();
-            else if (modo && typeof modo === 'object') modo = modo.actual || modo.modo || modo.nombre || Object.values(modo).find(v => typeof v === 'string') || '';
-            else if (modo === null || typeof modo === 'undefined') modo = '';
-            else modo = String(modo);
-            modo = String(modo || '').trim().toLowerCase();
-            modo = modo.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
-            return modo;
-        } catch (e) { return ''; }
-    }
-    
     // Controlador para cambio de modo
-    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+    registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+        console.log('[hijo2][CAMBIO_MODO] Mensaje recibido:', mensaje);
         const logPrefix = `[hijo2][CAMBIO_MODO]`;
 
         try {
@@ -2836,6 +2823,7 @@ try {
 
             // Paso 2: Extraer datos con destructuring
             const { modo } = mensaje.datos || {};
+            console.log('[hijo2][CAMBIO_MODO] Modo extraído:', modo);
 
             // Paso 3: Validar datos extraídos
             if (!modo || !['casa', 'aventura'].includes(modo)) {
@@ -2853,19 +2841,23 @@ try {
             logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
             
             // Aplicar lógica específica del componente
+            console.log('[hijo2][CAMBIO_MODO] Llamando actualizarInterfazModo');
             actualizarInterfazModo(modo);
+            console.log('[hijo2][CAMBIO_MODO] actualizarInterfazModo completado');
 
             // Paso 5: Enviar confirmación
+            console.log('[hijo2][CAMBIO_MODO] Enviando confirmación');
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                 origen: CONFIG_HIJO.IFRAME_ID,
                 destino: mensaje.origen,
                 datos: { modo, exito: true, timestamp: Date.now() }
             });
+            console.log('[hijo2][CAMBIO_MODO] Confirmación enviada');
 
         } catch (error) {
+            console.error(`${logPrefix} Error procesando cambio de modo:`, error.message, error.stack);
             logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
-            console.error(`${logPrefix} Error details:`, error.message, error.stack);
         }
     });
 
