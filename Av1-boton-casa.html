@@ -563,77 +563,35 @@
      */
     async function manejarClickGPS() {
         const logPrefix = '[hijo5-casa][manejarClickGPS]';
-        
+
         try {
             logger.debug(`${logPrefix} Click en botón GPS detectado`);
-            
+
             // Obtener referencia al botón
             const btn = document.getElementById('gps-casa-btn');
             if (!btn) {
                 logger.error(`${logPrefix} Botón GPS no encontrado en el DOM`);
                 return;
             }
-            
-            // Alternar estado GPS
-            const estadoAnterior = estado.gpsActivo;
-            estado.gpsActivo = !estado.gpsActivo;
-            const modoNuevo = estado.gpsActivo ? 'aventura' : 'casa';
-            
-            logger.info(`${logPrefix} Cambiando modo: ${estadoAnterior ? 'aventura' : 'casa'} → ${modoNuevo}`);
-            
+
+            // Alternar modo
+            const modoNuevo = estado.modo === 'casa' ? 'aventura' : 'casa';
+
+            logger.info(`${logPrefix} Cambiando modo: ${estado.modo} → ${modoNuevo}`);
+
+            // Actualizar estado local
+            estado.modo = modoNuevo;
+
             // Actualizar UI del botón
-            btn.classList.toggle('on', estado.gpsActivo);
-            btn.classList.toggle('off', !estado.gpsActivo);
-            
+            const isOn = modoNuevo === 'aventura';
+            btn.classList.toggle('on', isOn);
+            btn.classList.toggle('off', !isOn);
+
             // Actualizar etiqueta del botón
             const label = btn.querySelector('.gps-label');
             if (label) {
-                label.textContent = estado.gpsActivo ? 'ON' : 'OFF';
+                label.textContent = isOn ? 'ON' : 'OFF';
                 logger.debug(`${logPrefix} Etiqueta actualizada a: ${label.textContent}`);
-            }
-            
-            // Actualizar estado del modo local
-            estado.modo = modoNuevo;
-            
-            // Notificar al padre del cambio de modo
-            logger.info(`${logPrefix} Notificando cambio de modo al padre: ${modoNuevo}`);
-            
-            const respuesta = await enviarMensaje({
-                destino: getPadreId(),
-                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                datos: { 
-                    modo: modoNuevo,
-                    timestamp: Date.now(),
-                    origen: 'boton-gps'
-                }
-            });
-            
-            // Validar respuesta (si hay)
-            if (respuesta) {
-                logger.debug(`${logPrefix} Respuesta del padre recibida:`, respuesta);
-            }
-
-            // 🔥 CONTROL GPS: Enviar comando GPS según el modo
-            const gpsMessageType = modoNuevo === 'aventura'
-                ? TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR
-                : TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR;
-
-            try {
-                await enviarMensaje({
-                    destino: getPadreId(),
-                    tipo: gpsMessageType,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        razon: `cambio_modo_${modoNuevo}`,
-                        timestamp: Date.now()
-                    }
-                });
-
-                logger.info(`${logPrefix} Comando GPS enviado: ${gpsMessageType}`);
-            } catch (gpsError) {
-                logger.error(`${logPrefix} Error enviando comando GPS:`, gpsError);
-                // No fallar el cambio de modo por error GPS
             }
 
             // Actualizar ventana de paradas según el modo
@@ -643,8 +601,22 @@
                 logger.debug(`${logPrefix} Ventana de paradas ${modoNuevo === 'casa' ? 'mostrada' : 'ocultada'}`);
             }
 
+            // Notificar al padre del cambio de modo
+            logger.info(`${logPrefix} Notificando cambio de modo al padre: ${modoNuevo}`);
+
+            await enviarMensaje({
+                destino: getPadreId(),
+                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: {
+                    modo: modoNuevo,
+                    timestamp: Date.now(),
+                    origen: 'boton-gps'
+                }
+            });
+
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`);
-            
+
         } catch (error) {
             logger.error(`${logPrefix} Error al manejar click en GPS:`, {
                 message: error.message,
@@ -653,14 +625,15 @@
             
             // Intentar revertir el estado en caso de error
             try {
-                estado.gpsActivo = !estado.gpsActivo; // Revertir
+                estado.modo = estado.modo === 'casa' ? 'aventura' : 'casa'; // Revertir modo
                 const btn = document.getElementById('gps-casa-btn');
                 if (btn) {
-                    btn.classList.toggle('on', estado.gpsActivo);
-                    btn.classList.toggle('off', !estado.gpsActivo);
+                    const isOn = estado.modo === 'aventura';
+                    btn.classList.toggle('on', isOn);
+                    btn.classList.toggle('off', !isOn);
                     const label = btn.querySelector('.gps-label');
                     if (label) {
-                        label.textContent = estado.gpsActivo ? 'ON' : 'OFF';
+                        label.textContent = isOn ? 'ON' : 'OFF';
                     }
                 }
                 logger.warn(`${logPrefix} Estado revertido debido al error`);
@@ -887,17 +860,17 @@
                     logger.info(`${logPrefix} Modo inicial recibido: ${modoInicial}`);
                     estado.modo = modoInicial;
                     
-                    // Sincronizar botón GPS con el modo inicial
-                    estado.gpsActivo = modoInicial === 'aventura';
+                    // Sincronizar botón con el modo inicial
                     const btn = document.getElementById('gps-casa-btn');
                     if (btn) {
-                        btn.classList.toggle('on', estado.gpsActivo);
-                        btn.classList.toggle('off', !estado.gpsActivo);
+                        const isOn = modoInicial === 'aventura';
+                        btn.classList.toggle('on', isOn);
+                        btn.classList.toggle('off', !isOn);
                         const label = btn.querySelector('.gps-label');
                         if (label) {
-                            label.textContent = estado.gpsActivo ? 'ON' : 'OFF';
+                            label.textContent = isOn ? 'ON' : 'OFF';
                         }
-                        logger.debug(`${logPrefix} Botón GPS sincronizado con modo inicial: ${estado.gpsActivo ? 'ON' : 'OFF'}`);
+                        logger.debug(`${logPrefix} Botón sincronizado con modo inicial: ${isOn ? 'ON' : 'OFF'}`);
                     }
                 }
                 
@@ -1022,17 +995,17 @@
                     }
                 }
                 
-                // Actualizar botón GPS según el modo
+                // Actualizar botón según el modo
                 const btn = document.getElementById('gps-casa-btn');
                 if (btn) {
-                    estado.gpsActivo = (modo === 'aventura');
-                    btn.classList.toggle('on', estado.gpsActivo);
-                    btn.classList.toggle('off', !estado.gpsActivo);
+                    const isOn = modo === 'aventura';
+                    btn.classList.toggle('on', isOn);
+                    btn.classList.toggle('off', !isOn);
                     const label = btn.querySelector('.gps-label');
                     if (label) {
-                        label.textContent = estado.gpsActivo ? 'ON' : 'OFF';
+                        label.textContent = isOn ? 'ON' : 'OFF';
                     }
-                    logger.debug(`${logPrefix} Botón GPS actualizado: ${estado.gpsActivo ? 'ON' : 'OFF'}`);
+                    logger.debug(`${logPrefix} Botón actualizado: ${isOn ? 'ON' : 'OFF'}`);
                 }
                 
                 logger.info(`${logPrefix} Modo cambiado exitosamente: ${modoAnterior} → ${modo}`);
@@ -1089,7 +1062,6 @@
                         estado: {
                             inicializado: estado.inicializado,
                             modo: estado.modo,
-                            gpsActivo: estado.gpsActivo,
                             paradasCargadas: estado.aventuraParadas?.length || 0
                         }
                     }
@@ -1451,169 +1423,6 @@
             }
         });
 
-        // ============================================
-        // CONTROLADORES GPS
-        // ============================================
-
-        // CONTROLADOR: NAVEGACION.GPS.UBICACION_ACTUALIZADA
-        // ============================================
-        // Propósito: Recibir actualizaciones de ubicación GPS (para logging/debugging)
-        // Origen esperado: padre (proxy desde hijo2)
-        // Datos requeridos: { lat: number, lng: number, precision: number, timestamp: number }
-        // Respuesta: Ninguna (solo logging)
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
-            const logPrefix = `[hijo5-casa][GPS.UBICACION_ACTUALIZADA][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                // Validación de datos
-                if (!mensaje.datos || typeof mensaje.datos !== 'object') {
-                    logger.warn(`${logPrefix} Mensaje sin datos válidos`);
-                    return;
-                }
-
-                const { lat, lng, precision, timestamp } = mensaje.datos;
-
-                // Log de la ubicación (para debugging)
-                logger.debug(`${logPrefix} Ubicación GPS recibida:`, {
-                    lat: lat?.toFixed(6),
-                    lng: lng?.toFixed(6),
-                    precision: precision || 'N/A',
-                    timestamp: timestamp ? new Date(timestamp).toLocaleTimeString() : 'N/A'
-                });
-
-                // Actualizar estado local si es necesario
-                if (lat && lng) {
-                    estado.ultimaUbicacion = { lat, lng, precision, timestamp };
-                }
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando actualización de ubicación GPS:`, error);
-            }
-        });
-
-        // CONTROLADOR: NAVEGACION.GPS.ERROR
-        // ============================================
-        // Propósito: Manejar errores GPS y actualizar UI si es necesario
-        // Origen esperado: padre (proxy desde hijo2)
-        // Datos requeridos: { codigo: number, mensaje: string, contexto: string }
-        // Respuesta: Ninguna (logging y posible notificación al usuario)
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
-            const logPrefix = `[hijo5-casa][GPS.ERROR][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                // Validación de datos
-                if (!mensaje.datos || typeof mensaje.datos !== 'object') {
-                    logger.warn(`${logPrefix} Mensaje sin datos válidos`);
-                    return;
-                }
-
-                const { codigo } = mensaje.datos || {};
-                // The property for the text may be 'mensaje' or 'message' depending on origin; support both
-                const errorMensaje = mensaje.datos?.mensaje || mensaje.datos?.message || null;
-                const contexto = mensaje.datos?.contexto || mensaje.datos?.context || 'desconocido';
-
-                // Map error codes for readability
-                const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
-                const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
-
-                // Log with defensive stringification in case console overrides filter objects
-                let details;
-                try {
-                    details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2);
-                } catch (e) {
-                    // fallback
-                    details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`;
-                }
-
-                logger.error(`${logPrefix} Error GPS recibido: ${details}`);
-
-                // Telemetría: incrementar contador por razón de error en el hijo
-                try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
-                
-                // Actualizar estado local
-                estado.gpsError = errorMensaje || `GPS error code ${codigo} (${codeDesc})`;
-
-                // Si es error de permisos, actualizar UI
-                if (codigo === 1) { // PERMISSION_DENIED
-                    estado.gpsPermisos = false;
-                    const btnGPS = document.getElementById('gps-casa-btn');
-                    if (btnGPS) {
-                        btnGPS.className = 'off';
-                        const label = btnGPS.querySelector('.gps-label');
-                        if (label) {
-                            label.textContent = 'DENIED';
-                        }
-                    }
-                    logger.warn(`${logPrefix} Permisos GPS denegados - botón actualizado`);
-                }
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando error GPS:`, error);
-            }
-        });
-
-        // ============================================
-        // CONTROLADOR: NAVEGACION.GPS.ESTADO_ACTUALIZADO
-        // ============================================
-        // Propósito: Recibir actualizaciones del estado GPS desde el padre/funciones-mapa y actualizar UI
-        // Origen esperado: padre, funciones-mapa, hijo2 (proxy)
-        // Datos requeridos: { activo: boolean, precision?: number, error?: string, permisos?: boolean }
-        // Respuesta: Ninguna (actualización de estado y UI)
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
-            const logPrefix = `[hijo5-casa][GPS.ESTADO_ACTUALIZADO][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                // Validación de datos
-                if (!mensaje.datos || typeof mensaje.datos !== 'object') {
-                    logger.warn(`${logPrefix} Mensaje sin datos válidos`);
-                    return;
-                }
-
-                const { activo, precision, error, permisos } = mensaje.datos;
-
-                logger.debug(`${logPrefix} Estado GPS actualizado:`, { activo, precision, error, permisos });
-
-                // Actualizar estado local
-                estado.gpsActivo = activo;
-                if (precision !== undefined) {
-                    estado.gpsPrecision = precision;
-                }
-                if (error !== undefined) {
-                    estado.gpsError = error;
-                }
-                if (permisos !== undefined) {
-                    estado.gpsPermisos = permisos;
-                }
-
-                // Actualizar UI del botón GPS
-                const btnGPS = document.getElementById('gps-casa-btn');
-                if (btnGPS) {
-                    btnGPS.classList.toggle('on', estado.gpsActivo);
-                    btnGPS.classList.toggle('off', !estado.gpsActivo);
-                    const label = btnGPS.querySelector('.gps-label');
-                    if (label) {
-                        if (error) {
-                            label.textContent = 'ERROR';
-                        } else if (estado.gpsActivo) {
-                            label.textContent = 'ON';
-                        } else {
-                            label.textContent = 'OFF';
-                        }
-                    }
-                    logger.debug(`${logPrefix} Botón GPS actualizado: ${estado.gpsActivo ? 'ON' : 'OFF'}`);
-                }
-
-                logger.info(`${logPrefix} Estado GPS sincronizado: ${estado.gpsActivo ? 'activo' : 'inactivo'}`, {
-                    permisos: estado.gpsPermisos,
-                    precision: estado.gpsPrecision,
-                    error: estado.gpsError
-                });
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando estado GPS:`, error);
-            }
-        });
-
         // Controlador para confirmación de cambio de parada
         registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
             const logPrefix = `[hijo5-casa][CAMBIO_PARADA_CONFIRMADO][${mensaje?.origen || 'desconocido'}]`;
@@ -1715,7 +1524,6 @@
         
         logger.info('[hijo5-casa] Inicialización completada exitosamente', {
             modo: estado.modo,
-            gpsActivo: estado.gpsActivo,
             paradasCargadas: estado.aventuraParadas?.length || 0,
             idsMapeados: Object.keys(estado.paradasMapeadas).length
         });
