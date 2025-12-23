@@ -1105,7 +1105,7 @@ function actualizarEstado(mensaje, tipo = 'info') {
 
 // Función para actualizar la interfaz según el modo
 function actualizarInterfazModo(modo) {
-    const modoSeguro = (modo === 'casa' || modo === 'aventura') ? modo : '';
+    const modoSeguro = normalizarModo(modo);
     console.log(`[COORDENADAS] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
     const body = document.body;
 
