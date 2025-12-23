@@ -1665,78 +1665,6 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
 
 // ==================== CONTROLADORES DE MENSAJES ====================
 
-// Controlador para cambio de modo
-registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
-    const logPrefix = `[hijo2][CAMBIO_MODO]`;
-
-    try {
-        // Paso 1: Validar carga secuencial - si no está completa, guardar pending
-        if (!mensaje.datos?.secuenciaCompleta) {
-            logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando cambio y notificando padre`);
-            // Guardar petición pendiente para aplicar tras PERMISO / PADRE_CONFIRMA_HIJO_LISTO
-            estadoComponente.pendingCambioModo = mensaje.datos || { modo: null };
-            // Enviar NACK incluyendo contexto para que el padre pueda reenviar
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: {
-                    error: 'Secuencia no completa',
-                    esperarPermiso: true,
-                    tipoOriginal: mensaje.tipo,
-                    modoSolicitado: mensaje.datos?.modo
-                }
-            });
-            return;
-        }
-
-        // Paso 2: Extraer datos con destructuring
-        const { modo } = mensaje.datos || {};
-
-        // Paso 3: Validar datos extraídos
-        if (!modo || !['casa', 'aventura'].includes(modo)) {
-            logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: { error: 'Modo inválido', modoRecibido: modo }
-            });
-            return;
-        }
-
-        // Paso 4: Loggear éxito y procesar
-        logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
-        
-        // Actualizar estado interno
-        estadoComponente.modo = modo;
-
-        // Reset retoActivo cuando se cambia a modo casa (en casa no hay retos)
-        if (modo === 'casa') {
-            estadoComponente.retoActivo = false;
-            logger.debug(`${logPrefix} retoActivo reseteado a false en modo casa`);
-        }
-
-        // Aplicar lógica específica del componente
-        actualizarEstadoBotones();
-
-        // Actualizar interfaz visual
-        actualizarInterfazModo(modo);
-        actualizarEstado(`Modo cambiado a: ${modo}`, 'info');
-
-        // Paso 5: Enviar confirmación
-        await enviarMensaje({
-            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            destino: mensaje.origen,
-            datos: { modo, exito: true, timestamp: Date.now() }
-        });
-
-    } catch (error) {
-        logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
-        actualizarEstado('Error cambiando modo', 'error');
-    }
-});
 
 // Controlador para actualización de distancia GPS
 registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => {
@@ -2883,6 +2811,64 @@ try {
         } catch (e) { return ''; }
     }
     
+    // Controlador para cambio de modo
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+        const logPrefix = `[hijo2][CAMBIO_MODO]`;
+
+        try {
+            // Paso 1: Validar carga secuencial - esperar permiso del padre
+                    if (!mensaje.datos?.secuenciaCompleta) {
+                        logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando y notificando padre`);
+                        if (estadoComponente) estadoComponente.pendingCambioModo = mensaje.datos || { modo: null };
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: {
+                                error: 'Secuencia no completa',
+                                esperarPermiso: true,
+                                tipoOriginal: mensaje.tipo,
+                                modoSolicitado: mensaje.datos?.modo
+                            }
+                        });
+                        return;
+                    }
+
+            // Paso 2: Extraer datos con destructuring
+            const { modo } = mensaje.datos || {};
+
+            // Paso 3: Validar datos extraídos
+            if (!modo || !['casa', 'aventura'].includes(modo)) {
+                logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { error: 'Modo inválido', modoRecibido: modo }
+                });
+                return;
+            }
+
+            // Paso 4: Loggear éxito y procesar
+            logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+            
+            // Aplicar lógica específica del componente
+            actualizarInterfazModo(modo);
+
+            // Paso 5: Enviar confirmación
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { modo, exito: true, timestamp: Date.now() }
+            });
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
+            console.error(`${logPrefix} Error details:`, error.message, error.stack);
+        }
+    });
+
 } catch (error) {
     logger.error(`[hijo2] Error durante la inicialización:`, error);
     actualizarEstado('Error de inicialización', 'error');
