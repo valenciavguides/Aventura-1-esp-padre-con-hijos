@@ -1012,6 +1012,19 @@
                 
                 logger.info(`${logPrefix} Modo cambiado exitosamente: ${modoAnterior} → ${modo}`);
                 
+                // Enviar confirmación de éxito
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        modo, 
+                        exito: true, 
+                        timestamp: Date.now(),
+                        mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                    }
+                });
+                
             } catch (error) {
                 logger.error(`${logPrefix} Error al procesar cambio de modo:`, error);
                 
