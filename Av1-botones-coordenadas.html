@@ -1780,6 +1780,7 @@ try {
 
     // ==================== CONTROLADORES DE DATOS (hijo2 es el experto en coordenadas) ====================
     
+    logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
     // ============================================================
     // CONTROLADOR 1: SISTEMA.PADRE_LISTO
     // ============================================================
@@ -1793,6 +1794,7 @@ try {
             }
 
             logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_LISTO`);
 
             // ✅ PROCESAR DATOS INICIALES DEL PADRE
             if (mensaje.datos) {
@@ -1819,6 +1821,7 @@ try {
             }
 
             // Enviar HIJO_LISTO directamente después de procesar datos
+            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
             await enviarMensaje({
                 destino: getPadreId(),
                 tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
