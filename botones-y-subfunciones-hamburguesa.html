@@ -884,7 +884,12 @@
                         tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         destino: mensaje.origen,
-                        datos: { modo, exito: true, timestamp: Date.now() }
+                        datos: { 
+                            modo, 
+                            exito: true, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
                     });
                     
                     return { exito: true };
