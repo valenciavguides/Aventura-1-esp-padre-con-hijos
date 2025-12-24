@@ -982,9 +982,11 @@
             // Aplazar envío de HIJO_LISTO hasta registrar controladores críticos
             logger.debug('[hijo4] HIJO_LISTO aplazado hasta post-inicialización de controladores');
 
+            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
             // Controlador para inicialización del padre
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
                 logger.info(`[hijo4] PADRE_LISTO recibido desde ${mensaje.origen}`);
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_LISTO`);
 
                 // ✅ PROCESAR DATOS INICIALES DEL PADRE
                 if (mensaje.datos) {
@@ -1005,6 +1007,7 @@
                 }
 
                 // Enviar HIJO_LISTO directamente
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
                 await enviarMensaje({
                     destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
