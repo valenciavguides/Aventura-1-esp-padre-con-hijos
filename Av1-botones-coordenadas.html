@@ -1901,6 +1901,67 @@ try {
     });
 
     /**
+     * Controlador: SISTEMA.CAMBIO_MODO
+     * Descripción: Actualiza la interfaz según el modo (casa/aventura)
+     */
+    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+        const logPrefix = `[hijo2][CAMBIO_MODO]`;
+
+        try {
+            // Paso 1: Validar carga secuencial - esperar permiso del padre
+            if (!mensaje.datos?.secuenciaCompleta) {
+                logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando y notificando padre`);
+                if (estadoComponente) estadoComponente.pendingCambioModo = mensaje.datos || { modo: null };
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: {
+                        error: 'Secuencia no completa',
+                        esperarPermiso: true,
+                        tipoOriginal: mensaje.tipo,
+                        modoSolicitado: mensaje.datos?.modo
+                    }
+                });
+                return;
+            }
+
+            // Paso 2: Extraer datos con destructuring
+            const { modo } = mensaje.datos || {};
+
+            // Paso 3: Validar datos extraídos
+            if (!modo || !['casa', 'aventura'].includes(modo)) {
+                logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { error: 'Modo inválido', modoRecibido: modo }
+                });
+                return;
+            }
+
+            // Paso 4: Loggear éxito y procesar
+            logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+
+            // Aplicar lógica específica del componente
+            estadoComponente.modo = modo;
+            actualizarEstadoBotones();
+
+            // Paso 5: Enviar confirmación
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: mensaje.origen,
+                datos: { modo, exito: true, timestamp: Date.now() }
+            });
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error:`, error);
+        }
+    });
+
+    /**
      * Controlador: DATOS.COORDENADAS_PARADAS_REQUEST
      * Descripción: Envía coordenadas filtradas por paradaId o el array completo al solicitante
      * Origen esperado: padre
