@@ -3604,6 +3604,15 @@ export function registrarManejadoresMensajes() {
                     dibujarRuta: incluirRutas
                 });
                 
+                // Si es una parada específica, actualizar coordenadas de la parada actual
+                if (paradaId && coordenadasTransformadas.length > 0) {
+                    const paradaCoord = coordenadasTransformadas.find(c => c.id === paradaId);
+                    if (paradaCoord) {
+                        estadoMapa.coordenadasParada = { lat: paradaCoord.lat, lng: paradaCoord.lng };
+                        logger.info(`${logPrefix} Actualizadas coordenadas de parada actual: ${paradaId} -> ${paradaCoord.lat}, ${paradaCoord.lng}`);
+                    }
+                }
+                
                 logger.success(`${logPrefix} Ruta completa dibujada exitosamente`);
                 
             } catch (error) {
