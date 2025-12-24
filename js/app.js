@@ -647,6 +647,36 @@ export async function manejarCambioModo(estado, mensaje) {
                                     await window.funcionesMapa.iniciarGPSAventura();
                                     logger.debug('[APP][CAMBIO_MODO] Iniciado GPS aventura tras pre-warm');
                                 }
+
+                                // Establecer parada por defecto "padre-P-0" y solicitar coordenadas a hijo2
+                                try {
+                                    if (window.AVENTURA_PARADAS && window.AVENTURA_PARADAS.length > 0) {
+                                        const paradaDefecto = window.AVENTURA_PARADAS.find(p => p.padreid === 'padre-P-0') || window.AVENTURA_PARADAS[0];
+                                        estado.paradaActual = paradaDefecto.padreid;
+                                        estado.elementoActual = paradaDefecto;
+                                        logger.info('[APP][CAMBIO_MODO] Establecida parada por defecto: padre-P-0');
+
+                                        // Solicitar coordenadas a hijo2
+                                        await enviarMensaje({
+                                            tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                                            origen: getPadreId(),
+                                            destino: 'hijo2',
+                                            datos: { paradaId: 'P-0', padreId: 'padre-P-0' }
+                                        });
+                                        logger.debug('[APP][CAMBIO_MODO] Solicitadas coordenadas de P-0 a hijo2');
+
+                                        // Enviar cambio de parada a funciones-mapa
+                                        await enviarMensaje({
+                                            tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
+                                            origen: getPadreId(),
+                                            destino: 'funciones-mapa',
+                                            datos: { paradaId: 'padre-P-0' }
+                                        });
+                                        logger.debug('[APP][CAMBIO_MODO] Enviado cambio de parada padre-P-0 a funciones-mapa');
+                                    }
+                                } catch (e) {
+                                    logger.warn('[APP][CAMBIO_MODO] Error estableciendo parada por defecto:', e);
+                                }
                                 estado.sistema.prewarmPausado = false;
                                 estado.sistema.prewarmIniciado = true;
                             }
