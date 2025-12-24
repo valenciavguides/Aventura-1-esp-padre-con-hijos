@@ -2567,7 +2567,7 @@
 
                                     const controladorTemporal = async (mensaje) => {
                                         clearTimeout(timeout);
-                                        desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                        desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                         resolve(mensaje.datos);
                                     };
 
@@ -2984,11 +2984,45 @@
 
         // Exponer funciones GPS en `window` para garantizar disponibilidad
         // entre distintos bloques <script> que puedan ejecutarse en otro scope.
+
+        /**
+         * Ajusta timeout por conexión de manera segura
+         * to avoid runtime errors and to provide a sensible default.
+         */
+        function ajustarTimeoutPorConexionSafe(ms) {
+            try {
+                if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
+            } catch (e) { /* ignore and fall back to default */ }
+            return ms;
+        }
+
+        /**
+         * Registrar un controlador de manera segura usando mensajería disponible
+         * Primero intenta usar window.mensajeria.registrarControlador, luego
+         * fallback a registrarControlador global si está disponible.
+         */
+        function registrarControladorSafe(tipo, handler, opciones) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
+                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+            } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSafe error', e && e.message); }
+        }
+
+        function desregistrarControladorSeguro(tipo, handler) {
+            try {
+                if (window.mensajeria && typeof window.mensajeria.desregistrarControlador === 'function') return window.mensajeria.desregistrarControlador(tipo, handler);
+                if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
+            } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSeguro error', e && e.message); }
+        }
+
         try {
             if (typeof window !== 'undefined') {
                 window.activarGPS = activarGPS;
                 window.desactivarGPS = desactivarGPS;
                 window.getPosicionUsuario = getPosicionUsuario;
+                window.registrarControladorSafe = registrarControladorSafe;
+                window.desregistrarControladorSeguro = desregistrarControladorSeguro;
+                window.ajustarTimeoutPorConexionSafe = ajustarTimeoutPorConexionSafe;
             }
         } catch (e) {
             console.warn('[PADRE] No fue posible exponer funciones GPS en window:', e && e.message);
@@ -4586,44 +4620,6 @@
         if (typeof window.enviarMensajePadre === 'undefined') window.enviarMensajePadre = enviarMensajePadre;
 
         // ============================================================
-        // FUNCIONES AUXILIARES (ya definidas en Script 1)
-        // ============================================================
-        
-        /**
-         * Safe wrapper to obtain an adjusted timeout for cross-frame connections.
-         * Some helpers are defined later (in Script 2) and exposed as
-         * `window.ajustarTimeoutPorConexion`. Calling the function directly
-         * (e.g. ajustarTimeoutPorConexion_S2) from Script 1 can produce
-         * ReferenceError if the symbol is not yet defined. Use this wrapper
-         * to avoid runtime errors and to provide a sensible default.
-         */
-        function ajustarTimeoutPorConexionSafe(ms) {
-            try {
-                if (typeof window.ajustarTimeoutPorConexion === 'function') return window.ajustarTimeoutPorConexion(ms);
-            } catch (e) { /* ignore and fall back to default */ }
-            return ms;
-        }
-        /**
-         * Registrar un controlador de manera segura usando mensajería disponible
-         * Primero intenta usar window.mensajeria.registrarControlador, luego
-         * fallback a registrarControlador global si está disponible.
-         */
-        function registrarControladorSafe(tipo, handler, opciones) {
-            try {
-                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
-                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
-            } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSafe error', e && e.message); }
-        }
-
-        function desregistrarControladorSafe(tipo, handler) {
-            try {
-                if (window.mensajeria && typeof window.mensajeria.desregistrarControlador === 'function') return window.mensajeria.desregistrarControlador(tipo, handler);
-                if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
-            } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSafe error', e && e.message); }
-        }
-        // Local `registrarMetrica` duplicate removed: use central `window.registrarMetrica`
-
-        // ============================================================
         // FUNCIONES AUXILIARES DE PROGRESIÓN DE AVENTURA
         // ============================================================
 
@@ -4728,13 +4724,13 @@
                 const timeoutMs = (window.Config && window.Config.PENDING && window.Config.PENDING.CLEANUP_INTERVAL_MS) ? Math.max(window.Config.PENDING.CLEANUP_INTERVAL_MS * 0.5, 2000) : 5000;
                 const coordsResponse = await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
                         reject(new Error('Timeout solicitando coordenadas'));
                     }, timeoutMs);
 
                     const temporal = async (mensaje) => {
                         clearTimeout(timeout);
-                        try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
+                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
                         resolve(mensaje.datos);
                     };
 
@@ -5773,13 +5769,13 @@
                         try {
                                 const coordenadasResponse = await new Promise((resolve, reject) => {
                                 const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                     reject(new Error('Timeout solicitando coordenadas a hijo2'));
                                 }, ajustarTimeoutPorConexionSafe(5000));
 
                                 const controladorTemporal = async (mensaje) => {
                                     clearTimeout(timeout);
-                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                     resolve(mensaje.datos);
                                 };
 
@@ -5907,14 +5903,14 @@
                                 try {
                                         const coordenadasResponse = await new Promise((resolve, reject) => {
                                         const timeout = setTimeout(() => {
-                                            try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                            try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                             reject(new Error('Timeout solicitando coordenadas'));
                                         }, ajustarTimeoutPorConexionSafe(5000));
 
                                         // Controlador temporal para respuesta
                                         const controladorTemporal = async (mensaje) => {
                                             clearTimeout(timeout);
-                                            desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                            desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                             resolve(mensaje.datos);
                                         };
 
@@ -6047,13 +6043,13 @@
                         try {
                             const coordenadasResponse = await new Promise((resolve, reject) => {
                                 const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
+                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
                                     reject(new Error('Timeout solicitando coordenadas'));
                                 }, ajustarTimeoutPorConexionSafe(5000));
 
                                 const controladorTemporal = async (mensaje) => {
                                     clearTimeout(timeout);
-                                    desregistrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
+                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
                                     resolve(mensaje.datos);
                                 };
 
