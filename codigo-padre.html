@@ -3516,6 +3516,7 @@
             const timestamp = Date.now();
             
             console.log(`🔥 [PADRE] HIJO_LISTO RECIBIDO de ${mensaje?.origen}:`, mensaje);
+            logger.info(`Padre recibió HIJO_LISTO de ${mensaje?.origen}`);
             
             try {
                 if (!mensaje?.origen) {
@@ -4092,6 +4093,22 @@
 
                     // Iniciar la carga
                     iframeEl.src = iframe.src;
+
+                    // Esperar un poco para que el iframe cargue
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Enviar PADRE_LISTO
+                    logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
+                    await enviarMensaje_S1({
+                        destino: iframe.id,
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
+                        origen: CONFIG_PADRE.ID,
+                        datos: {
+                            version: CONFIG_PADRE.VERSION,
+                            timestamp: new Date().toISOString(),
+                            modo: window.estadoPadre.modo?.actual || MODOS.CASA
+                        }
+                    });
 
                     // Esperar a que el hijo esté listo
                     await new Promise((resolve, reject) => {
