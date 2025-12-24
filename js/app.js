@@ -346,11 +346,17 @@ export async function actualizarInterfazModo(estado, modo) {
     }
 }
 
-// Agregar función auxiliar para reintentos en broadcasts
+// Agregar función auxiliar para reintentos con confirmación
 async function enviarMensajeConReintento(mensaje, maxReintentos = 3) {
     for (let intento = 1; intento <= maxReintentos; intento++) {
         try {
-            return await enviarMensaje(mensaje);
+            return await enviarMensajeConConfirmacion({
+                tipo: mensaje.tipo,
+                origen: mensaje.origen,
+                destino: mensaje.destino,
+                datos: mensaje.datos,
+                timeout: 15000  // Aumentar timeout a 15 segundos
+            });
         } catch (error) {
             if (intento === maxReintentos) throw error;
             logger.warn(`[APP] Reintento ${intento} para mensaje ${mensaje.tipo} a ${mensaje.destino}:`, error);
@@ -578,7 +584,7 @@ export async function manejarCambioModo(estado, mensaje) {
 
         try {
             // 8. Notificar a los componentes del cambio inminente (no bloquear>5s)
-            await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 10000, 'notificarCambioModoInminente');
+            await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 15000, 'notificarCambioModoInminente');
 
             // 8.1 Preparar pre-warm / pausar según el modo (usar valores normalizados)
 
@@ -717,11 +723,11 @@ export async function manejarCambioModo(estado, mensaje) {
             // 10. Actualizar interfaz y limpiar recursos según el modo (no bloquear>5s por interfaz)
             const hijosInicializados = estado.hijosInicializados ? Array.from(estado.hijosInicializados) : [];
             logger.info(`${logPrefix} Iniciando actualización de interfaz para ${hijosInicializados.length} hijos: ${hijosInicializados.join(', ')}`);
-            await withTimeout(actualizarInterfazModo(estado, modoNormalized), 10000, 'actualizarInterfazModo');
+            await withTimeout(actualizarInterfazModo(estado, modoNormalized), 15000, 'actualizarInterfazModo');
             await limpiarRecursosPorModo(estado, modoNormalized, opciones);
 
             // 11. Notificar a los componentes del cambio completado (no bloquear>5s)
-            await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 10000, 'notificarCambioModoCompletado');
+            await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 15000, 'notificarCambioModoCompletado');
 
             // 12. Registrar �xito
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`, {
@@ -1762,6 +1768,12 @@ setInterval(async () => {
         logger.warn('[APP][CAMBIO_MODO][RESEND] Error en loop de reintentos:', err);
     }
 }, 5000);
+
+// Hacer funciones disponibles globalmente para compatibilidad con carga como script
+window.manejarCambioModo = manejarCambioModo;
+window.actualizarInterfazModo = actualizarInterfazModo;
+window.notificarCambioModoInminente = notificarCambioModoInminente;
+window.notificarCambioModoCompletado = notificarCambioModoCompletado;
 
 
 
