@@ -790,7 +790,7 @@
         // ============================================
         // CONTROLADOR 1: SISTEMA.PADRE_LISTO
         // ============================================
-        console.log(`📝 [hijo5-casa] REGISTRANDO CONTROLADOR PADRE_LISTO`);
+        logger.info(`Hijo hijo5-casa registrado el controlador PADRE_LISTO`);
         registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
             const logPrefix = `[hijo5-casa][PADRE_LISTO]`;
             
@@ -803,6 +803,7 @@
                 }
 
                 logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+                logger.info(`Hijo hijo5-casa recibió PADRE_LISTO`);
 
                 // ✅ PROCESAR DATOS INICIALES DEL PADRE
                 if (mensaje.datos) {
@@ -823,6 +824,7 @@
                 }
 
                 // Enviar HIJO_LISTO directamente
+                logger.info(`Hijo hijo5-casa enviando HIJO_LISTO`);
                 await enviarMensaje({
                     destino: getPadreId(),
                     tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
