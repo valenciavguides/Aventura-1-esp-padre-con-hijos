@@ -960,10 +960,9 @@
             imagenActual = document.getElementById('imagen-zoom');
             imagenActual.alt = titulo || 'Imagen de la parada';
             // Reset styles to ensure natural size and responsive constraints
-            imagenActual.style.maxWidth = 'calc(100% - 24px)';
-            imagenActual.style.maxHeight = 'calc(100% - 24px)';
-            imagenActual.style.width = 'auto';
-            imagenActual.style.height = 'auto';
+            imagenActual.style.width = '100%';
+            imagenActual.style.height = '100%';
+            imagenActual.style.objectFit = 'contain';
             imagenActual.style.display = 'block';
             imagenActual.style.margin = '0 auto';
             // Wait for load so we can adjust transform and container if needed
