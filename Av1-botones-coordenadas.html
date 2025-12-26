@@ -1946,6 +1946,16 @@ try {
 
             // Aplicar lógica específica del componente
             estadoComponente.modo = modo;
+
+            // **NUEVO: Resetear estado para "empezar de nuevo"**
+            estadoComponente.paradaActual = null;
+            estadoComponente.tipoParadaActual = null;
+            estadoComponente.retoActivo = false;
+            estadoComponente.ubicacionActiva = false;
+            estadoComponente.gpsActivo = false;
+
+            logger.debug(`${logPrefix} Estado reseteado para nuevo modo`);
+
             actualizarEstadoBotones();
 
             // Paso 5: Enviar confirmación
