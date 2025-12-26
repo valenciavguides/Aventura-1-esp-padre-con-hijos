@@ -1107,21 +1107,21 @@
                     // Paso 4: Loggear éxito y procesar
                     logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
                     
-                    // Si hay un reto activo cuando se cambia de parada, limpiarlo
-                    if (estado.retoActualId && modo !== estado.modoActual) {
-                        logger.info(`${logPrefix} Limpiando reto activo ${estado.retoActualId} por cambio de parada`);
-                        estado.retoActualId = null;
-                        retoActual = null;
-                        
-                        // Limpiar interfaz de reto
-                        if (retoDiv) {
-                            retoDiv.innerHTML = "";
-                            retoDiv.classList.remove("correct", "incorrect");
-                        }
-                        
-                        // Ocultar botones
-                            ocultarControles();
-                        }
+                    // **NUEVO: Resetear estado de retos para "empezar de nuevo"**
+                    estado.retoActualId = null;
+                    retoActual = null;
+                    
+                    // Limpiar interfaz de reto
+                    if (retoDiv) {
+                        retoDiv.innerHTML = "";
+                        retoDiv.classList.remove("correct", "incorrect");
+                    }
+                    
+                    // Ocultar botones y resetear controles
+                    ocultarControles();
+                    
+                    logger.debug(`${logPrefix} Estado de retos reseteado`);
+
                     actualizarInterfazModo(modo);
 
                     // Paso 5: Enviar confirmación
