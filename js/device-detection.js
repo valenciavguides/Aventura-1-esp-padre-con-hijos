@@ -7,35 +7,14 @@ import logger from './logger.js';
 export const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 /**
- * Detecta si el dispositivo es específicamente un teléfono móvil (excluyendo tablets)
- * @returns {boolean} True si es un teléfono móvil
+ * Detecta si el dispositivo es específicamente un teléfono móvil (excluyendo tablets y escritorio)
+ * @returns {boolean} True si es un teléfono móvil REAL (android/iphone) - NO tablets.
  */
 export function esTelefonoMovil() {
-    const ua = navigator.userAgent;
-
-    // Excluir tablets y otros dispositivos no móviles
-    if (ua.includes('iPad') || ua.includes('Tablet') || ua.includes('PlayBook')) {
-        return false;
-    }
-
-    // Detectar teléfonos móviles específicos
-    const esTelefono = /Android.*Mobile|iPhone|IEMobile|Windows Phone|BlackBerry|Opera Mini/i.test(ua);
-
-    // Verificar tamaño de pantalla típico de móviles (menos de 768px de ancho)
-    const anchoPantalla = window.screen.width;
-    const altoPantalla = window.screen.height;
-    const minDimension = Math.min(anchoPantalla, altoPantalla);
-
-    // Los teléfonos móviles típicamente tienen una dimensión menor a 768px
-    const esPantallaMovil = minDimension < 768;
-
-    // Verificar si tiene capacidades de orientación (los móviles las tienen)
-    const tieneOrientacion = typeof screen !== 'undefined' && screen.orientation;
-
-    // Añadir verificación adicional: excluir si el ancho es mayor a 1024px (tablets grandes y desktops)
-    const noEsTabletGrande = anchoPantalla <= 1024;
-
-    return esTelefono || (esPantallaMovil && tieneOrientacion && noEsTabletGrande);
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+    // Detecta solo smartphones típicos
+    // Android solo si pone 'Mobile', iPhone, iPod, Windows Phone, Opera Mini
+    return /Android.*Mobile|iPhone|iPod|IEMobile|Windows Phone|Opera Mini/i.test(ua);
 }
 
 /**
