@@ -1473,6 +1473,16 @@
                 // Paso 4: Loggear éxito y procesar
                 logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
                 
+                // **NUEVO: Resetear estado de audio para "empezar de nuevo"**
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio = null;
+                }
+                currentAudioId = null;
+                isPlaying = false;
+                updateProgressBar(0);
+                logger.debug(`${logPrefix} Estado de audio reseteado`);
+
                 // Aplicar lógica específica del componente
                 actualizarInterfazModo(modo);
 
