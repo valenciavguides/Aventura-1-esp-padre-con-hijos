@@ -582,6 +582,15 @@ export async function manejarCambioModo(estado, mensaje) {
             logger.warn(`${logPrefix} No se pudo aplicar optimistic update:`, e && e.message);
         }
 
+        // **NUEVO: Limpiar recursos inmediatamente después del cambio de modo**
+        try {
+            await limpiarRecursosPorModo(estado, modoNormalized, opciones);
+            logger.info(`${logPrefix} Recursos limpiados inmediatamente después del cambio de modo`);
+        } catch (errorLimpieza) {
+            logger.warn(`${logPrefix} Error limpiando recursos:`, errorLimpieza);
+            // No bloquear el cambio de modo por errores de limpieza
+        }
+
         try {
             // 8. Notificar a los componentes del cambio inminente (no bloquear>5s)
             await withTimeout(notificarCambioModoInminente(modoActual, modoNormalized, motivo), 15000, 'notificarCambioModoInminente');
@@ -720,11 +729,10 @@ export async function manejarCambioModo(estado, mensaje) {
                 opciones
             };
 
-            // 10. Actualizar interfaz y limpiar recursos según el modo (no bloquear>5s por interfaz)
+            // 10. Actualizar interfaz según el modo (no bloquear>5s por interfaz)
             const hijosInicializados = estado.hijosInicializados ? Array.from(estado.hijosInicializados) : [];
             logger.info(`${logPrefix} Iniciando actualización de interfaz para ${hijosInicializados.length} hijos: ${hijosInicializados.join(', ')}`);
             await withTimeout(actualizarInterfazModo(estado, modoNormalized), 15000, 'actualizarInterfazModo');
-            await limpiarRecursosPorModo(estado, modoNormalized, opciones);
 
             // 11. Notificar a los componentes del cambio completado (no bloquear>5s)
             await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 15000, 'notificarCambioModoCompletado');
@@ -952,35 +960,89 @@ async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
  */
 async function limpiarRecursosPorModo(estado, modo, opciones = {}) {
     try {
-        if (modo === 'mantenimiento') {
-            if (window.funcionesMapa?.desactivarGPS) {
-                await window.funcionesMapa.desactivarGPS();
-            }
-            if (window.funcionesMapa?.limpiarMapa) {
-                await window.funcionesMapa.limpiarMapa();
-            }
-            logger.debug(`Limpieza de recursos para modo ${modo} completada`);
-        } else if (modo === 'aventura') {
-            if (window.funcionesMapa?.limpiarPorEstado) {
-                const limpiado = await window.funcionesMapa.limpiarPorEstado({
-                    modo: modo,
-                    paradaActual: estado.paradaActual,
-                    tramoActual: null,
-                    ...opciones
+        logger.info(`[APP][LIMPIAR_RECURSOS] Iniciando limpieza completa para cambio a modo '${modo}'`);
+        // **NUEVO: Resetear estado de navegación para "empezar de nuevo"**
+        logger.info(`[APP][LIMPIAR_RECURSOS] Reseteando estado para cambio a modo '${modo}'`);
+
+        // Resetear selecciones previas
+        estado.paradaActual = null;
+        estado.tramoActual = null;
+        estado.elementoActual = null;
+        estado.siguiendoRuta = false;
+
+        // Resetear estado GPS
+        estado.gps = estado.gps || {};
+        estado.gps.activo = false;
+        estado.gps.posicionUsuario = null;
+        estado.gps.watchId = null;
+
+        // Resetear otros estados relacionados
+        estado.retoActivo = false;
+        estado.audioActivo = false;
+        estado.ubicacionActiva = false;
+
+        logger.debug(`[APP][LIMPIAR_RECURSOS] Estado de navegación reseteado`);
+
+        // Limpiar mapa completamente
+        if (window.funcionesMapa?.limpiarPorEstado) {
+            // Esperar a que el mapa esté inicializado si no lo está
+            if (!window.funcionesMapa.isMapInitialized || !window.funcionesMapa.isMapInitialized()) {
+                logger.info(`[APP][LIMPIAR_RECURSOS] Mapa no inicializado, esperando...`);
+                // Esperar hasta 5 segundos a que el mapa se inicialice
+                await new Promise(resolve => {
+                    const checkMap = () => {
+                        if (window.funcionesMapa.isMapInitialized && window.funcionesMapa.isMapInitialized()) {
+                            resolve();
+                        } else {
+                            setTimeout(checkMap, 100);
+                        }
+                    };
+                    setTimeout(() => resolve(), 5000); // Timeout de 5 segundos
+                    checkMap();
                 });
-                
-                if (limpiado) {
-                    logger.debug(`Limpieza automática del mapa ejecutada por cambio a modo ${modo}`);
-                }
+            }
+
+            const estadoLimpieza = {
+                modo: modo,
+                paradaActual: null,
+                tramoActual: null,
+                resetCompleto: true, // Flag para indicar reset completo
+                ...opciones
+            };
+
+            logger.info(`[APP][LIMPIAR_RECURSOS] Llamando a limpiarPorEstado con resetCompleto: true`);
+            const limpiado = await window.funcionesMapa.limpiarPorEstado(estadoLimpieza);
+
+            if (limpiado) {
+                logger.debug(`[APP][LIMPIAR_RECURSOS] Mapa limpiado completamente para modo ${modo}`);
+            } else {
+                logger.warn(`[APP][LIMPIAR_RECURSOS] limpiarPorEstado devolvió false`);
+            }
+        } else {
+            logger.error(`[APP][LIMPIAR_RECURSOS] window.funcionesMapa.limpiarPorEstado no disponible`);
+        }
+
+        // Limpiar overlays activos (imágenes, videos)
+        if (window.cerrarImagenOverlay) {
+            try {
+                window.cerrarImagenOverlay();
+                logger.debug(`[APP][LIMPIAR_RECURSOS] Overlay de imagen cerrado`);
+            } catch (e) {
+                logger.warn(`[APP][LIMPIAR_RECURSOS] Error cerrando overlay de imagen:`, e);
             }
         }
-        
-        if (modo === 'mantenimiento') {
-            // Limpiezas espec�ficas para modo mantenimiento
-        } else if (modo === 'depuracion') {
-            // Limpiezas espec�ficas para modo depuraci�n
+
+        if (window.cerrarVideoOverlay) {
+            try {
+                window.cerrarVideoOverlay();
+                logger.debug(`[APP][LIMPIAR_RECURSOS] Overlay de video cerrado`);
+            } catch (e) {
+                logger.warn(`[APP][LIMPIAR_RECURSOS] Error cerrando overlay de video:`, e);
+            }
         }
-        
+
+        logger.info(`[APP][LIMPIAR_RECURSOS] Limpieza completa para modo ${modo} finalizada`);
+
     } catch (error) {
         logger.error('Error en limpieza de recursos por modo:', {
             error: error.message,
