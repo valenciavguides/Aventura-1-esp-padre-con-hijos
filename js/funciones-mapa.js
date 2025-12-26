@@ -765,6 +765,8 @@ export function limpiarRecursos() {
             return false;
         }
 
+        logger.info('[funciones-mapa] Iniciando limpieza completa de recursos del mapa');
+
         // Limpiar marcadores de usuario
         if (marcadorUsuario) {
             _mapaInstance.removeLayer(marcadorUsuario);
@@ -782,11 +784,20 @@ export function limpiarRecursos() {
         marcadoresParadas.clear();
 
         // Limpiar rutas
+        logger.debug(`[funciones-mapa] Eliminando ${rutasTramos.length} rutas de tramos y ${rutasActivas.length} rutas activas`);
         rutasTramos.forEach(ruta => _mapaInstance.removeLayer(ruta));
         rutasTramos = [];
 
         rutasActivas.forEach(ruta => _mapaInstance.removeLayer(ruta));
         rutasActivas = [];
+
+        // Limpiar TODAS las polylines del mapa (por si alguna no está en los arrays)
+        _mapaInstance.eachLayer((layer) => {
+            if (layer instanceof L.Polyline) {
+                logger.debug('[funciones-mapa] Eliminando polyline adicional encontrada en el mapa');
+                _mapaInstance.removeLayer(layer);
+            }
+        });
 
         // Limpiar todas las capas adicionales del mapa (excepto la base)
         _mapaInstance.eachLayer((layer) => {
@@ -799,6 +810,7 @@ export function limpiarRecursos() {
         });
 
         console.debug('Recursos del mapa limpiados completamente');
+        logger.info('[funciones-mapa] Limpieza completa de recursos finalizada');
         return true;
     } catch (error) {
         console.error('Error al limpiar recursos del mapa:', error);
@@ -1322,18 +1334,72 @@ export function limpiarPorEstado(nuevoEstado) {
             return false;
         }
 
-        const { modo, paradaActual, tramoActual } = nuevoEstado;
+        const { modo, paradaActual, tramoActual, resetCompleto } = nuevoEstado;
         let limpiado = false;
 
-        // Limpieza por cambio de modo
-        if (modo !== estadoMapa.modo) {
-            if (modo === MODOS.CASA) {
-                // En modo casa, limpiar todo para vista general
-                limpiarRecursos();
+        logger.info(`[funciones-mapa] limpiarPorEstado llamado con: modo=${modo}, resetCompleto=${resetCompleto}, paradaActual=${paradaActual}, tramoActual=${tramoActual}`);
+
+        // **NUEVO: Reset completo al cambiar de modo**
+        if (resetCompleto || modo !== estadoMapa.modo) {
+            logger.info(`[funciones-mapa] Ejecutando reset completo por cambio de modo a '${modo}'`);
+
+            // Limpiar TODOS los recursos del mapa
+            limpiarRecursos();
+
+            // Resetear estadoMapa completamente
+            estadoMapa.paradaActual = null;
+            estadoMapa.tramoActual = null;
+            estadoMapa.posicionUsuario = null;
+            estadoMapa.gpsActivo = false;
+            estadoMapa.siguiendoRuta = false;
+            estadoMapa.modo = modo;
+            estadoMapa.timestamp = Date.now();
+
+            // Detener GPS si está activo
+            if (gpsWatchId) {
+                navigator.geolocation.clearWatch(gpsWatchId);
+                gpsWatchId = null;
+            }
+
+            limpiado = true;
+            logger.debug(`[funciones-mapa] Reset completo ejecutado para modo ${modo}`);
+        } else {
+            // Limpieza por cambio de modo (lógica original)
+            if (modo !== estadoMapa.modo) {
+                if (modo === MODOS.CASA) {
+                    // En modo casa, limpiar todo para vista general
+                    limpiarRecursos();
+                    limpiado = true;
+                    logger.debug('Limpieza automática: Modo casa activado, recursos limpiados');
+                } else if (modo === MODOS.AVENTURA) {
+                    // En modo aventura, mantener marcadores básicos pero limpiar rutas anteriores
+                    rutasActivas.forEach(ruta => {
+                        if (_mapaInstance && _mapaInstance.removeLayer) {
+                            _mapaInstance.removeLayer(ruta);
+                        }
+                    });
+                    rutasActivas = [];
+                    limpiado = true;
+                    logger.debug('Limpieza automática: Modo aventura activado, rutas limpiadas');
+                }
+            }
+
+            // Limpieza por cambio de parada
+            if (paradaActual !== estadoMapa.paradaActual && paradaActual !== null) {
+                // Limpiar marcadores de rutas anteriores (mantener marcadores de paradas)
+                marcadoresParadas.forEach((marcador, id) => {
+                    if (id.startsWith('ruta-') && _mapaInstance && _mapaInstance.removeLayer) {
+                        _mapaInstance.removeLayer(marcador);
+                        marcadoresParadas.delete(id);
+                    }
+                });
                 limpiado = true;
-                logger.debug('Limpieza automática: Modo casa activado, recursos limpiados');
-            } else if (modo === MODOS.AVENTURA) {
-                // En modo aventura, mantener marcadores básicos pero limpiar rutas anteriores
+                logger.debug(`Limpieza automática: Cambio de parada a ${paradaActual}, marcadores de ruta limpiados`);
+            }
+
+            // Limpieza por cambio de tramo
+            if (tramoActual !== estadoMapa.tramoActual && tramoActual !== null) {
+                // Limpiar rutas activas anteriores
                 rutasActivas.forEach(ruta => {
                     if (_mapaInstance && _mapaInstance.removeLayer) {
                         _mapaInstance.removeLayer(ruta);
@@ -1341,41 +1407,15 @@ export function limpiarPorEstado(nuevoEstado) {
                 });
                 rutasActivas = [];
                 limpiado = true;
-                logger.debug('Limpieza automática: Modo aventura activado, rutas limpiadas');
+                logger.debug(`Limpieza automática: Cambio de tramo a ${tramoActual}, rutas limpiadas`);
             }
-        }
 
-        // Limpieza por cambio de parada
-        if (paradaActual !== estadoMapa.paradaActual && paradaActual !== null) {
-            // Limpiar marcadores de rutas anteriores (mantener marcadores de paradas)
-            marcadoresParadas.forEach((marcador, id) => {
-                if (id.startsWith('ruta-') && _mapaInstance && _mapaInstance.removeLayer) {
-                    _mapaInstance.removeLayer(marcador);
-                    marcadoresParadas.delete(id);
-                }
-            });
-            limpiado = true;
-            logger.debug(`Limpieza automática: Cambio de parada a ${paradaActual}, marcadores de ruta limpiados`);
+            // Actualizar estado interno
+            if (modo !== undefined) estadoMapa.modo = modo;
+            if (paradaActual !== undefined) estadoMapa.paradaActual = paradaActual;
+            if (tramoActual !== undefined) estadoMapa.tramoActual = tramoActual;
+            estadoMapa.timestamp = Date.now();
         }
-
-        // Limpieza por cambio de tramo
-        if (tramoActual !== estadoMapa.tramoActual && tramoActual !== null) {
-            // Limpiar rutas activas anteriores
-            rutasActivas.forEach(ruta => {
-                if (_mapaInstance && _mapaInstance.removeLayer) {
-                    _mapaInstance.removeLayer(ruta);
-                }
-            });
-            rutasActivas = [];
-            limpiado = true;
-            logger.debug(`Limpieza automática: Cambio de tramo a ${tramoActual}, rutas limpiadas`);
-        }
-
-        // Actualizar estado interno
-        if (modo !== undefined) estadoMapa.modo = modo;
-        if (paradaActual !== undefined) estadoMapa.paradaActual = paradaActual;
-        if (tramoActual !== undefined) estadoMapa.tramoActual = tramoActual;
-        estadoMapa.timestamp = Date.now();
 
         // Activar/desactivar flecha de usuario
         toggleFlechaUsuario(tramoActual !== null);
