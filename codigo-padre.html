@@ -1914,11 +1914,20 @@
         // ============================================================
         const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
+        // Detección estricta de móvil (NO tablet, NO escritorio)
+        function esTelefonoMovilRobusto() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera;
+            // Detecta móviles típicos, NO tablets, NO escritorio
+            // Android solo si tiene "Mobile", NO iPad, NO tablet Android
+            // iPhone y móviles Windows también detectados
+            return /Android.*Mobile|iPhone|iPod|IEMobile|Windows Phone|Opera Mini/i.test(ua);
+        }
+
         // ============================================================
         // BLOQUEO DE ORIENTACIÓN EN TELÉFONOS MÓVILES (NO TABLETS)
         // ============================================================
-        // Usar la función importada de device-detection.js
-        const esTelefonoMovil = esTelefonoMovil_S1();
+        // Usar la función robusta
+        const esTelefonoMovil = esTelefonoMovilRobusto();
 
         if (esTelefonoMovil) {
             console.log('📱 Teléfono móvil detectado. Intentando bloquear orientación...');
