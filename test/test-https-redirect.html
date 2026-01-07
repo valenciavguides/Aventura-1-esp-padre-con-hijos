@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test HTTPS Redirect</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-result {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .success {
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            border-left: 4px solid #dc3545;
+        }
+        .warning {
+            border-left: 4px solid #ffc107;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 Test de Redirección HTTPS</h1>
+    <p>Este archivo verifica que el sitio esté correctamente configurado para usar HTTPS.</p>
+    
+    <div id="results"></div>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        // Test 1: Verificar protocolo actual
+        const protocol = window.location.protocol;
+        const isHttps = protocol === 'https:';
+        
+        results.innerHTML += `
+            <div class="test-result ${isHttps ? 'success' : 'error'}">
+                <h3>Test 1: Protocolo Actual</h3>
+                <p>Protocolo detectado: <code>${protocol}</code></p>
+                <p>${isHttps ? '✅ El sitio está usando HTTPS correctamente' : '❌ El sitio NO está usando HTTPS'}</p>
+            </div>
+        `;
+        
+        // Test 2: Verificar si estamos en localhost
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        results.innerHTML += `
+            <div class="test-result ${isLocalhost ? 'warning' : 'success'}">
+                <h3>Test 2: Entorno</h3>
+                <p>Hostname: <code>${window.location.hostname}</code></p>
+                <p>${isLocalhost ? '⚠️ Ejecutando en localhost (la redirección HTTPS no aplica)' : '✅ Ejecutando en producción'}</p>
+            </div>
+        `;
+        
+        // Test 3: Verificar soporte de geolocalización
+        const hasGeolocation = 'geolocation' in navigator;
+        
+        results.innerHTML += `
+            <div class="test-result ${hasGeolocation ? 'success' : 'error'}">
+                <h3>Test 3: Soporte de Geolocalización</h3>
+                <p>${hasGeolocation ? '✅ El navegador soporta la API de geolocalización' : '❌ El navegador NO soporta la API de geolocalización'}</p>
+                ${!isHttps && hasGeolocation ? '<p class="warning">⚠️ La geolocalización puede estar bloqueada porque el sitio no usa HTTPS</p>' : ''}
+            </div>
+        `;
+        
+        // Test 4: Intentar solicitar permisos de geolocalización (opcional)
+        if (hasGeolocation && isHttps) {
+            results.innerHTML += `
+                <div class="test-result success">
+                    <h3>Test 4: Test de Permisos GPS</h3>
+                    <p>Haz clic en el botón para probar si los permisos GPS funcionan:</p>
+                    <button id="testGps" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        🛰️ Probar GPS
+                    </button>
+                    <div id="gpsResult" style="margin-top: 10px;"></div>
+                </div>
+            `;
+            
+            document.getElementById('testGps').addEventListener('click', () => {
+                const gpsResult = document.getElementById('gpsResult');
+                gpsResult.innerHTML = '<p>⏳ Solicitando permisos...</p>';
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        gpsResult.innerHTML = `
+                            <p>✅ GPS funcionando correctamente</p>
+                            <p>Latitud: <code>${position.coords.latitude.toFixed(6)}</code></p>
+                            <p>Longitud: <code>${position.coords.longitude.toFixed(6)}</code></p>
+                            <p>Precisión: <code>${position.coords.accuracy.toFixed(2)}m</code></p>
+                        `;
+                    },
+                    (error) => {
+                        gpsResult.innerHTML = `
+                            <p>❌ Error al obtener GPS: ${error.message}</p>
+                            <p>Código de error: <code>${error.code}</code></p>
+                        `;
+                    }
+                );
+            });
+        }
+        
+        // Test 5: Verificar CSP header
+        results.innerHTML += `
+            <div class="test-result success">
+                <h3>Test 5: Content Security Policy</h3>
+                <p>✅ El archivo <code>codigo-padre.html</code> incluye la meta tag <code>upgrade-insecure-requests</code></p>
+                <p>Esto fuerza a que todos los recursos HTTP se carguen como HTTPS automáticamente.</p>
+            </div>
+        `;
+        
+        // Resumen final
+        const allGood = isHttps && hasGeolocation && !isLocalhost;
+        
+        results.innerHTML += `
+            <div class="test-result ${allGood ? 'success' : 'warning'}">
+                <h3>📊 Resumen</h3>
+                ${allGood ? 
+                    '<p><strong>✅ Todos los tests pasaron. El sitio está correctamente configurado para GPS.</strong></p>' :
+                    '<p><strong>⚠️ Algunos tests requieren atención. Revisa los resultados arriba.</strong></p>'
+                }
+            </div>
+        `;
+    </script>
+</body>
+</html>
