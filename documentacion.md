@@ -45,6 +45,17 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 - 🏛️ **Información histórica y cultural** de Valencia
 - 🏠 **Dos modos**: Casa (exploración libre con retos) y Aventura (guiado con GPS y retos)
 
+### 🔒 Seguridad y HTTPS
+
+**Valencia VGuides requiere HTTPS para funcionar correctamente**, especialmente para las funcionalidades GPS del modo Aventura:
+
+- ✅ **Redirección automática**: Si intentas acceder al sitio vía HTTP, serás redirigido automáticamente a HTTPS
+- 🔒 **Content Security Policy**: El sitio incluye `upgrade-insecure-requests` para forzar HTTPS en todos los recursos
+- 📍 **GPS requiere HTTPS**: Los navegadores modernos (Chrome, Firefox, Safari) bloquean la API de geolocalización en sitios HTTP por razones de seguridad
+- ✅ **GitHub Pages soporta HTTPS**: El sitio está configurado para usar HTTPS tanto en el dominio personalizado (`valenciavguides.es`) como en el dominio de GitHub Pages
+
+**Nota importante**: Si accedes al sitio y el GPS no funciona, verifica que estés usando `https://` en la URL y no `http://`.
+
 ### 🎯 Modos de Operación
 
 #### Modos de Usuario
@@ -136,16 +147,20 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 - Navegador moderno con soporte ES6+ (Chrome 90+, Firefox 88+, Safari 14+)
 - Conexión a internet (CDNs de Leaflet y Font Awesome)
 - Permisos de geolocalización (para modo Aventura)
+- **HTTPS requerido**: El sitio debe cargarse mediante HTTPS para que el GPS funcione correctamente. Los navegadores modernos bloquean la API de geolocalización en sitios HTTP por razones de seguridad.
 
 ### 2️⃣ Instalación
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/tu-usuario/valencia-vguides.git
-cd valencia-vguides
+git clone https://github.com/valenciavguides/Aventura-1-esp-padre-con-hijos.git
+cd Aventura-1-esp-padre-con-hijos
 
-# Abrir en navegador https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html 
-# Abrir codigo-padre.html en un servidor local o directamente
+# Acceder al sitio en HTTPS
+# Para GitHub Pages con dominio personalizado: https://valenciavguides.es/codigo-padre.html
+# Para GitHub Pages sin dominio personalizado: https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html
+
+# NOTA: El sitio incluye redirección automática de HTTP a HTTPS
 ```
 
 ### 3️⃣ Uso
