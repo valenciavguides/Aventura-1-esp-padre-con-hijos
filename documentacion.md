@@ -12,6 +12,48 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-complete-brightgreen.svg)](documentacion.md)
 [![Status](https://img.shields.io/badge/status-production-success.svg)]()
+[![HTTPS](https://img.shields.io/badge/HTTPS-enforced-success.svg)]()
+
+---
+
+## 🔒 HTTPS ENFORCEMENT
+
+**Actualización de Seguridad**: Enero 2026
+
+Todas las páginas HTML del sitio ahora incluyen la meta tag de Content Security Policy para forzar HTTPS:
+
+```html
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+```
+
+### ¿Qué hace esto?
+
+- **Actualiza automáticamente** todas las solicitudes HTTP a HTTPS
+- **Protege** contra contenido mixto (mixed content)
+- **Mejora la seguridad** al asegurar que todos los recursos se carguen de forma segura
+- **Compatible** con GitHub Pages y otros servicios de hosting
+
+### Archivos Actualizados
+
+Todos los 18 archivos HTML principales del proyecto incluyen esta protección:
+- `codigo-padre.html` (archivo principal)
+- `Av1-boton-casa.html`, `Av1-botones-coordenadas.html`, `Av1-esp-retos-preguntas.html`
+- `Av1_audio_esp.html`, `Av1_mapa_completo.html`
+- `botones-y-subfunciones-hamburguesa.html`, `botones-y-subfunciones-opciones.html`
+- `retos_con_puzzles_Av1_es.html`
+- `P8_puzzle_plaza_virgen.html`, `P18_puzzle_plaza_de_Toros_y_estacion_norte.html`, `P26_puzzle_lonja.html`
+- `Gastronomia.html`, `enlaces_valencia_historica.html`, `paginas_oficiales.html`
+- `consejos_seguridad_vial.html`, `terminos_y_condiciones.html`, `Agradecimientos.html`
+
+### Compatibilidad
+
+Esta solución es compatible con todos los navegadores modernos que soportan Content Security Policy:
+- ✅ Chrome 44+
+- ✅ Firefox 48+
+- ✅ Safari 10+
+- ✅ Edge 17+
+
+**Nota**: El atributo `xmlns="http://www.w3.org/2000/svg"` en las imágenes SVG incrustadas es solo un identificador de namespace XML y **no** representa una conexión HTTP insegura.
 
 ---
 
