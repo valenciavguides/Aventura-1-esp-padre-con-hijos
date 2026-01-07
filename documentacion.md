@@ -27,7 +27,7 @@ El sitio ahora fuerza HTTPS en múltiples niveles para garantizar el funcionamie
 El archivo `codigo-padre.html` incluye un script de redirección automática que fuerza HTTPS:
 
 ```javascript
-if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
     location.replace('https:' + window.location.href.substring(window.location.protocol.length));
 }
 ```
