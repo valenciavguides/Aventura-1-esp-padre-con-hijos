@@ -12,6 +12,71 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-complete-brightgreen.svg)](documentacion.md)
 [![Status](https://img.shields.io/badge/status-production-success.svg)]()
+[![HTTPS](https://img.shields.io/badge/HTTPS-enforced-success.svg)]()
+
+---
+
+## 🔒 HTTPS ENFORCEMENT
+
+**Actualización de Seguridad**: Enero 2026
+
+El sitio ahora fuerza HTTPS en múltiples niveles para garantizar el funcionamiento del GPS y la seguridad:
+
+### 1. JavaScript Redirect (Nivel de Página)
+
+El archivo `codigo-padre.html` incluye un script de redirección automática que fuerza HTTPS:
+
+```javascript
+if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    location.replace('https:' + window.location.href.substring(window.location.protocol.length));
+}
+```
+
+Este script redirige inmediatamente cualquier acceso HTTP a HTTPS (excepto en desarrollo local).
+
+### 2. Content Security Policy (Nivel de Recursos)
+
+Todas las páginas HTML incluyen la meta tag de Content Security Policy para forzar HTTPS en recursos:
+
+```html
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+```
+
+#### ¿Qué hace esto?
+
+- **Actualiza automáticamente** todas las solicitudes HTTP a HTTPS
+- **Protege** contra contenido mixto (mixed content)
+- **Mejora la seguridad** al asegurar que todos los recursos se carguen de forma segura
+- **Compatible** con GitHub Pages y otros servicios de hosting
+
+### 3. GitHub Pages Configuration (Nivel de Servidor)
+
+⚠️ **IMPORTANTE**: Para que HTTPS funcione completamente y el GPS esté disponible, debes habilitar "Enforce HTTPS" en GitHub Pages:
+
+1. Ve a **Settings** → **Pages** en tu repositorio
+2. Verifica que el dominio personalizado `valenciavguides.es` esté configurado
+3. **Marca la casilla "Enforce HTTPS"**
+
+📖 Ver instrucciones detalladas en: [`INSTRUCCIONES_HTTPS.md`](INSTRUCCIONES_HTTPS.md)
+
+### Archivos Actualizados
+
+Todos los 21 archivos HTML del proyecto incluyen protección HTTPS:
+- `codigo-padre.html` (archivo principal con redirección JavaScript)
+- Componentes hijo: `Av1-boton-casa.html`, `Av1-botones-coordenadas.html`, `Av1-esp-retos-preguntas.html`, `Av1_audio_esp.html`, `Av1_mapa_completo.html`
+- UI: `botones-y-subfunciones-hamburguesa.html`, `botones-y-subfunciones-opciones.html`
+- Contenido: `retos_con_puzzles_Av1_es.html`, `P8_puzzle_plaza_virgen.html`, `P18_puzzle_plaza_de_Toros_y_estacion_norte.html`, `P26_puzzle_lonja.html`, `Gastronomia.html`, `enlaces_valencia_historica.html`, `paginas_oficiales.html`, `consejos_seguridad_vial.html`, `terminos_y_condiciones.html`, `Agradecimientos.html`
+- Tests: `test_gps_fallback.html`, `test_prewarm_lifecycle.html`, `test_registrarMetrica.html`
+
+### Compatibilidad
+
+Esta solución es compatible con todos los navegadores modernos que soportan Content Security Policy:
+- ✅ Chrome 44+
+- ✅ Firefox 48+
+- ✅ Safari 10+
+- ✅ Edge 17+
+
+**Nota**: El atributo `xmlns="http://www.w3.org/2000/svg"` en las imágenes SVG incrustadas es solo un identificador de namespace XML y **no** representa una conexión HTTP insegura.
 
 ---
 
