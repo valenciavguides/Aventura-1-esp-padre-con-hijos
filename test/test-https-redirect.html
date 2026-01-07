@@ -58,7 +58,10 @@
         `;
         
         // Test 2: Verificar si estamos en localhost
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1' || 
+                           window.location.hostname === '[::1]' || 
+                           window.location.hostname === '::1';
         
         results.innerHTML += `
             <div class="test-result ${isLocalhost ? 'warning' : 'success'}">
@@ -70,12 +73,13 @@
         
         // Test 3: Verificar soporte de geolocalización
         const hasGeolocation = 'geolocation' in navigator;
+        const geolocationWarning = !isHttps && hasGeolocation ? '<p class="warning">⚠️ La geolocalización puede estar bloqueada porque el sitio no usa HTTPS</p>' : '';
         
         results.innerHTML += `
             <div class="test-result ${hasGeolocation ? 'success' : 'error'}">
                 <h3>Test 3: Soporte de Geolocalización</h3>
                 <p>${hasGeolocation ? '✅ El navegador soporta la API de geolocalización' : '❌ El navegador NO soporta la API de geolocalización'}</p>
-                ${!isHttps && hasGeolocation ? '<p class="warning">⚠️ La geolocalización puede estar bloqueada porque el sitio no usa HTTPS</p>' : ''}
+                ${geolocationWarning}
             </div>
         `;
         

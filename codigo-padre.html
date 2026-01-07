@@ -18,7 +18,11 @@
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
     <script>
         // Redirect HTTP to HTTPS automatically
-        if (window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        if (window.location.protocol === 'http:' && 
+            window.location.hostname !== 'localhost' && 
+            window.location.hostname !== '127.0.0.1' && 
+            window.location.hostname !== '[::1]' && 
+            window.location.hostname !== '::1') {
             window.location.href = 'https://' + window.location.hostname + window.location.pathname + window.location.search + window.location.hash;
         }
     </script>
