@@ -43,6 +43,7 @@
     const CONFIG_HIJO = {
         IFRAME_ID: 'hijo1-opciones',
         COMPONENTE_ID: 'MAS_OPCIONES',
+        VERSION: '1.0.0',
         DEBUG: true,
         LOG_PREFIX: '[HIJO1-OPCIONES]',
         TIMEOUT_PARENT: 5000 // 5 segundos
@@ -130,6 +131,23 @@
 
             estadoMenu.inicializado = true;
             logger.info(`${logPrefix} Componente inicializado correctamente`);
+
+            // Enviar HIJO_PREPARADO al padre
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['opciones', 'configuracion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`${logPrefix} HIJO_PREPARADO enviado al padre`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error enviando HIJO_PREPARADO:`, error);
+            }
 
         } catch (error) {
             logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
@@ -591,9 +609,9 @@
                     // Enviar ENTENDIDO
                     logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido (no-op)`);
                     await enviarMensaje({
+                        destino: mensaje.origen,
                         tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
                         origen: CONFIG_HIJO.IFRAME_ID,
-                        destino: mensaje.origen,
                         datos: { 
                             modo, 
                             timestamp: Date.now(),
@@ -604,9 +622,9 @@
                     // Componente no cambia con el modo - enviar EFECTUADO inmediatamente
                     logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado (no-op)`);
                     await enviarMensaje({
+                        destino: mensaje.origen,
                         tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                         origen: CONFIG_HIJO.IFRAME_ID,
-                        destino: mensaje.origen,
                         datos: { 
                             modo, 
                             exito: true, 
@@ -1044,23 +1062,6 @@
     // EJECUTAR INICIALIZACIÓN
     // ============================================================
     init();
-
-    // Enviar HIJO_PREPARADO después de inicialización
-    try {
-        await enviarMensaje({
-            destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            datos: {
-                version: CONFIG_HIJO.VERSION,
-                capacidades: ['opciones', 'configuracion'],
-                timestamp: Date.now()
-            }
-        });
-        console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_PREPARADO enviado al padre`);
-    } catch (error) {
-        console.error(`❌ [${CONFIG_HIJO.IFRAME_ID}] Error enviando HIJO_PREPARADO:`, error);
-    }
 
   </script>
   <style>
