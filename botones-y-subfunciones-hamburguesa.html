@@ -876,12 +876,52 @@
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
                 const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[CAMBIO_MODO]`;
                 try {
+                    // Validar carga secuencial
+                    if (!mensaje.datos?.secuenciaCompleta) {
+                        logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: {
+                                error: 'Secuencia no completa',
+                                esperarPermiso: true,
+                                tipoOriginal: mensaje.tipo,
+                                modoSolicitado: mensaje.datos?.modo
+                            }
+                        });
+                        return;
+                    }
+
                     const { modo } = mensaje.datos || {};
-                    logger.info(`${logPrefix} Cambio de modo recibido: ${modo} (no-op para hamburguesa)`);
-                    
-                    // Enviar confirmación inmediata - este componente no cambia con el modo
+                    if (!modo || !['casa', 'aventura'].includes(modo)) {
+                        logger.error(`${logPrefix} Modo inválido: ${modo}`);
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: { error: 'Modo inválido', modoRecibido: modo }
+                        });
+                        return;
+                    }
+
+                    // Enviar ENTENDIDO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido (no-op)`);
                     await enviarMensaje({
-                        tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { 
+                            modo, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+                    
+                    // Componente no cambia con el modo - enviar EFECTUADO inmediatamente
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado (no-op)`);
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         destino: mensaje.origen,
                         datos: { 
@@ -894,8 +934,29 @@
                     
                     return { exito: true };
                 } catch (error) {
-                    logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
+                    logger.error(`${logPrefix} Error:`, error);
+                    try {
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen || 'padre',
+                            datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                        });
+                    } catch (e) {
+                        logger.error(`${logPrefix} Error notificando fallo:`, e);
+                    }
                     return { exito: false, error: error.message };
+                }
+            });
+
+            // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+                const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[CAMBIO_MODO_APLICADO]`;
+                try {
+                    const { modo } = mensaje.datos || {};
+                    logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
                 }
             });
         }
