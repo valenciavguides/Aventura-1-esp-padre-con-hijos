@@ -12,6 +12,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
     <meta http-equiv="Permissions-Policy" content="geolocation=*" />
     <title>Aventura 1 - Padre</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🗺️%3C/text%3E%3C/svg%3E">
@@ -4027,6 +4028,59 @@
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando respuesta heartbeat:`, error);
+            }
+        });
+
+        // CONTROLADOR: SISTEMA.CAMBIO_MODO_ENTENDIDO
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_ENTENDIDO]`;
+            
+            try {
+                const { modo } = mensaje.datos || {};
+                logger.info(`${logPrefix} ${mensaje.origen} entendió CAMBIO_MODO a "${modo}"`);
+                
+                // ACK inmediato
+                await enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                    origen: CONFIG_PADRE.ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        mensajeRecibido: 'CAMBIO_MODO_ENTENDIDO',
+                        modo,
+                        timestamp: Date.now()
+                    }
+                });
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+            }
+        });
+
+        // CONTROLADOR: SISTEMA.CAMBIO_MODO_EFECTUADO
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_EFECTUADO, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_EFECTUADO]`;
+            
+            try {
+                const { modo, exito } = mensaje.datos || {};
+                
+                if (exito) {
+                    logger.success(`${logPrefix} ${mensaje.origen} efectuó cambio a "${modo}"`);
+                } else {
+                    logger.warn(`${logPrefix} ${mensaje.origen} reportó fallo en cambio a "${modo}"`);
+                }
+                
+                // ACK
+                await enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                    origen: CONFIG_PADRE.ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        mensajeRecibido: 'CAMBIO_MODO_EFECTUADO',
+                        modo,
+                        timestamp: Date.now()
+                    }
+                });
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
             }
         });
 
