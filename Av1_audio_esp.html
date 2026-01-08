@@ -1470,10 +1470,26 @@
 
                 // Enviar ENTENDIDO
                 logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                
+                // Validación explícita antes de enviar
+                const destinoEntendido = mensaje.origen;
+                const tipoEntendido = TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO;
+                const origenEntendido = CONFIG_HIJO.IFRAME_ID;
+                
+                if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
+                    logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, {
+                        destino: destinoEntendido,
+                        tipo: tipoEntendido,
+                        origen: origenEntendido,
+                        mensaje
+                    });
+                    throw new Error('Campos undefined en CAMBIO_MODO_ENTENDIDO');
+                }
+                
                 await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: destinoEntendido,
+                    tipo: tipoEntendido,
+                    origen: origenEntendido,
                     datos: { 
                         modo, 
                         timestamp: Date.now(),
