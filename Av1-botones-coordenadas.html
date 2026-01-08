@@ -1230,7 +1230,7 @@ function actualizarEstadoBotones() {
                         esTramo: esTramo,
                         toleranciaUsada: rangoMaximo
                     }
-                });
+                }).catch(e => logger.debug('[hijo2] Error notificando GPS permitido:', e.message));
             } else {
                 desactivarBoton(elementosDOM.btnGps);
                 logger.debug(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango ${rangoMinimo}-${rangoMaximo}m`);
@@ -1243,7 +1243,7 @@ function actualizarEstadoBotones() {
                         distancia: distanciaAlDestino,
                         disponible: 'solo_imagen'
                     }
-                });
+                }).catch(e => logger.debug('[hijo2] Error notificando GPS restringido:', e.message));
             }
         }
     }
@@ -1270,7 +1270,7 @@ function actualizarEstadoBotones() {
                     distancia: distanciaAlDestino,
                     accion: 'siguiente_parada'
                 }
-            });
+            }).catch(e => logger.debug('[hijo2] Error notificando parada completada:', e.message));
         } else {
             desactivarBoton(elementosDOM.btnUbicacion);
             logger.debug(`🧭 Botón ubicación DESACTIVADO: fuera de condiciones (<=22m)`);
@@ -1946,10 +1946,26 @@ try {
 
             // Paso 3: Enviar ENTENDIDO
             logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+            
+            // Validación explícita antes de enviar
+            const destinoEntendido = mensaje.origen;
+            const tipoEntendido = TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO;
+            const origenEntendido = CONFIG_HIJO.IFRAME_ID;
+            
+            if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
+                logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, {
+                    destino: destinoEntendido,
+                    tipo: tipoEntendido,
+                    origen: origenEntendido,
+                    mensaje
+                });
+                throw new Error('Campos undefined en CAMBIO_MODO_ENTENDIDO');
+            }
+            
             await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
-                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: destinoEntendido,
+                tipo: tipoEntendido,
+                origen: origenEntendido,
                 datos: { 
                     modo, 
                     timestamp: Date.now(),
