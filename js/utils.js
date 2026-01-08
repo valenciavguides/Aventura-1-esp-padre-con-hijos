@@ -1315,6 +1315,21 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                         window.mostrarIframeOverlay(url, 'Mapa completo');
                     } else {
                         logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] window.mostrarIframeOverlay no está disponible');
+                        
+                        // Fallback: notificar al usuario
+                        try {
+                            await enviarMensaje({
+                                tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                                destino: 'broadcast',
+                                datos: {
+                                    mensaje: 'No se puede mostrar el mapa completo: funcionalidad no disponible',
+                                    tipo: 'error',
+                                    duracion: 3000
+                                }
+                            });
+                        } catch (fallbackError) {
+                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error en fallback:', fallbackError);
+                        }
                     }
                 } catch (err) {
                     logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error:', err);
@@ -1333,6 +1348,21 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                             window.mostrarIframeOverlay(url, titulo);
                         } else {
                             logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarIframeOverlay no está disponible');
+                            
+                            // Fallback: notificar al usuario
+                            try {
+                                await enviarMensaje({
+                                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                                    destino: 'broadcast',
+                                    datos: {
+                                        mensaje: 'No se puede mostrar el mapa: funcionalidad no disponible',
+                                        tipo: 'error',
+                                        duracion: 3000
+                                    }
+                                });
+                            } catch (fallbackError) {
+                                logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error en fallback:', fallbackError);
+                            }
                         }
                     } else {
                         if (typeof window.mostrarImagenOverlay === 'function') {
@@ -1344,6 +1374,21 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                             }
                         } else {
                             logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
+                            
+                            // Fallback: notificar al usuario
+                            try {
+                                await enviarMensaje({
+                                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                                    destino: 'broadcast',
+                                    datos: {
+                                        mensaje: 'No se puede mostrar la imagen del mapa: funcionalidad no disponible',
+                                        tipo: 'error',
+                                        duracion: 3000
+                                    }
+                                });
+                            } catch (fallbackError) {
+                                logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error en fallback:', fallbackError);
+                            }
                         }
                     }
                 } catch (err) {
@@ -1393,6 +1438,21 @@ async function manejarMostrarImagen(datos) {
             }
         } else {
             logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] window.mostrarImagenOverlay no está disponible');
+            
+            // Fallback: Notificar al usuario que la funcionalidad no está disponible
+            try {
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                    destino: 'broadcast',
+                    datos: {
+                        mensaje: 'No se puede mostrar la imagen: funcionalidad no disponible',
+                        tipo: 'error',
+                        duracion: 3000
+                    }
+                });
+            } catch (fallbackError) {
+                logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error en fallback de notificación:', fallbackError);
+            }
         }
     } catch (error) {
         logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error:', error);
@@ -1424,6 +1484,21 @@ async function manejarReproducirVideo(datos) {
             }
         } else {
             logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] window.mostrarVideoOverlay no está disponible');
+            
+            // Fallback: notificar al usuario
+            try {
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                    destino: 'broadcast',
+                    datos: {
+                        mensaje: 'No se puede reproducir el video: funcionalidad no disponible',
+                        tipo: 'error',
+                        duracion: 3000
+                    }
+                });
+            } catch (fallbackError) {
+                logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error en fallback:', fallbackError);
+            }
         }
     } catch (error) {
         logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error:', error);
