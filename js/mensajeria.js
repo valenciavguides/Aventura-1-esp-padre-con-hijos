@@ -2303,7 +2303,8 @@ export function marcarScript2Listo() {
             logger.debug(`${logPrefix} [${index + 1}/${cola.length}] Procesando: ${mensajePendiente.tipo} (edad: ${edad}ms)`);
             
             // Re-procesar el mensaje ahora que Script 2 está listo
-            procesarMensaje(mensajePendiente)
+            // Usar manejarMensajeRecibido en lugar de procesarMensaje
+            manejarMensajeRecibido({ data: mensajePendiente })
                 .then(() => {
                     mensajesProcesados.push(mensajePendiente.tipo);
                     logger.debug(`${logPrefix} ✅ Mensaje procesado: ${mensajePendiente.tipo}`);
