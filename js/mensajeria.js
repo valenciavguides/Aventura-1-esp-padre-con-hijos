@@ -1815,9 +1815,14 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (
             return;
         }
 
-        if (!mensaje?.datos?.componentes || !Array.isArray(mensaje.datos.componentes)) {
-            const errorMsg = 'Componentes no especificados o inválidos';
-            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
+        if (!mensaje?.datos?.componentes || !Array.isArray(mensaje.datos.componentes) || mensaje.datos.componentes.length === 0) {
+            const errorMsg = 'Componentes no especificados, inválidos o vacíos';
+            logger.error(`${logPrefix} ${errorMsg}`, { 
+                mensajeId,
+                tipoRecibido: typeof mensaje?.datos?.componentes,
+                esArray: Array.isArray(mensaje?.datos?.componentes),
+                longitud: mensaje?.datos?.componentes?.length
+            });
             throw new Error(errorMsg);
         }
 
