@@ -1066,35 +1066,33 @@
                 estado.retoActualId = retoId;
             });
 
-            // Controlador para cambio de modo
+            // Controlador para cambio de modo - Protocolo bidireccional
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
                 const logPrefix = `[hijo4][CAMBIO_MODO]`;
 
                 try {
-                    // Paso 1: Validar carga secuencial - esperar permiso del padre
-                        if (!mensaje.datos?.secuenciaCompleta) {
-                            logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando petición y notificando padre`);
-                            estado.pendingCambioModo = mensaje.datos || { modo: null };
-                            await enviarMensaje({
-                                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                                origen: CONFIG_HIJO.IFRAME_ID,
-                                destino: mensaje.origen,
-                                datos: {
-                                    error: 'Secuencia no completa',
-                                    esperarPermiso: true,
-                                    tipoOriginal: mensaje.tipo,
-                                    modoSolicitado: mensaje.datos?.modo
-                                }
-                            });
-                            return;
-                        }
+                    // Validar carga secuencial
+                    if (!mensaje.datos?.secuenciaCompleta) {
+                        logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                        estado.pendingCambioModo = mensaje.datos || { modo: null };
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: {
+                                error: 'Secuencia no completa',
+                                esperarPermiso: true,
+                                tipoOriginal: mensaje.tipo,
+                                modoSolicitado: mensaje.datos?.modo
+                            }
+                        });
+                        return;
+                    }
 
-                    // Paso 2: Extraer datos con destructuring
+                    // Extraer y validar datos
                     const { modo } = mensaje.datos || {};
-
-                    // Paso 3: Validar datos extraídos
                     if (!modo || !['casa', 'aventura'].includes(modo)) {
-                        logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+                        logger.error(`${logPrefix} Modo inválido: ${modo}`);
                         await enviarMensaje({
                             tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                             origen: CONFIG_HIJO.IFRAME_ID,
@@ -1104,29 +1102,35 @@
                         return;
                     }
 
-                    // Paso 4: Loggear éxito y procesar
+                    // Enviar ENTENDIDO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { 
+                            modo, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+
+                    // Procesar cambio
                     logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
-                    
-                    // **NUEVO: Resetear estado de retos para "empezar de nuevo"**
                     estado.retoActualId = null;
                     retoActual = null;
-                    
-                    // Limpiar interfaz de reto
                     if (retoDiv) {
                         retoDiv.innerHTML = "";
                         retoDiv.classList.remove("correct", "incorrect");
                     }
-                    
-                    // Ocultar botones y resetear controles
                     ocultarControles();
-                    
                     logger.debug(`${logPrefix} Estado de retos reseteado`);
-
                     actualizarInterfazModo(modo);
 
-                    // Paso 5: Enviar confirmación
+                    // Enviar EFECTUADO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
                     await enviarMensaje({
-                        tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         destino: mensaje.origen,
                         datos: { 
@@ -1138,12 +1142,33 @@
                     });
                 } catch (error) {
                     logger.error(`${logPrefix} Error:`, error);
+                    try {
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen || 'padre',
+                            datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                        });
+                    } catch (e) {
+                        logger.error(`${logPrefix} Error notificando fallo:`, e);
+                    }
                     await enviarMensaje({
                         tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         destino: mensaje.origen,
                         datos: { error: error.message }
                     });
+                }
+            });
+
+            // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+                const logPrefix = `[hijo4][CAMBIO_MODO_APLICADO]`;
+                try {
+                    const { modo } = mensaje.datos || {};
+                    logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
                 }
             });
 
