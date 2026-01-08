@@ -320,30 +320,95 @@ export async function actualizarInterfazModo(estado, modo) {
     if (!estado) return;
     if (!estado.hijosInicializados) estado.hijosInicializados = new Set();
     if (typeof estado.hijosInicializados[Symbol.iterator] !== 'function') {
-        logger.warn('estado.hijosInicializados no es iterable, omitiendo actualización de interfaz');
+        logger.warn('[actualizarInterfazModo] estado.hijosInicializados no es iterable');
         return;
     }
 
     const hijosList = Array.from(estado.hijosInicializados);
-    logger.info(`[actualizarInterfazModo] Enviando cambio de modo '${modo}' a ${hijosList.length} hijos: ${hijosList.join(', ')}`);
+    logger.info(`[actualizarInterfazModo] Protocolo bidireccional: cambio de modo '${modo}' a ${hijosList.length} hijos`);
 
-    for (const hijoId of estado.hijosInicializados) {
-        try {
-            logger.debug(`[actualizarInterfazModo] Enviando a ${hijoId}`);
-            const startTime = Date.now();
-            const resultado = await enviarMensajeConReintento({
+    // Mapas para rastrear respuestas
+    const respuestasEntendido = new Map();
+    const respuestasEfectuado = new Map();
+    const mensajeId = `modo_${Date.now()}`;
+
+    // Controladores temporales para las respuestas
+    const controladorEntendido = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO, (msg) => {
+        respuestasEntendido.set(msg.origen, { timestamp: Date.now(), datos: msg.datos });
+        logger.debug(`[actualizarInterfazModo] ENTENDIDO recibido de ${msg.origen}`);
+    });
+
+    const controladorEfectuado = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO, (msg) => {
+        respuestasEfectuado.set(msg.origen, { timestamp: Date.now(), datos: msg.datos });
+        logger.debug(`[actualizarInterfazModo] EFECTUADO recibido de ${msg.origen}`);
+    });
+
+    try {
+        // 1. Enviar CAMBIO_MODO a todos los hijos
+        logger.info(`[actualizarInterfazModo] Enviando CAMBIO_MODO a todos los hijos...`);
+        const promesasEnvio = hijosList.map(hijoId => 
+            enviarMensaje({
                 destino: hijoId,
                 tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
                 origen: getPadreId(),
-                datos: { modo, secuenciaCompleta: !!(estado && estado.todosHijosListos) }
-            });
-            const duration = Date.now() - startTime;
-            logger.debug(`[actualizarInterfazModo] Confirmación recibida de ${hijoId} en ${duration}ms`);
-            if (resultado && typeof resultado.then === 'function') await resultado;
-        } catch (error) {
-            logger.error(`[actualizarInterfazModo] Error al enviar a ${hijoId} tras reintentos:`, error);
-        }
+                datos: { modo, secuenciaCompleta: !!(estado && estado.todosHijosListos), mensajeId }
+            }).catch(err => {
+                logger.error(`[actualizarInterfazModo] Error enviando a ${hijoId}:`, err);
+            })
+        );
+        await Promise.all(promesasEnvio);
+
+        // 2. Esperar ENTENDIDO de todos (max 5s)
+        logger.info(`[actualizarInterfazModo] Esperando ENTENDIDO de ${hijosList.length} hijos...`);
+        await esperarRespuestas(respuestasEntendido, hijosList, 5000, 'ENTENDIDO');
+
+        // 3. Esperar EFECTUADO de todos (max 10s)
+        logger.info(`[actualizarInterfazModo] Esperando EFECTUADO de ${hijosList.length} hijos...`);
+        await esperarRespuestas(respuestasEfectuado, hijosList, 10000, 'EFECTUADO');
+
+        // 4. Enviar APLICADO a todos
+        logger.info(`[actualizarInterfazModo] Enviando APLICADO a todos los hijos...`);
+        const promesasAplicado = hijosList.map(hijoId =>
+            enviarMensaje({
+                destino: hijoId,
+                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO,
+                origen: getPadreId(),
+                datos: { modo, timestamp: Date.now(), mensajeId }
+            }).catch(err => {
+                logger.error(`[actualizarInterfazModo] Error enviando APLICADO a ${hijoId}:`, err);
+            })
+        );
+        await Promise.all(promesasAplicado);
+
+        logger.success(`[actualizarInterfazModo] ✅ Protocolo bidireccional completado para modo '${modo}'`);
+
+    } finally {
+        // Limpiar controladores temporales
+        if (typeof controladorEntendido === 'function') controladorEntendido();
+        if (typeof controladorEfectuado === 'function') controladorEfectuado();
     }
+}
+
+// Helper: esperar respuestas de todos los hijos con timeout
+async function esperarRespuestas(mapaRespuestas, hijosEsperados, timeoutMs, tipoRespuesta) {
+    const inicio = Date.now();
+    const intervaloChequeo = 100; // Chequear cada 100ms
+    
+    while (Date.now() - inicio < timeoutMs) {
+        // Verificar si todos respondieron
+        const todosRespondieron = hijosEsperados.every(hijo => mapaRespuestas.has(hijo));
+        if (todosRespondieron) {
+            logger.info(`[esperarRespuestas] Todos los hijos respondieron ${tipoRespuesta} en ${Date.now() - inicio}ms`);
+            return;
+        }
+        
+        // Esperar un poco antes del siguiente chequeo
+        await new Promise(resolve => setTimeout(resolve, intervaloChequeo));
+    }
+    
+    // Timeout: reportar quiénes no respondieron
+    const noRespondieron = hijosEsperados.filter(hijo => !mapaRespuestas.has(hijo));
+    logger.warn(`[esperarRespuestas] Timeout esperando ${tipoRespuesta} de: ${noRespondieron.join(', ')}`);
 }
 
 // Agregar función auxiliar para reintentos con confirmación
@@ -1836,6 +1901,3 @@ window.manejarCambioModo = manejarCambioModo;
 window.actualizarInterfazModo = actualizarInterfazModo;
 window.notificarCambioModoInminente = notificarCambioModoInminente;
 window.notificarCambioModoCompletado = notificarCambioModoCompletado;
-
-
-
