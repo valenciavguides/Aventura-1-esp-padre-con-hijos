@@ -1437,30 +1437,28 @@
             const logPrefix = `[hijo3][CAMBIO_MODO]`;
 
             try {
-                // Paso 1: Validar carga secuencial - esperar permiso del padre
-                        if (!mensaje.datos?.secuenciaCompleta) {
-                            logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa, encolando y notificando padre`);
-                            if (estado) estado.pendingCambioModo = mensaje.datos || { modo: null };
-                            await enviarMensaje({
-                                tipo: TIPOS_MENSAJE.SISTEMA.NACK,
-                                origen: CONFIG_HIJO.IFRAME_ID,
-                                destino: mensaje.origen,
-                                datos: {
-                                    error: 'Secuencia no completa',
-                                    esperarPermiso: true,
-                                    tipoOriginal: mensaje.tipo,
-                                    modoSolicitado: mensaje.datos?.modo
-                                }
-                            });
-                            return;
+                // Validar carga secuencial
+                if (!mensaje.datos?.secuenciaCompleta) {
+                    logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                    if (estado) estado.pendingCambioModo = mensaje.datos || { modo: null };
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: {
+                            error: 'Secuencia no completa',
+                            esperarPermiso: true,
+                            tipoOriginal: mensaje.tipo,
+                            modoSolicitado: mensaje.datos?.modo
                         }
+                    });
+                    return;
+                }
 
-                // Paso 2: Extraer datos con destructuring
+                // Extraer y validar datos
                 const { modo } = mensaje.datos || {};
-
-                // Paso 3: Validar datos extraídos
                 if (!modo || !['casa', 'aventura'].includes(modo)) {
-                    logger.error(`${logPrefix} Modo inválido o faltante: ${modo}`);
+                    logger.error(`${logPrefix} Modo inválido: ${modo}`);
                     await enviarMensaje({
                         tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                         origen: CONFIG_HIJO.IFRAME_ID,
@@ -1470,25 +1468,36 @@
                     return;
                 }
 
-                // Paso 4: Loggear éxito y procesar
-                logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+                // Enviar ENTENDIDO
+                logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        modo, 
+                        timestamp: Date.now(),
+                        mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                    }
+                });
                 
-                // **NUEVO: Resetear estado de audio para "empezar de nuevo"**
-                if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio = null;
+                // Procesar cambio
+                logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+                const audioPlayer = document.getElementById('audioPlayer');
+                if (audioPlayer && !audioPlayer.paused) {
+                    audioPlayer.pause();
+                    audioPlayer.currentTime = 0;
                 }
                 currentAudioId = null;
                 isPlaying = false;
                 updateProgressBar(0);
                 logger.debug(`${logPrefix} Estado de audio reseteado`);
-
-                // Aplicar lógica específica del componente
                 actualizarInterfazModo(modo);
 
-                // Paso 5: Enviar confirmación
+                // Enviar EFECTUADO
+                logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
                 await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     destino: mensaje.origen,
                     datos: { 
@@ -1499,6 +1508,27 @@
                     }
                 });
 
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen || 'padre',
+                        datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                    });
+                } catch (e) {
+                    logger.error(`${logPrefix} Error notificando fallo:`, e);
+                }
+            }
+        });
+
+        // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+            const logPrefix = `[hijo3][CAMBIO_MODO_APLICADO]`;
+            try {
+                const { modo } = mensaje.datos || {};
+                logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
             } catch (error) {
                 logger.error(`${logPrefix} Error:`, error);
             }
