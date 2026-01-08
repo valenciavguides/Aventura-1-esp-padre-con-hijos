@@ -55,5 +55,20 @@ Esta es la URL oficial y recomendada para compartir con los usuarios.
 
 ---
 
+## 🔒 Nota Sobre HTTPS
+
+**Si Chrome muestra "No es seguro" o HTTP en lugar de HTTPS:**
+
+Este es un problema de certificado SSL, no de la configuración del repositorio. Para solucionarlo:
+
+1. **Ve a GitHub Settings > Pages** del repositorio
+2. **Marca la casilla "Enforce HTTPS"** (puede tomar 24-48 horas estar disponible)
+3. **Mientras tanto, usa la URL de GitHub Pages** que siempre tiene HTTPS:
+   - https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html
+
+Para instrucciones detalladas, consulta **[SOLUCION_HTTPS.md](SOLUCION_HTTPS.md)**
+
+---
+
 **Fecha de verificación:** Enero 8, 2026  
 **Estado:** ✅ Configuración verificada y documentación actualizada
