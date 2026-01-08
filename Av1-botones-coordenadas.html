@@ -1012,8 +1012,12 @@
 // ==================== INICIALIZACIÓN DE MENSAJERÍA ====================
 
 import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+import { resolverIdsParada, getPadreId } from './js/utils.js';
+import { TIPOS_MENSAJE } from './js/constants.js';
+import logger from './js/logger.js';
 
 // Wrapper seguro para evitar doble registro de controladores en hijos
+// IMPORTANTE: Definido DESPUÉS de imports para que TIPOS_MENSAJE esté disponible
 if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
     window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
     window.registrarControladorSeguro = function(tipo, handler, opciones) {
@@ -1037,10 +1041,7 @@ if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro ==
             (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
         }
     };
-} 
-import { resolverIdsParada, getPadreId } from './js/utils.js';
-import { TIPOS_MENSAJE } from './js/constants.js';
-import logger from './js/logger.js';
+}
 
 const CONFIG_HIJO = {
     IFRAME_ID: 'hijo2',
