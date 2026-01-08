@@ -4137,7 +4137,10 @@
                     iframeEl.src = iframe.src;
 
                     // Esperar un poco para que el iframe cargue
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // Timeout ajustado: móviles necesitan más tiempo de procesamiento
+                    const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    const timeoutCarga = esMovil ? 1500 : 800;
+                    await new Promise(resolve => setTimeout(resolve, timeoutCarga));
 
                     // Enviar PADRE_LISTO
                     logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
