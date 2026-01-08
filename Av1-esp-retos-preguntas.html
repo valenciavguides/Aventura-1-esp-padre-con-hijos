@@ -1107,7 +1107,7 @@
                     
                     // Validación explícita antes de enviar
                     const destinoEntendido = mensaje.origen;
-                    const tipoEntendido = TIPOS_MENSAJE?.SISTEMA?.CAMBIO_MODO_ENTENDIDO;
+                    const tipoEntendido = 'SISTEMA.CAMBIO_MODO_ENTENDIDO'; // String literal para evitar problemas de timing
                     const origenEntendido = CONFIG_HIJO?.IFRAME_ID;
                     
                     // DEBUG: Console.log directo para diagnóstico (bypass suppress-warnings)
