@@ -1493,8 +1493,76 @@
             console.log(`✅ AVENTURA_PARADAS validado: ${paradasValidas} paradas, ${tramosValidos} tramos`);
         })();
     </script>
+    
+    <!-- ✅ OVERLAY DE CARGA - Sistema de sincronización Script 1 ↔ Script 2 -->
+    <style>
+    /* Indicador de carga global - oculta TODO hasta que esté listo */
+    #loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        transition: opacity 0.5s ease;
+    }
+    
+    #loading-spinner {
+        width: 70px;
+        height: 70px;
+        border: 6px solid rgba(255, 255, 255, 0.2);
+        border-top: 6px solid #ffffff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    #loading-text {
+        font-size: 22px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    #loading-details {
+        font-size: 15px;
+        color: rgba(255, 255, 255, 0.85);
+        max-width: 80%;
+        text-align: center;
+        line-height: 1.5;
+    }
+    
+    /* Ocultar TODO el contenido hasta que esté listo */
+    body.loading #mapa,
+    body.loading #map-debug,
+    body.loading #info-parada,
+    body.loading #logo-aventura,
+    body.loading iframe {
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+    </style>
 </head>
-<body>
+<body class="loading">
+    <!-- Indicador de carga global -->
+    <div id="loading-overlay">
+        <div id="loading-spinner"></div>
+        <div id="loading-text">Iniciando Valencia VGuides...</div>
+        <div id="loading-details">Cargando componentes del sistema</div>
+    </div>
 
     <!-- Mensaje de rotación para teléfonos móviles -->
     <div id="rotation-message" class="rotation-message">
@@ -1573,6 +1641,17 @@
 
     <!-- Error handling and map initialization -->
     <script type="module">
+        // ✅ Helper para actualizar mensaje de carga
+        window.updateLoadingStatus = (message, details = '') => {
+            const textEl = document.getElementById('loading-text');
+            const detailsEl = document.getElementById('loading-details');
+            
+            if (textEl) textEl.textContent = message;
+            if (detailsEl && details) detailsEl.textContent = details;
+            
+            console.debug(`[LOADING] ${message}${details ? ` - ${details}` : ''}`);
+        };
+        
         import { resolverIdsParada } from './js/utils.js';
         // AVENTURA_PARADAS is now defined globally in the regular script above
 
@@ -3867,27 +3946,8 @@
             }
         });
 
-        // CONTROLADOR: AUDIO.FIN_REPRODUCCION (habilitar retosBtn en hijo3 solo en modo aventura)
-        registrarControladorSeguro(TIPOS_MENSAJE_S1.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
-            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[AUDIO.FIN_REPRODUCCION]`;
-            try {
-                // Solo habilitar retosBtn si estamos en modo aventura
-                const modoActual = estado.modo?.actual || (window.MODOS && window.MODOS.CASA);
-                if (modoActual === (window.MODOS && window.MODOS.AVENTURA)) {
-                    logger.info(`${logPrefix} Audio finalizado, habilitando retosBtn en hijo3 (modo aventura)`);
-                    await enviarMensaje_S1({
-                        tipo: TIPOS_MENSAJE_S1.CONTROL.HABILITAR,
-                        origen: CONFIG_PADRE.ID,
-                        destino: 'hijo3',
-                        datos: { boton: 'retosBtn', timestamp: Date.now(), razon: 'audio_fin_reproduccion' }
-                    });
-                } else {
-                    logger.info(`${logPrefix} Audio finalizado, pero modo actual no es aventura. No se habilita retosBtn.`);
-                }
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando AUDIO.FIN_REPRODUCCION:`, error);
-            }
-        });
+        // NOTA: AUDIO.FIN_REPRODUCCION se maneja en Script 2 para evitar duplicados
+        // (Controlador eliminado de aquí - ver línea ~6993 en Script 2)
 
         // CONTROLADOR: SISTEMA.HEARTBEAT
         registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT, async (mensaje) => {
@@ -4133,14 +4193,35 @@
                     iframeEl.style.display = 'none';
                     iframeEl.style.visibility = 'hidden';
 
-                    // Iniciar la carga
-                    iframeEl.src = iframe.src;
+                    // Esperar a que el iframe cargue usando eventos onload/onerror
+                    await new Promise((resolve, reject) => {
+                        const timeoutFallback = setTimeout(() => {
+                            logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
+                            resolve(); // Continuar incluso si hay timeout
+                        }, 10000); // 10s como fallback de seguridad
 
-                    // Esperar un poco para que el iframe cargue
-                    // Timeout ajustado: móviles necesitan más tiempo de procesamiento
-                    const esMovil = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                    const timeoutCarga = esMovil ? 1500 : 800;
-                    await new Promise(resolve => setTimeout(resolve, timeoutCarga));
+                        const onLoad = () => {
+                            clearTimeout(timeoutFallback);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} cargado (evento onload)`);
+                            resolve();
+                        };
+
+                        const onError = (err) => {
+                            clearTimeout(timeoutFallback);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Error cargando ${iframe.id}, continuando...`);
+                            resolve(); // Continuar incluso si hay error (se manejará después)
+                        };
+
+                        iframeEl.addEventListener('load', onLoad, { once: true });
+                        iframeEl.addEventListener('error', onError, { once: true });
+
+                        // Iniciar la carga DESPUÉS de registrar los listeners
+                        iframeEl.src = iframe.src;
+                    });
 
                     // Enviar PADRE_LISTO
                     logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
@@ -4249,8 +4330,34 @@
                         
                         // Ocultar iframe mientras se intenta reconectar
                         try { iframeElement.style.display = 'none'; iframeElement.style.visibility = 'hidden'; console.log(`[PADRE] Ocultando iframe ${id} para reconexión intento ${intento}`); } catch (e) {}
-                        iframeElement.src = src;
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
+                        // Esperar carga usando evento onload/onerror
+                        await new Promise((resolve) => {
+                            const timeoutReconexion = setTimeout(() => {
+                                logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Timeout cargando ${id} en reconexión intento ${intento}`);
+                                resolve();
+                            }, 8000); // 8s timeout para reconexión
+
+                            const onLoadReconexion = () => {
+                                clearTimeout(timeoutReconexion);
+                                iframeElement.removeEventListener('load', onLoadReconexion);
+                                iframeElement.removeEventListener('error', onErrorReconexion);
+                                logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${id} cargado (reconexión intento ${intento})`);
+                                resolve();
+                            };
+
+                            const onErrorReconexion = () => {
+                                clearTimeout(timeoutReconexion);
+                                iframeElement.removeEventListener('load', onLoadReconexion);
+                                iframeElement.removeEventListener('error', onErrorReconexion);
+                                logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Error en reconexión ${id} intento ${intento}`);
+                                resolve();
+                            };
+
+                            iframeElement.addEventListener('load', onLoadReconexion, { once: true });
+                            iframeElement.addEventListener('error', onErrorReconexion, { once: true });
+                            iframeElement.src = src;
+                        });
                         
                         // Enviar PADRE_LISTO con flag de reconexión
                         await enviarMensaje_S1({
@@ -4374,8 +4481,10 @@
                 
                 // 3. Cargar iframes secuencialmente
                 logger.info(`${logPrefix} Iniciando carga de iframes...`);
+                updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
                 await cargarIframeSecuencial();
                 logger.success(`${logPrefix} ✅ Iframes cargados`);
+                updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
                 
                 // 4. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
@@ -5206,7 +5315,7 @@
         // CONTROLADOR: RETO.OCULTAR
         // Oculta el iframe de retos cuando el usuario hace click en "Continuar"
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.OCULTAR]`;
             
             try {
@@ -5259,7 +5368,7 @@
         // CONTROLADOR 9: DATOS.SOLICITAR_PARADAS (DIRECTO)
         // Responde directamente con datos de AVENTURA_PARADAS
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.SOLICITAR_PARADAS][DIRECTO]`;
 
             try {
@@ -5336,7 +5445,7 @@
         // CONTROLADOR 10: DATOS.RESPUESTA_PARADAS (PROXY RESPONSE)
         // Recibe respuestas de hijo2 y las reenvía al solicitante original
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_PARADAS][PROXY]`;
 
             try {
@@ -5398,7 +5507,7 @@
         // Propósito: Proporcionar datos de paradas a funciones-mapa para inicialización
         // Origen esperado: hijo2 (funciones-mapa)
         // Respuesta: NAVEGACION.RESPUESTA_DATOS_PARADAS con AVENTURA_PARADAS
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5472,7 +5581,7 @@
          * Origen esperado: cualquier componente (hijo5-casa, otros)
          * Respuesta: Reenvía respuesta al solicitante
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5530,7 +5639,7 @@
          * Origen esperado: cualquier componente
          * Respuesta: Reenvía respuesta al solicitante
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.DESACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5583,7 +5692,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía a todos los hijos activos
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.UBICACION_ACTUALIZADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5637,7 +5746,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía al solicitante original usando correlación
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ESTADO_ACTUALIZADO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5685,7 +5794,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía al solicitante original
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ERROR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5731,7 +5840,7 @@
          * Origen esperado: hijo2
          * Respuesta: Registra la restricción
          */
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.RESTRINGIDO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5746,7 +5855,7 @@
         // CONTROLADOR 9.5: NAVEGACION.CENTRAR_EN_UBICACION
         // Centra el mapa en una ubicación específica llamando directamente a funciones-mapa.js
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[CENTRAR_EN_UBICACION][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5980,7 +6089,7 @@
         // CONTROLADOR 9.6: NAVEGACION.MOSTRAR_UBICACION_POLYLINE
         // Muestra ubicación del usuario y polyline hasta próximo destino
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[MOSTRAR_UBICACION_POLYLINE][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -6155,7 +6264,7 @@
         // CONTROLADOR 10: NAVEGACION.CAMBIO_PARADA
         // Coordina cambios de parada solicitando datos a hijos expertos
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA]`;
             
             try {
@@ -6570,7 +6679,7 @@
         // CONTROLADOR (nuevo): NAVEGACION.CAMBIO_PARADA_CONFIRMADO
         // Maneja confirmaciones desde hijos que aceptaron/cambiaron correctamente
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA_CONFIRMADO]`;
             try {
                 logger.info(`${logPrefix} Confirmación recibida de ${mensaje.origen}`, { datos: mensaje.datos || {} });
@@ -6598,7 +6707,7 @@
         // CONTROLADOR 10.5: NAVEGACION.LLEGADA_DETECTADA
         // Maneja detección de llegada GPS a paradas desde hijo2
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.LLEGADA_DETECTADA]`;
             
             try {
@@ -6686,7 +6795,7 @@
         // CONTROLADOR: NAVEGACION.PARADA_COMPLETADA
         // Recibido usualmente desde hijo2 (botón ubicación o lógica local)
         // ============================================================
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.PARADA_COMPLETADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -6758,7 +6867,7 @@
         // ============================================================
 
         // CONTROLADOR 11: RETO.COMPLETADO (Recibe de hijo4)
-        registrarControlador(TIPOS_MENSAJE.RETO.COMPLETADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.RETO.COMPLETADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.COMPLETADO]`;
             const timestamp = Date.now();
             
@@ -6921,7 +7030,7 @@
         }
 
         // CONTROLADOR 11.5: RETO.MOSTRADO (Recibe de hijo4 cuando muestra un reto)
-        registrarControlador(TIPOS_MENSAJE.RETO.MOSTRADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.MOSTRADO]`;
             
             try {
@@ -6949,7 +7058,7 @@
         });
 
         // CONTROLADOR 12: AUDIO.ESTADO_ACTUALIZADO (Recibe de hijo3)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ESTADO_ACTUALIZADO]`;
             
             try {
@@ -6990,7 +7099,8 @@
         });
 
         // CONTROLADOR 13: AUDIO.FIN_REPRODUCCION (Recibe de hijo3)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
+        // NOTA: Fusionado con lógica de Script 1 para evitar duplicados
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.FIN_REPRODUCCION]`;
             
             try {
@@ -7010,6 +7120,22 @@
                 if (estado.audioActual?.id === audioId) {
                     estado.audioActual.estado = 'finalizado';
                     estado.audioActual.timestamp = audioTimestamp || Date.now();
+                }
+                
+                // LÓGICA FUSIONADA DE SCRIPT 1: Habilitar retosBtn solo en modo aventura
+                const modoActual = estado.modo?.actual || MODOS.CASA;
+                if (modoActual === MODOS.AVENTURA && estado.hijosInicializados && estado.hijosInicializados.has('hijo3')) {
+                    logger.info(`${logPrefix} Audio finalizado en modo aventura, habilitando retosBtn en hijo3`);
+                    try {
+                        await enviarMensajePadre({
+                            tipo: TIPOS_MENSAJE.CONTROL.HABILITAR,
+                            origen: getPadreId(),
+                            destino: 'hijo3',
+                            datos: { boton: 'retosBtn', timestamp: Date.now(), razon: 'audio_fin_reproduccion_aventura' }
+                        });
+                    } catch (errHabilitar) {
+                        logger.error(`${logPrefix} Error habilitando retosBtn:`, errHabilitar);
+                    }
                 }
 
                 // Registrar evento
@@ -7104,7 +7230,7 @@
         });
 
         // CONTROLADOR 14: AUDIO.ERROR (Recibe de hijo3)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.ERROR, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ERROR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ERROR]`;
             
             try {
@@ -7149,7 +7275,7 @@
         // El sistema usa RESPUESTA_PARADAS (plural) y COORDENADAS_PARADAS_RESPONSE
 
         // CONTROLADOR ADICIONAL: AUDIO.REPRODUCIR_RESPONSE (Respuesta a REPRODUCIR_REQUEST)
-        registrarControlador(TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.REPRODUCIR_RESPONSE]`;
             
             try {
@@ -7191,7 +7317,7 @@
         });
 
         // CONTROLADOR ADICIONAL: DATOS.RESPUESTA_RETO (Respuesta a SOLICITAR_RETO)
-        registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_RETO]`;
             
             try {
@@ -7271,6 +7397,68 @@
 
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Proceso de inicialización completado`);
         estado.tiempoInicio = Date.now();
+        
+        // ===================================================================
+        // SINCRONIZACIÓN SCRIPT 2 - MARCAR COMO LISTO Y PROCESAR COLA
+        // ===================================================================
+        (async () => {
+            try {
+                const logPrefix = '[SCRIPT2][SINCRONIZACIÓN]';
+                logger.info(`${logPrefix} Iniciando marcado como listo...`);
+                updateLoadingStatus('Finalizando inicialización...', 'Procesando mensajes pendientes');
+                
+                // Importar función de marcado desde mensajeria.js
+                const { marcarScript2Listo } = await import('./js/mensajeria.js');
+                
+                // Marcar Script 2 como listo y procesar mensajes pendientes
+                const resultado = marcarScript2Listo();
+                
+                logger.info(`${logPrefix} Script 2 marcado como LISTO`, resultado);
+                
+                // Esperar un frame para que se procesen todos los mensajes
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                
+                // ✅ TODO LISTO: Ocultar indicador de carga y mostrar UI
+                setTimeout(() => {
+                    const overlay = document.getElementById('loading-overlay');
+                    const body = document.body;
+                    
+                    if (overlay) {
+                        overlay.style.transition = 'opacity 0.5s';
+                        overlay.style.opacity = '0';
+                        setTimeout(() => {
+                            overlay.remove();
+                            logger.info(`${logPrefix} 🎉 Overlay de carga removido`);
+                        }, 500);
+                    }
+                    
+                    if (body) {
+                        body.classList.remove('loading');
+                        logger.info(`${logPrefix} 🎉 UI VISIBLE - Sistema completamente inicializado`);
+                    }
+                    
+                    // Registrar evento de inicialización completa
+                    if (typeof window.registrarEvento === 'function') {
+                        window.registrarEvento('SISTEMA_LISTO', {
+                            mensajesProcesados: resultado.procesados || 0,
+                            mensajesFallidos: resultado.fallidos || 0,
+                            timestamp: Date.now()
+                        }, 'info');
+                    }
+                }, 500); // Delay para asegurar que se completen los últimos mensajes
+                
+            } catch (error) {
+                logger.error('[SCRIPT2][SINCRONIZACIÓN] Error marcando Script 2 como listo:', error);
+                
+                // En caso de error, mostrar UI de todos modos (fallback)
+                setTimeout(() => {
+                    document.body.classList.remove('loading');
+                    const overlay = document.getElementById('loading-overlay');
+                    if (overlay) overlay.remove();
+                    logger.warn('[SCRIPT2][SINCRONIZACIÓN] UI mostrada por fallback de error');
+                }, 2000);
+            }
+        })();
     </script>
 
     <!-- Verificar que el archivo exista en la ruta especificada -->
