@@ -111,13 +111,104 @@ Una vez completados los pasos:
 - ✅ Chrome muestra "Conexión segura"
 - ✅ Geolocalización y todas las APIs funcionando correctamente
 
+## 🔧 Solución Avanzada: Si HTTPS ya está marcado pero sigue sin funcionar
+
+**Si "Enforce HTTPS" ya está marcado hace más de 24 horas y Chrome aún muestra "No es seguro":**
+
+### Paso 1: Verificar que estás usando HTTPS en la URL
+
+❌ **Incorrecto:** `http://valenciavguides.es/codigo-padre.html`  
+✅ **Correcto:** `https://valenciavguides.es/codigo-padre.html`
+
+Chrome puede estar cacheando la versión HTTP. **Escribe manualmente `https://` al principio de la URL.**
+
+### Paso 2: Limpiar completamente la caché del navegador
+
+1. En Chrome, presiona `Ctrl + Shift + Delete` (Windows/Linux) o `Cmd + Shift + Delete` (Mac)
+2. Selecciona **"Desde siempre"** en el rango de tiempo
+3. Marca las casillas:
+   - ✅ Historial de navegación
+   - ✅ Cookies y otros datos de sitios
+   - ✅ Imágenes y archivos almacenados en caché
+4. Haz clic en **"Borrar datos"**
+5. **Cierra completamente Chrome** (todas las ventanas)
+6. Abre Chrome de nuevo y visita: `https://valenciavguides.es/codigo-padre.html`
+
+### Paso 3: Usar modo incógnito para verificar
+
+1. Abre una **ventana de incógnito** en Chrome (`Ctrl + Shift + N`)
+2. Visita: `https://valenciavguides.es/codigo-padre.html`
+3. Si funciona en incógnito pero no en modo normal, el problema es la caché local
+
+### Paso 4: Verificar el certificado SSL desde el navegador
+
+1. Visita `https://valenciavguides.es/codigo-padre.html`
+2. Haz clic en **el icono a la izquierda de la URL** (candado o "No es seguro")
+3. Selecciona **"Certificado"** o **"La conexión no es privada > Avanzado"**
+4. Verifica:
+   - **Emitido para:** `valenciavguides.es`
+   - **Emitido por:** Let's Encrypt o GitHub
+   - **Válido desde/hasta:** Fechas actuales
+
+### Paso 5: Forzar la redirección HTTPS
+
+Si el navegador insiste en usar HTTP, puedes:
+
+**Opción A - Usar un enlace directo:**
+```html
+<a href="https://valenciavguides.es/codigo-padre.html">Ir a Valencia VGuides</a>
+```
+
+**Opción B - Añadir meta tag de redirección (si tienes acceso al HTML):**
+```html
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+```
+
+Este meta tag ya está considerado en el código, pero puedes verificarlo.
+
+### Paso 6: Verificar desde herramientas externas
+
+Usa estas herramientas para verificar que el HTTPS esté funcionando correctamente:
+
+1. **SSL Labs:** https://www.ssllabs.com/ssltest/analyze.html?d=valenciavguides.es
+   - Debe mostrar una calificación A o B
+   
+2. **WhyNoPadlock:** https://www.whynopadlock.com/results/valenciavguides.es
+   - Detecta contenido mixto (HTTP en página HTTPS)
+
+3. **DNSChecker:** https://dnschecker.org/#A/valenciavguides.es
+   - Verifica que el DNS esté propagado globalmente
+
+### Paso 7: Re-configurar el dominio personalizado (último recurso)
+
+Si nada de lo anterior funciona:
+
+1. Ve a https://github.com/valenciavguides/Aventura-1-esp-padre-con-hijos/settings/pages
+2. En "Custom domain", **elimina** `valenciavguides.es` y guarda
+3. Espera **5 minutos**
+4. **Vuelve a añadir** `valenciavguides.es` y guarda
+5. Espera que GitHub valide el dominio (puede tardar unos minutos)
+6. Verifica que **"Enforce HTTPS"** esté marcado
+7. Limpia la caché del navegador y prueba de nuevo
+
+### 🆘 Diagnóstico rápido
+
+Ejecuta este comando en tu terminal para ver el estado del certificado:
+
+```bash
+curl -vI https://valenciavguides.es/codigo-padre.html 2>&1 | grep -E "(subject|issuer|expire)"
+```
+
+Si ves información del certificado, HTTPS está funcionando del lado del servidor.
+
 ## 📞 Soporte Adicional
 
-Si después de 48 horas la casilla "Enforce HTTPS" sigue deshabilitada:
+Si después de seguir todos los pasos anteriores el problema persiste:
 
 1. Verifica que los registros DNS estén correctos usando https://dnschecker.org
 2. Contacta al soporte de GitHub Pages: https://support.github.com
 3. O utiliza la URL de GitHub Pages como alternativa temporal
+4. Verifica con otro navegador (Firefox, Edge, Safari) para confirmar si es específico de Chrome
 
 ---
 
