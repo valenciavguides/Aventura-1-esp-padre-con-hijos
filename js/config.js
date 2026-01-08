@@ -61,7 +61,13 @@ export const CONFIG = {
         }
         ,
         // Orígenes permitidos para mensajes (vacío => usar origin actual)
-        ALLOWED_ORIGINS: []
+        // Configuración crítica de seguridad para postMessage
+        ALLOWED_ORIGINS: [
+            window.location.origin,  // Mismo origen (siempre permitido)
+            'https://valenciavguides.github.io',  // GitHub Pages producción
+            'http://localhost',  // Desarrollo local (cualquier puerto)
+            'http://127.0.0.1'   // Desarrollo local IP
+        ]
     },
     
     // Configuración del mapa
