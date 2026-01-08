@@ -1727,7 +1727,8 @@
                                         if (navigator.geolocation) {
                                             function initGPS(retryCount = 0) {
                                                 const maxRetries = 3;
-                                                const timeout = 60000; // 60 seconds
+                                                // Usar timeout dinámico según conexión (15-45s)
+                                                const timeout = ajustarTimeoutPorConexionSafe(15000);
                                                 
                                                 navigator.geolocation.watchPosition(
                                                     function success(pos) {
@@ -4032,7 +4033,8 @@
         });
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO_ENTENDIDO
-        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (mensaje) => {
+        // IMPORTANTE: Este controlador DEBE estar después de marcarScript2Listo()
+        registrarControlador_S2(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_ENTENDIDO]`;
             
             try {
@@ -4040,8 +4042,8 @@
                 logger.info(`${logPrefix} ${mensaje.origen} entendió CAMBIO_MODO a "${modo}"`);
                 
                 // ACK inmediato
-                await enviarMensaje_S1({
-                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                await enviarMensaje_S2({
+                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
                     origen: CONFIG_PADRE.ID,
                     destino: mensaje.origen,
                     datos: { 
@@ -4056,7 +4058,7 @@
         });
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO_EFECTUADO
-        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_EFECTUADO, async (mensaje) => {
+        registrarControlador_S2(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_EFECTUADO]`;
             
             try {
