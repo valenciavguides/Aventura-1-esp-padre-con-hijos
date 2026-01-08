@@ -4252,7 +4252,7 @@
                         const timeoutFallback = setTimeout(() => {
                             logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
                             resolve(); // Continuar incluso si hay timeout
-                        }, 10000); // 10s como fallback de seguridad
+                        }, ajustarTimeoutPorConexion_S1(10000)); // Ajustado dinámicamente según conexión
 
                         const onLoad = () => {
                             clearTimeout(timeoutFallback);
@@ -4294,7 +4294,7 @@
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
-                        }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
+                        }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION)); // Ajustado dinámicamente según conexión
 
                         const check = () => {
                             if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
@@ -7455,6 +7455,20 @@
         // ===================================================================
         // SINCRONIZACIÓN SCRIPT 2 - MARCAR COMO LISTO Y PROCESAR COLA
         // ===================================================================
+        
+        // ⏰ TIMEOUT DE SEGURIDAD: Forzar cierre del overlay si tarda más de 20 segundos
+        const timeoutSeguridad = setTimeout(() => {
+            logger.warn('[TIMEOUT] Forzando cierre del overlay después de 20 segundos');
+            const overlay = document.getElementById('loading-overlay');
+            const body = document.body;
+            if (overlay) {
+                overlay.style.transition = 'opacity 0.5s';
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.remove(), 500);
+            }
+            if (body) body.classList.remove('loading');
+        }, 20000); // Aumentado a 20 segundos para dar más tiempo en primera carga
+        
         (async () => {
             try {
                 const logPrefix = '[SCRIPT2][SINCRONIZACIÓN]';
@@ -7471,6 +7485,9 @@
                 
                 // Esperar un frame para que se procesen todos los mensajes
                 await new Promise(resolve => requestAnimationFrame(resolve));
+                
+                // ✅ CANCELAR TIMEOUT DE SEGURIDAD (inicialización exitosa)
+                clearTimeout(timeoutSeguridad);
                 
                 // ✅ TODO LISTO: Ocultar indicador de carga y mostrar UI
                 setTimeout(() => {
@@ -7503,6 +7520,9 @@
                 
             } catch (error) {
                 logger.error('[SCRIPT2][SINCRONIZACIÓN] Error marcando Script 2 como listo:', error);
+                
+                // ✅ CANCELAR TIMEOUT DE SEGURIDAD en caso de error
+                clearTimeout(timeoutSeguridad);
                 
                 // En caso de error, mostrar UI de todos modos (fallback)
                 setTimeout(() => {
