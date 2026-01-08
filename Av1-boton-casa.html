@@ -384,7 +384,7 @@
         window.style.display = window.style.display === 'none' ? 'block' : 'none';
         try {
             if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
-                parent.postMessage({ tipo: 'VV:PARADAS:SHOWN', datos: { visible: window.style.display === 'block' } }, '*');
+                parent.postMessage({ tipo: 'VV:PARADAS:SHOWN', datos: { visible: window.style.display === 'block' } }, window.location.origin);
             }
         } catch (e) { /* ignore */ }
     }
@@ -544,7 +544,7 @@
             logger.info(`${logPrefix} ${botonesGenerados} botones generados exitosamente`);
             try {
                 if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
-                    parent.postMessage({ tipo: 'VV:PARADAS:READY', datos: { count: botonesGenerados } }, '*');
+                    parent.postMessage({ tipo: 'VV:PARADAS:READY', datos: { count: botonesGenerados } }, window.location.origin);
                 }
             } catch (e) { /* ignore */ }
             
