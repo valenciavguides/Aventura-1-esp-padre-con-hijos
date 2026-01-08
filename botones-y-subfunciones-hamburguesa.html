@@ -56,7 +56,8 @@
         abierto: false,
         inicializado: false,
         ultimaInteraccion: null,
-        parentReady: false
+        parentReady: false,
+        hijoListoEnviado: false // ⚠️ FLAG: Evita bucle PADRE_LISTO->HIJO_LISTO
     };
 
     // ============================================================
@@ -205,6 +206,12 @@
 
                     logger.info(`${logPrefixCtrl} Padre listo confirmado`);
 
+                    // ⚠️ EVITAR BUCLE: Solo enviar HIJO_LISTO una vez
+                    if (estadoMenu.hijoListoEnviado) {
+                        logger.debug(`${logPrefixCtrl} HIJO_LISTO ya fue enviado, omitiendo reenvío`);
+                        return { exito: true, estado: 'ya_enviado' };
+                    }
+
                     // ✅ PROCESAR DATOS INICIALES DEL PADRE
                     if (mensaje.datos) {
                         const { modo, paradas, paradaActual } = mensaje.datos;
@@ -235,6 +242,10 @@
                             timestamp: Date.now()
                         }
                     });
+                    
+                    // ⚠️ MARCAR FLAG para evitar reenvíos
+                    estadoMenu.hijoListoEnviado = true;
+                    
                     console.log(`✅ [${CONFIG_HIJO.IFRAME_ID}] HIJO_LISTO enviado al padre`);
 
                     return { 
