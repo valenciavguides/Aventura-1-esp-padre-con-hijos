@@ -918,13 +918,12 @@
         // Datos requeridos: { modo: 'casa'|'aventura' }
         // Respuesta: Ninguna (actualización de estado local)
         registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
-            const logPrefix = `[hijo5-casa][SISTEMA.CAMBIO_MODO][${mensaje?.origen || 'desconocido'}]`;
+            const logPrefix = `[hijo5-casa][CAMBIO_MODO]`;
             
             try {
-                // Si la secuencia global de inicialización no está completa,
-                // encolamos el cambio de modo y notificamos al padre para reintento.
+                // Validar carga secuencial
                 if (!mensaje.datos?.secuenciaCompleta) {
-                    logger.warn(`${logPrefix} Mensaje CAMBIO_MODO recibido antes de secuencia completa, encolando y notificando padre`);
+                    logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
                     estado.pendingCambioModo = mensaje.datos || { modo: null };
                     await enviarMensaje({
                         destino: mensaje.origen,
@@ -939,52 +938,59 @@
                     });
                     return;
                 }
-                // Validación de origen
+
+                // Validaciones básicas
                 if (!mensaje?.origen) {
                     logger.warn(`${logPrefix} Mensaje sin origen, ignorando`);
                     return;
                 }
-                
-                // Validación de datos
                 if (!mensaje.datos || typeof mensaje.datos !== 'object') {
-                    logger.error(`${logPrefix} Mensaje sin datos o datos inválidos`, mensaje);
+                    logger.error(`${logPrefix} Datos inválidos`, mensaje);
                     await enviarMensaje({
                         destino: mensaje.origen,
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                         origen: CONFIG_HIJO.IFRAME_ID,
-                        datos: { 
-                            error: 'Datos de mensaje inválidos', 
-                            mensajeOriginal: mensaje.tipo 
-                        }
+                        datos: { error: 'Datos de mensaje inválidos' }
                     });
                     return;
                 }
                 
                 const { modo } = mensaje.datos || {};
                 
-                // Validación de modo
+                // Validar modo
                 if (!modo || (modo !== 'casa' && modo !== 'aventura')) {
-                    logger.error(`${logPrefix} Modo inválido: ${modo}. Esperado: 'casa' o 'aventura'`);
+                    logger.error(`${logPrefix} Modo inválido: ${modo}`);
                     await enviarMensaje({
                         destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
                         origen: CONFIG_HIJO.IFRAME_ID,
                         datos: { 
                             error: `Modo inválido: ${modo}`, 
-                            valoresValidos: ['casa', 'aventura'],
-                            mensajeOriginal: mensaje.tipo
+                            valoresValidos: ['casa', 'aventura']
                         }
                     });
                     return;
                 }
+
+                // Enviar ENTENDIDO
+                logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        modo, 
+                        timestamp: Date.now(),
+                        mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                    }
+                });
                 
+                // Procesar cambio
                 logger.info(`${logPrefix} Cambiando modo a: ${modo}`);
-                
-                // Actualizar estado local
                 const modoAnterior = estado.modo;
                 estado.modo = modo;
                 
-                // Actualizar UI: mostrar/ocultar ventana de paradas
+                // Actualizar UI
                 const window = document.getElementById('paradas-window');
                 if (window) {
                     window.style.display = modo === 'casa' ? 'block' : 'none';
@@ -1012,9 +1018,9 @@
                 
                 logger.info(`${logPrefix} Modo cambiado exitosamente: ${modoAnterior} → ${modo}`);
                 
-                // Enviar confirmación de éxito
+                // Enviar EFECTUADO
                 await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     destino: mensaje.origen,
                     datos: { 
@@ -1026,24 +1032,29 @@
                 });
                 
             } catch (error) {
-                logger.error(`${logPrefix} Error al procesar cambio de modo:`, error);
-                
-                // Intentar notificar al origen del error
+                logger.error(`${logPrefix} Error:`, error);
                 try {
                     await enviarMensaje({
-                        destino: mensaje.origen,
+                        destino: mensaje.origen || 'padre',
                         tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                         origen: CONFIG_HIJO.IFRAME_ID,
-                        datos: { 
-                            error: error.message,
-                            stack: error.stack,
-                            contexto: 'SISTEMA.CAMBIO_MODO',
-                            mensajeOriginal: mensaje.tipo
-                        }
+                        datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
                     });
-                } catch (notifError) {
+                } catch (e) {
+                    logger.error(`${logPrefix} Error notificando fallo:`, e);
                     logger.error(`${logPrefix} Error al notificar error al origen:`, notifError);
                 }
+            }
+        });
+
+        // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+            const logPrefix = `[hijo5-casa][CAMBIO_MODO_APLICADO]`;
+            try {
+                const { modo } = mensaje.datos || {};
+                logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
             }
         });
 
