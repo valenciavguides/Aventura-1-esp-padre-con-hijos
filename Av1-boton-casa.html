@@ -975,9 +975,9 @@
                 // Enviar ENTENDIDO
                 logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
                 await enviarMensaje({
+                    destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
                     origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: mensaje.origen,
                     datos: { 
                         modo, 
                         timestamp: Date.now(),
@@ -1020,9 +1020,9 @@
                 
                 // Enviar EFECTUADO
                 await enviarMensaje({
+                    destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                     origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: mensaje.origen,
                     datos: { 
                         modo, 
                         exito: true, 
