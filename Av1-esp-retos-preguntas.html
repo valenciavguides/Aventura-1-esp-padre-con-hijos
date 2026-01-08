@@ -1107,16 +1107,22 @@
                     
                     // Validación explícita antes de enviar
                     const destinoEntendido = mensaje.origen;
-                    const tipoEntendido = TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO;
-                    const origenEntendido = CONFIG_HIJO.IFRAME_ID;
+                    const tipoEntendido = TIPOS_MENSAJE?.SISTEMA?.CAMBIO_MODO_ENTENDIDO;
+                    const origenEntendido = CONFIG_HIJO?.IFRAME_ID;
                     
+                    // DEBUG: Console.log directo para diagnóstico (bypass suppress-warnings)
                     if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
-                        logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, {
+                        const debugInfo = {
                             destino: destinoEntendido,
                             tipo: tipoEntendido,
                             origen: origenEntendido,
-                            mensaje
-                        });
+                            TIPOS_MENSAJE_exists: typeof TIPOS_MENSAJE !== 'undefined',
+                            TIPOS_MENSAJE_SISTEMA_exists: typeof TIPOS_MENSAJE?.SISTEMA !== 'undefined',
+                            CONFIG_HIJO_exists: typeof CONFIG_HIJO !== 'undefined',
+                            mensaje_origen: mensaje?.origen
+                        };
+                        console.error('[hijo4][CAMBIO_MODO] 🔴 DEBUG CAMPOS UNDEFINED:', JSON.stringify(debugInfo, null, 2));
+                        logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, debugInfo);
                         throw new Error('Campos undefined en CAMBIO_MODO_ENTENDIDO');
                     }
                     
