@@ -4523,33 +4523,44 @@
         // ============================================================
         (async function ejecutarInicializacionAutomatica() {
             const logPrefix = '[PADRE][INIT]';
+            const logSafe = window.logger || console;
             
             try {
-                logger.info(`${logPrefix} 🚀 Iniciando sistema completo...`);
+                console.log(`${logPrefix} 🚀 Iniciando sistema completo...`);
+                if (logSafe.info) logSafe.info(`${logPrefix} 🚀 Iniciando sistema completo...`);
                 
                 // 1. Esperar a que Leaflet y el mapa estén listos
-                logger.info(`${logPrefix} Esperando Leaflet y mapa...`);
+                console.log(`${logPrefix} Esperando Leaflet y mapa...`);
+                if (logSafe.info) logSafe.info(`${logPrefix} Esperando Leaflet y mapa...`);
                 await waitForLeafletAndInitialize();
-                logger.success(`${logPrefix} ✅ Mapa inicializado`);
+                console.log(`${logPrefix} ✅ Mapa inicializado`);
+                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Mapa inicializado`);
                 
                 // 2. Pequeña pausa para asegurar que el mapa esté completamente renderizado
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // 3. Cargar iframes secuencialmente
-                logger.info(`${logPrefix} Iniciando carga de iframes...`);
-                updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
+                console.log(`${logPrefix} Iniciando carga de iframes...`);
+                if (logSafe.info) logSafe.info(`${logPrefix} Iniciando carga de iframes...`);
+                if (typeof updateLoadingStatus === 'function') {
+                    updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
+                }
                 await cargarIframeSecuencial();
-                logger.success(`${logPrefix} ✅ Iframes cargados`);
-                updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
+                console.log(`${logPrefix} ✅ Iframes cargados`);
+                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Iframes cargados`);
+                if (typeof updateLoadingStatus === 'function') {
+                    updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
+                }
                 
                 // 4. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
-                logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
+                console.log(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
+                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
                 
             } catch (error) {
-                logger.error(`${logPrefix} ❌ Error en inicialización:`, error);
-                console.error('Error en inicialización automática:', error);
+                console.error(`${logPrefix} ❌ Error en inicialización:`, error);
+                if (logSafe.error) logSafe.error(`${logPrefix} ❌ Error en inicialización:`, error);
             }
         })();
 
