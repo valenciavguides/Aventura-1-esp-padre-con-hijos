@@ -1048,6 +1048,49 @@ const CONFIG_HIJO = {
     DEBUG: true
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔧 UTILIDADES - AJUSTE DINÁMICO DE TIMEOUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Calcula multiplicador de timeout según tipo de conexión
+ * Metodología consistente con codigo-padre.html (utils.js)
+ * @returns {number} Multiplicador (1.0-3.0)
+ */
+function calcularMultiplicadorTimeoutConexion() {
+    try {
+        if (!navigator.connection) {
+            return 1.5; // Valor moderado si no hay info de conexión
+        }
+
+        const effectiveType = navigator.connection.effectiveType || 'unknown';
+        const multiplicadores = {
+            '4g': 1.0,      // Conexión rápida
+            '3g': 1.5,      // Conexión media - 50% más tiempo
+            '2g': 2.0,      // Conexión lenta - doble tiempo
+            'slow-2g': 3.0, // Conexión muy lenta - triple tiempo
+            'unknown': 1.5  // Desconocido - moderado
+        };
+
+        return multiplicadores[effectiveType] || 1.5;
+    } catch (error) {
+        console.warn('[HIJO2][TIMEOUT] Error calculando multiplicador:', error);
+        return 1.5;
+    }
+}
+
+/**
+ * Ajusta timeout según conexión de red actual
+ * @param {number} timeoutBase - Timeout base en ms
+ * @returns {number} Timeout ajustado
+ */
+function ajustarTimeoutPorConexion(timeoutBase) {
+    const multiplicador = calcularMultiplicadorTimeoutConexion();
+    const timeoutAjustado = Math.round(timeoutBase * multiplicador);
+    console.debug(`[HIJO2][TIMEOUT] ${timeoutBase}ms -> ${timeoutAjustado}ms (${multiplicador}x)`);
+    return timeoutAjustado;
+}
+
 // Estado del componente
 const estadoComponente = {
     modo: 'casa',
@@ -1527,7 +1570,7 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
         try {
             // Solicitar ubicación GPS al padre
             const respuestaGPS = await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('Timeout GPS')), 10000);
+                const timeout = setTimeout(() => reject(new Error('Timeout GPS')), ajustarTimeoutPorConexion(10000));
 
                 const handlerGPS = (mensaje) => {
                     if (mensaje.tipo === TIPOS_MENSAJE.NAVEGACION.UBICACION_ACTUALIZADA) {
