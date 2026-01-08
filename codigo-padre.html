@@ -7860,6 +7860,18 @@
         };
         
         console.log('🔧 Función de diagnóstico GPS disponible: window.diagnosticarGPS()');
+
+        // ============================================================
+        // MARCAR SCRIPT 2 COMO LISTO
+        // ============================================================
+        // ✅ CRÍTICO: Procesar mensajes que esperaban controladores de Script 2
+        try {
+            const { marcarScript2Listo } = await import('./js/mensajeria.js');
+            const resultado = marcarScript2Listo();
+            logger.info('[PADRE][SCRIPT2] ✅ Script 2 marcado como listo', resultado);
+        } catch (error) {
+            logger.error('[PADRE][SCRIPT2] ❌ Error marcando Script 2 como listo:', error);
+        }
     </script>
 
     <!-- ============================================================ -->
