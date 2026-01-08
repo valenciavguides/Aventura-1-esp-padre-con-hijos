@@ -4324,6 +4324,11 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL, async (mensaje)
                             permisos: 'granted'
                         }
                     });
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: ajustarTimeoutPorConexion(10000),
+                    maximumAge: 0
                 }
             );
         } else if (permisos.state === 'denied') {
