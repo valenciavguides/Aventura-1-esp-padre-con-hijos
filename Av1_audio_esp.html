@@ -777,6 +777,7 @@
     }
 
     let currentAudioId = null;
+    let isPlaying = false; // Estado de reproducción - ACTUALIZADO 2026-01-08
 
     // Estado del componente (homologado con otros hijos)
     const estado = {
@@ -796,8 +797,10 @@
         const playPauseBtn = document.getElementById('playPauseBtn');
         if (audioPlayer.paused) {
             playPauseBtn.innerHTML = '<i class="fas fa-play icon-play"></i>';
+            isPlaying = false;
         } else {
             playPauseBtn.innerHTML = '<i class="fas fa-pause icon-play"></i>';
+            isPlaying = true;
         }
     }
 
