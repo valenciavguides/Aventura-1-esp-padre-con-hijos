@@ -1519,7 +1519,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.ERROR, async (mensaje) => {
                 await enviarMensaje({
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                    origen: 'manejador-errores',
+                    origen: estadoMensajeria?.componenteId || (window.parent === window ? 'padre' : 'hijo'),
                     mensajeId: generarIdUnico(),
                     datos: {
                         mensajeOriginalId: mensajeId,
