@@ -585,6 +585,11 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
         // como la forma legacy (destino, tipo, datos)
         let tipo, origen, destino, datos = {}, version = '1.0.0';
 
+        // Validación temprana: paramsOrDestino no puede ser null/undefined
+        if (paramsOrDestino === null || paramsOrDestino === undefined) {
+            throw new Error('enviarMensaje llamado con parámetro null/undefined');
+        }
+
         if (typeof paramsOrDestino === 'object' && paramsOrDestino !== null && !Array.isArray(paramsOrDestino)) {
             ({ tipo, origen, destino, datos = {}, version = '1.0.0' } = paramsOrDestino);
             // Sanity: if calling code omitted origen, fallback to defaultOrigin (caller component)
