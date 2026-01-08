@@ -114,7 +114,11 @@ const estadoMensajeria = {
     // Nota: `hijo1-hamburguesa` y `hijo1-opciones` se excluyen a propósito (son UI helpers) y se cargan secuencialmente
     // por el padre, pero no se consideran críticos para bloquear la readiness del sistema.
     hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'], // Hijos críticos que deben estar listos
-    hijosListos: new Set() // Hijos críticos que ya enviaron HIJO_LISTO
+    hijosListos: new Set(), // Hijos críticos que ya enviaron HIJO_LISTO
+    
+    // ✅ Sistema de sincronización Script 1 ↔ Script 2
+    script2Listo: false, // Flag que indica si Script 2 completó registro de controladores
+    mensajesPendientesScript2: [] // Cola de mensajes que esperan a que Script 2 esté listo
 };
 
 // Flag to indicate that heartbeat pre-warm has been executed
@@ -304,6 +308,34 @@ export async function inicializarMensajeria(config = {}) {
             // No crítico; seguimos adelante
             console.warn('[MENSAJERIA] Error migrando manejadores tempranos:', e);
         }
+        
+        // Registrar listener de message solo UNA vez para evitar duplicados
+        if (!estadoMensajeria.listenerRegistrado) {
+            window.addEventListener('message', manejarMensajeEntrante);
+            estadoMensajeria.listenerRegistrado = true;
+            if (estadoMensajeria.debug) {
+                console.debug('[MENSAJERIA] Listener de message registrado (único)');
+            }
+        } else {
+            if (estadoMensajeria.debug) {
+                console.debug('[MENSAJERIA] Listener de message ya estaba registrado, omitiendo');
+            }
+        }
+        
+        // ✅ TIMEOUT DE SEGURIDAD: Si Script 2 no se marca como listo en 15s,
+        // forzar procesamiento de mensajes pendientes
+        if (window.parent === window && !estadoMensajeria.script2Listo) {
+            setTimeout(() => {
+                if (!estadoMensajeria.script2Listo) {
+                    console.warn('[MENSAJERIA][TIMEOUT] Script 2 no se marcó como listo en 15s, forzando procesamiento');
+                    try {
+                        marcarScript2Listo();
+                    } catch (error) {
+                        console.error('[MENSAJERIA][TIMEOUT] Error forzando Script 2:', error);
+                    }
+                }
+            }, 15000); // 15 segundos
+        }
 
         return Promise.resolve();
     } catch (error) {
@@ -370,6 +402,154 @@ export function esperarHijosListos(timeoutMs = 10000) {
             return resolve({ ready: false, missing });
         }, timeoutMs);
     });
+}
+
+/**
+ * Procesa la cola de mensajes pendientes.
+ * Intenta enviar mensajes encolados cuando sus destinos están listos.
+ * Implementa TTL (30s), manejo de reintentos y limpieza de mensajes expirados.
+ */
+async function procesarColaMensajes() {
+    if (estadoMensajeria.procesandoCola) {
+        console.debug('[MENSAJERIA][COLA] Ya se está procesando la cola, omitiendo');
+        return;
+    }
+    
+    if (estadoMensajeria.colaMensajes.length === 0) {
+        return; // Nada que procesar
+    }
+    
+    estadoMensajeria.procesandoCola = true;
+    const TTL_MS = 30000; // 30 segundos
+    const MAX_REINTENTOS = 5;
+    
+    try {
+        console.log(`🔄 [MENSAJERIA][COLA] Procesando ${estadoMensajeria.colaMensajes.length} mensaje(s) encolado(s)`);
+        
+        let procesados = 0;
+        let expirados = 0;
+        let reenviados = 0;
+        
+        // Procesar cola (usar un bucle while para permitir modificación durante iteración)
+        while (estadoMensajeria.colaMensajes.length > 0) {
+            const item = estadoMensajeria.colaMensajes[0]; // Peek primero
+            const edad = Date.now() - item.timestamp;
+            
+            // Verificar si expiró (TTL)
+            if (edad > TTL_MS) {
+                console.warn(`⏰ [MENSAJERIA][COLA] Mensaje expirado (${Math.round(edad/1000)}s) - tipo: ${item.mensaje.tipo}, destino: ${item.destino}`);
+                estadoMensajeria.colaMensajes.shift(); // Remover
+                expirados++;
+                continue;
+            }
+            
+            // Verificar si alcanzó el máximo de reintentos
+            if (item.intentos >= MAX_REINTENTOS) {
+                console.error(`❌ [MENSAJERIA][COLA] Mensaje descartado (${item.intentos} intentos) - tipo: ${item.mensaje.tipo}, destino: ${item.destino}`);
+                estadoMensajeria.colaMensajes.shift(); // Remover
+                continue;
+            }
+            
+            // Intentar enviar el mensaje
+            try {
+                // Verificar si el destino ya está disponible
+                const destinoListo = validarDestinoDisponible(item.destino);
+                
+                if (!destinoListo) {
+                    // Destino aún no disponible, incrementar intentos y continuar
+                    item.intentos++;
+                    console.debug(`⏳ [MENSAJERIA][COLA] Destino ${item.destino} aún no listo (intento ${item.intentos}/${MAX_REINTENTOS})`);
+                    break; // Salir del bucle, intentaremos más tarde
+                }
+                
+                // Destino listo, enviar mensaje
+                console.log(`📤 [MENSAJERIA][COLA] Enviando mensaje encolado - tipo: ${item.mensaje.tipo}, destino: ${item.destino}`);
+                
+                // Enviar usando la lógica interna directa
+                const iframe = document.getElementById(item.destino);
+                if (iframe && iframe.contentWindow) {
+                    const origenSeguro = window.location.origin;
+                    iframe.contentWindow.postMessage(item.mensaje, origenSeguro);
+                    reenviados++;
+                } else {
+                    throw new Error(`Iframe ${item.destino} no encontrado`);
+                }
+                
+                // Mensaje enviado exitosamente, remover de la cola
+                estadoMensajeria.colaMensajes.shift();
+                procesados++;
+                
+            } catch (error) {
+                // Error al enviar, incrementar intentos
+                item.intentos++;
+                console.warn(`⚠️ [MENSAJERIA][COLA] Error enviando mensaje a ${item.destino} (intento ${item.intentos}/${MAX_REINTENTOS}):`, error.message);
+                
+                if (item.intentos >= MAX_REINTENTOS) {
+                    console.error(`❌ [MENSAJERIA][COLA] Mensaje descartado después de ${item.intentos} intentos fallidos`);
+                    estadoMensajeria.colaMensajes.shift(); // Remover
+                } else {
+                    break; // Salir del bucle, intentaremos más tarde
+                }
+            }
+        }
+        
+        if (procesados > 0 || expirados > 0) {
+            console.log(`✅ [MENSAJERIA][COLA] Procesamiento completado - enviados: ${reenviados}, expirados: ${expirados}, pendientes: ${estadoMensajeria.colaMensajes.length}`);
+        }
+        
+    } catch (error) {
+        console.error('[MENSAJERIA][COLA] Error procesando cola:', error);
+    } finally {
+        estadoMensajeria.procesandoCola = false;
+    }
+}
+
+/**
+ * Valida si un destino está disponible para recibir mensajes.
+ * @param {string} destino - ID del destino a validar
+ * @returns {boolean} true si el destino está disponible
+ */
+function validarDestinoDisponible(destino) {
+    if (!destino) return false;
+    
+    // Padre siempre disponible
+    if (destino === 'padre') return true;
+    
+    // Broadcasts siempre se procesan
+    if (destino === 'broadcast' || destino === 'todos') return true;
+    
+    // Para otros destinos, verificar que el iframe exista y el hijo esté listo
+    try {
+        const iframe = document.getElementById(destino);
+        if (!iframe || !iframe.contentWindow) return false;
+        
+        // Verificar si el hijo está en la lista de listos (si es crítico)
+        if (estadoMensajeria.hijosEsperados.includes(destino)) {
+            return estadoMensajeria.hijosListos.has(destino);
+        }
+        
+        // Para hijos no críticos, si el iframe existe, asumimos que está listo
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Determinar si el mensaje debe ser encolado o descartado cuando el destino no está disponible.
+ * @param {string} destino - ID del destino
+ * @param {string} tipo - Tipo de mensaje
+ * @returns {boolean} true si debe encolarse
+ */
+function debeEncolarMensaje(destino, tipo) {
+    // No encolar broadcasts (tienen su propia cola)
+    if (destino === 'broadcast' || destino === 'todos') return false;
+    
+    // No encolar mensajes al padre (siempre disponible)
+    if (destino === 'padre') return false;
+    
+    // Encolar solo si es un hijo que podría estar inicializando
+    return true;
 }
 
 /**
@@ -579,6 +759,22 @@ export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
             // Comunicación padre → hijo: usar iframe
             const iframe = document.getElementById(destino);
             if (!iframe || !iframe.contentWindow) {
+                // Destino no disponible - verificar si debemos encolar
+                if (debeEncolarMensaje(destino, tipo)) {
+                    console.log(`⏳ [MENSAJERIA] Destino ${destino} no disponible, encolando mensaje - tipo: ${tipo}`);
+                    estadoMensajeria.colaMensajes.push({
+                        mensaje,
+                        destino,
+                        timestamp: Date.now(),
+                        intentos: 0
+                    });
+                    
+                    // Intentar procesar la cola inmediatamente
+                    setTimeout(() => procesarColaMensajes(), 100);
+                    
+                    return { enqueued: true, mensajeId: mensaje.id };
+                }
+                
                 throw new Error(`Destino ${destino} no encontrado o no accesible`);
             }
             targetWindow = iframe.contentWindow;
@@ -830,6 +1026,13 @@ function manejarMensajeEntrante(event) {
                     estadoMensajeria.hijosListos.add(mensaje.origen);
                     console.log(`✅ [MENSAJERIA] Hijo crítico listo: ${mensaje.origen} (${estadoMensajeria.hijosListos.size}/${estadoMensajeria.hijosEsperados.length})`);
                 }
+                
+                // Procesar cola de mensajes cuando un hijo se marca como listo
+                if (estadoMensajeria.colaMensajes.length > 0) {
+                    console.log(`🔄 [MENSAJERIA] Hijo ${mensaje.origen} listo, procesando cola de mensajes...`);
+                    setTimeout(() => procesarColaMensajes(), 50);
+                }
+                
                 // Procesar broadcasts pendientes cuando TODOS los hijos críticos están listos
                 const todosListos = estadoMensajeria.hijosEsperados.every(h => estadoMensajeria.hijosListos.has(h));
                 if (todosListos && estadoMensajeria.broadcastsPendientes.length > 0) {
@@ -935,6 +1138,29 @@ function manejarMensajeEntrante(event) {
     const mapa = __vv_getManejadores();
     const controlador = mapa && mapa.get ? mapa.get(mensaje.tipo) : undefined;
     if (!controlador) {
+        // ✅ SINCRONIZACIÓN SCRIPT 2: Si el mensaje es para el padre y Script 2 NO está listo,
+        // encolar el mensaje para procesarlo cuando Script 2 complete el registro de controladores
+        const esMensajeParaPadre = (mensaje.destino === 'padre' || mensaje.destino === (typeof getPadreId === 'function' ? getPadreId() : null));
+        
+        if (esMensajeParaPadre && !estadoMensajeria.script2Listo && window.parent === window) {
+            console.info(`⏳ [MENSAJERIA][SCRIPT2_PENDIENTE] Handler para "${mensaje.tipo}" no existe aún (Script 2 no listo), ENCOLANDO mensaje`, {
+                mensajeId: mensaje.mensajeId || mensaje.id,
+                origen: mensaje.origen,
+                destino: mensaje.destino,
+                posicionCola: estadoMensajeria.mensajesPendientesScript2.length + 1
+            });
+            
+            // Marcar timestamp de encolado para detectar mensajes muy antiguos
+            mensaje._timestampEncolado = Date.now();
+            
+            // Agregar a la cola de mensajes pendientes de Script 2
+            estadoMensajeria.mensajesPendientesScript2.push(mensaje);
+            
+            // No procesar el mensaje ahora, esperar a que Script 2 esté listo
+            return;
+        }
+        
+        // Si no es para el padre O Script 2 ya está listo, es un error real
         try {
             const datosClon = (typeof structuredClone === 'function')
                 ? structuredClone(mensaje.datos || {})
@@ -979,8 +1205,8 @@ function manejarMensajeEntrante(event) {
     }
 }
 
-// Registrar el listener global para mensajes entrantes
-window.addEventListener('message', manejarMensajeEntrante);
+// NOTA: Listener de mensajes se registra en inicializarMensajeria() para evitar duplicados
+// (Ver línea ~308 - registro condicional con estadoMensajeria.listenerRegistrado)
 
 // Mapa para confirmaciones pendientes: mensajeOriginalId -> { resolve, reject, timer }
 const confirmacionesPendientes = new Map();
@@ -2030,4 +2256,87 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (
     }
 });
 
-export { estadoMensajeria };
+// ===================================================================
+// SINCRONIZACIÓN SCRIPT 2
+// ===================================================================
+
+/**
+ * Marca Script 2 como listo y procesa todos los mensajes que esperaban
+ * a que los controladores de Script 2 estuvieran registrados.
+ * 
+ * Esta función debe llamarse AL FINAL de Script 2 en codigo-padre.html,
+ * después de que todos los controladores estén registrados.
+ * 
+ * @returns {Object} Resultado del procesamiento con estadísticas
+ */
+export function marcarScript2Listo() {
+    const logPrefix = '[MENSAJERIA][SCRIPT2_LISTO]';
+    
+    if (estadoMensajeria.script2Listo) {
+        logger.warn(`${logPrefix} Ya estaba marcado como listo, omitiendo`);
+        return { yaListo: true, procesados: 0, fallidos: 0 };
+    }
+    
+    estadoMensajeria.script2Listo = true;
+    logger.info(`${logPrefix} Script 2 marcado como LISTO`);
+    
+    const cantidadPendientes = estadoMensajeria.mensajesPendientesScript2.length;
+    
+    if (cantidadPendientes === 0) {
+        logger.info(`${logPrefix} No había mensajes pendientes`);
+        return { yaListo: false, procesados: 0, fallidos: 0 };
+    }
+    
+    logger.info(`${logPrefix} Procesando ${cantidadPendientes} mensaje(s) pendiente(s)`);
+    
+    const mensajesProcesados = [];
+    const mensajesFallidos = [];
+    
+    // Copiar cola y vaciarla inmediatamente para evitar reentrancia
+    const cola = [...estadoMensajeria.mensajesPendientesScript2];
+    estadoMensajeria.mensajesPendientesScript2 = [];
+    
+    // Procesar cada mensaje pendiente
+    cola.forEach((mensajePendiente, index) => {
+        try {
+            const edad = Date.now() - (mensajePendiente._timestampEncolado || 0);
+            logger.debug(`${logPrefix} [${index + 1}/${cola.length}] Procesando: ${mensajePendiente.tipo} (edad: ${edad}ms)`);
+            
+            // Re-procesar el mensaje ahora que Script 2 está listo
+            procesarMensaje(mensajePendiente)
+                .then(() => {
+                    mensajesProcesados.push(mensajePendiente.tipo);
+                    logger.debug(`${logPrefix} ✅ Mensaje procesado: ${mensajePendiente.tipo}`);
+                })
+                .catch(error => {
+                    mensajesFallidos.push({ tipo: mensajePendiente.tipo, error: error.message });
+                    logger.error(`${logPrefix} ❌ Error procesando mensaje: ${mensajePendiente.tipo}`, error);
+                });
+                
+        } catch (error) {
+            mensajesFallidos.push({ tipo: mensajePendiente.tipo || 'desconocido', error: error.message });
+            logger.error(`${logPrefix} ❌ Error procesando mensaje pendiente:`, error);
+        }
+    });
+    
+    // Dar tiempo a que se procesen las promesas (async)
+    setTimeout(() => {
+        const totalProcesados = mensajesProcesados.length;
+        const totalFallidos = mensajesFallidos.length;
+        
+        logger.info(`${logPrefix} Procesamiento completado: ${totalProcesados} exitosos, ${totalFallidos} fallidos`);
+        
+        if (totalFallidos > 0) {
+            logger.warn(`${logPrefix} Detalles de mensajes fallidos:`, mensajesFallidos);
+        }
+    }, 500);
+    
+    return {
+        yaListo: false,
+        procesados: cola.length,
+        fallidos: 0, // Se actualizará asíncronamente
+        detalles: { cantidadInicial: cantidadPendientes }
+    };
+}
+
+export { estadoMensajeria, procesarColaMensajes };
