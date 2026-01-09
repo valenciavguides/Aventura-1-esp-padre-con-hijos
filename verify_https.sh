@@ -54,8 +54,8 @@ echo ""
 
 # Test 4: Check for mixed content (basic check)
 echo "Test 4: Checking for potential mixed content..."
-# Using grep with simpler quoting for better readability
-MIXED_CONTENT=$(curl -s "${URL_HTTPS}" | grep -o "http://[^\"\' ]*" | grep -v "localhost" | grep -v "127.0.0.1" | grep -v "xmlns" | grep -v "data:image")
+# Using more specific pattern and excluding common XML namespaces
+MIXED_CONTENT=$(curl -s "${URL_HTTPS}" | grep -o "http://[^\"\\'\\s>]*" | grep -v "localhost" | grep -v "127.0.0.1" | grep -v "xmlns" | grep -v "www.w3.org" | grep -v "schemas." | grep -v "data:image")
 if [ -z "$MIXED_CONTENT" ]; then
     echo -e "${GREEN}✓ PASS${NC}: No obvious HTTP resources found in HTML"
 else
@@ -81,8 +81,18 @@ echo ""
 
 # Test 6: Check DNS resolution
 echo "Test 6: Checking DNS resolution..."
-if command -v nslookup &> /dev/null; then
-    DNS_RESULT=$(nslookup ${DOMAIN} 2>&1 | grep -A 1 "Name:" | tail -1)
+if command -v dig &> /dev/null; then
+    # Prefer dig for more reliable parsing
+    DNS_RESULT=$(dig +short ${DOMAIN} 2>&1 | head -1)
+    if [ -n "$DNS_RESULT" ]; then
+        echo -e "${GREEN}✓ PASS${NC}: DNS resolves correctly"
+        echo "   IP: $DNS_RESULT"
+    else
+        echo -e "${RED}✗ FAIL${NC}: DNS resolution failed"
+    fi
+elif command -v nslookup &> /dev/null; then
+    # Fallback to nslookup with more robust parsing
+    DNS_RESULT=$(nslookup ${DOMAIN} 2>&1 | grep -E "Address:|^[0-9]" | grep -v "#53" | tail -1)
     if [ -n "$DNS_RESULT" ]; then
         echo -e "${GREEN}✓ PASS${NC}: DNS resolves correctly"
         echo "   $DNS_RESULT"
@@ -90,7 +100,7 @@ if command -v nslookup &> /dev/null; then
         echo -e "${RED}✗ FAIL${NC}: DNS resolution failed"
     fi
 else
-    echo -e "${YELLOW}⚠ SKIP${NC}: nslookup not available"
+    echo -e "${YELLOW}⚠ SKIP${NC}: Neither dig nor nslookup available"
 fi
 echo ""
 
