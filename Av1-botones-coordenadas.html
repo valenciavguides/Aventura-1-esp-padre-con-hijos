@@ -1120,8 +1120,12 @@ const estadoComponente = {
         mapaJpg: true       // Siempre activo
     },
     retoActivo: false, // Flag para saber si hay un reto en progreso
-    ubicacionActiva: false // Flag para saber si ubicación está activa
-    ,paradaPendiente: false // Flag para saber si la parada tiene pending en el padre
+    ubicacionActiva: false, // Flag para saber si ubicación está activa
+    paradaPendiente: false, // Flag para saber si la parada tiene pending en el padre
+    posicionActualUsuario: null, // {lat, lng} Posición GPS recibida del padre
+    timestampSalioDeRango: null, // Timestamp cuando salió >50m (null si está <50m)
+    tiempoFueraRequerido: 5 * 60 * 1000, // 5 minutos en milisegundos
+    ultimoHeading: 0 // Última dirección del usuario (0-360 grados)
 };
 
 // Referencias DOM
@@ -1329,6 +1333,167 @@ function actualizarEstadoBotones() {
 
     if (elementosDOM.btnMapaJpg) {
         activarBoton(elementosDOM.btnMapaJpg);
+    }
+}
+
+// ============================================================
+// FUNCIONES HELPER PARA VALIDACIÓN GPS
+// ============================================================
+
+/**
+ * Calcula la distancia entre dos coordenadas GPS usando fórmula Haversine
+ * @param {number} lat1 - Latitud punto 1
+ * @param {number} lon1 - Longitud punto 1
+ * @param {number} lat2 - Latitud punto 2
+ * @param {number} lon2 - Longitud punto 2
+ * @returns {number} Distancia en metros
+ */
+function calcularDistancia(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // Radio de la Tierra en metros
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    
+    return R * c; // Distancia en metros
+}
+
+/**
+ * Verifica si el usuario está dentro/fuera del radio de paradas/tramos
+ * y actualiza el estado visual del botón de ubicación
+ * LÓGICA: Verde habilitado si >50m durante >5min, Rojo deshabilitado si <50m
+ * Solo se ejecuta en modo aventura
+ */
+function verificarDistanciaYActualizarBotones() {
+    const logPrefix = '[hijo2][verificarDistanciaYActualizarBotones]';
+    
+    if (!estadoComponente.posicionActualUsuario) {
+        logger.warn(`${logPrefix} No hay posición GPS disponible`);
+        return;
+    }
+    
+    const RADIO_PERMITIDO = 50; // metros - radio de validación GPS
+    const paradas = estadoComponente.arrayParadasLocal || [];
+    
+    if (paradas.length === 0) {
+        logger.warn(`${logPrefix} No hay paradas disponibles para validar`);
+        return;
+    }
+    
+    let dentroDeRango = false;
+    let elementoMasCercano = null;
+    let distanciaMinima = Infinity;
+    
+    // Buscar elemento más cercano (parada o cualquier punto de tramo)
+    paradas.forEach(elemento => {
+        // PARADAS: Solo validar coordenadas
+        if (elemento.tipo === 'parada' && elemento.coordenadas) {
+            const dist = calcularDistancia(
+                estadoComponente.posicionActualUsuario.lat,
+                estadoComponente.posicionActualUsuario.lng,
+                elemento.coordenadas.lat,
+                elemento.coordenadas.lng
+            );
+            
+            logger.debug(`${logPrefix} Distancia a parada ${elemento.id}: ${dist.toFixed(1)}m`);
+            
+            if (dist < distanciaMinima) {
+                distanciaMinima = dist;
+                elementoMasCercano = elemento;
+            }
+            
+            if (dist <= RADIO_PERMITIDO) {
+                dentroDeRango = true;
+            }
+        }
+        
+        // TRAMOS: Validar inicio, waypoints y fin (importante para viewpoints)
+        if (elemento.tipo === 'tramo') {
+            const puntosAValidar = [];
+            
+            if (elemento.inicio) puntosAValidar.push({ ...elemento.inicio, tipo: 'inicio' });
+            if (elemento.waypoints && Array.isArray(elemento.waypoints)) {
+                elemento.waypoints.forEach((wp, idx) => {
+                    puntosAValidar.push({ ...wp, tipo: `waypoint-${idx}` });
+                });
+            }
+            if (elemento.fin) puntosAValidar.push({ ...elemento.fin, tipo: 'fin' });
+            
+            puntosAValidar.forEach(punto => {
+                const dist = calcularDistancia(
+                    estadoComponente.posicionActualUsuario.lat,
+                    estadoComponente.posicionActualUsuario.lng,
+                    punto.lat,
+                    punto.lng
+                );
+                
+                logger.debug(`${logPrefix} Distancia a ${elemento.id}[${punto.tipo}]: ${dist.toFixed(1)}m`);
+                
+                if (dist < distanciaMinima) {
+                    distanciaMinima = dist;
+                    elementoMasCercano = elemento;
+                }
+                
+                if (dist <= RADIO_PERMITIDO) {
+                    dentroDeRango = true;
+                }
+            });
+        }
+    });
+    
+    const ahora = Date.now();
+    const btn = elementosDOM.btnUbicacion;
+    
+    if (!btn) {
+        logger.warn(`${logPrefix} Botón de ubicación no encontrado`);
+        return;
+    }
+    
+    // LÓGICA CORREGIDA:
+    if (dentroDeRango) {
+        // DENTRO de rango (<50m) → ROJO DESHABILITADO
+        btn.disabled = true;
+        btn.style.backgroundColor = '#f44336'; // Rojo
+        btn.style.opacity = '0.6';
+        btn.title = `Estás en la ruta (${distanciaMinima.toFixed(1)}m de ${elementoMasCercano?.id || 'elemento'})`;
+        
+        // Resetear timer si volvió dentro de rango antes de 5 min
+        if (estadoComponente.timestampSalioDeRango !== null) {
+            logger.info(`${logPrefix} ✅ Usuario volvió DENTRO de rango (timer reseteado)`);
+            estadoComponente.timestampSalioDeRango = null;
+        }
+    } else {
+        // FUERA de rango (>50m)
+        if (estadoComponente.timestampSalioDeRango === null) {
+            // Primera vez que sale de rango → iniciar timer
+            estadoComponente.timestampSalioDeRango = ahora;
+            logger.info(`${logPrefix} ⚠️ Usuario SALIÓ de rango (iniciando timer 5min)`);
+        }
+        
+        const tiempoFuera = ahora - estadoComponente.timestampSalioDeRango;
+        const tiempoRestante = Math.max(0, estadoComponente.tiempoFueraRequerido - tiempoFuera);
+        const segundosRestantes = Math.ceil(tiempoRestante / 1000);
+        
+        if (tiempoFuera >= estadoComponente.tiempoFueraRequerido) {
+            // Más de 5 min fuera → VERDE HABILITADO
+            btn.disabled = false;
+            btn.style.backgroundColor = '#4CAF50'; // Verde
+            btn.style.opacity = '1';
+            btn.title = `Haz click para volver a la ruta (${distanciaMinima.toFixed(0)}m de distancia)`;
+            logger.info(`${logPrefix} ✅ HABILITADO: Usuario >5min fuera de rango`);
+        } else {
+            // Menos de 5 min fuera → ROJO DESHABILITADO (esperando)
+            btn.disabled = true;
+            btn.style.backgroundColor = '#f44336'; // Rojo
+            btn.style.opacity = '0.6';
+            btn.title = `Fuera de ruta (${distanciaMinima.toFixed(0)}m) - Espera ${segundosRestantes}s para activar navegación`;
+            logger.debug(`${logPrefix} ⏳ Esperando: ${segundosRestantes}s restantes`);
+        }
     }
 }
 
@@ -1559,94 +1724,52 @@ elementosDOM.btnVideo?.addEventListener('click', async () => {
 });
 
 elementosDOM.btnUbicacion?.addEventListener('click', async () => {
+    const logPrefix = '[hijo2][btnUbicacion.click]';
     try {
-        if (estadoComponente.modo === 'casa') {
-            actualizarEstado('Ubicación no disponible en modo casa', 'warn');
-            return;
-        }
-
-        setBotonActivo('btnUbicacion');
-
-        // Obtener ubicación real del usuario
-        let ubicacionUsuario = null;
-        try {
-            // Solicitar ubicación GPS al padre
-            const respuestaGPS = await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('Timeout GPS')), ajustarTimeoutPorConexion(10000));
-
-                const handlerGPS = (mensaje) => {
-                    if (mensaje.tipo === TIPOS_MENSAJE.NAVEGACION.UBICACION_ACTUALIZADA) {
-                        clearTimeout(timeout);
-                        resolve(mensaje.datos);
-                    }
-                };
-
-                // Registrar handler temporal
-                window.addEventListener('message', function tempHandler(e) {
-                    if (e.data && e.data.tipo === TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA) {
-                        window.removeEventListener('message', tempHandler);
-                        clearTimeout(timeout);
-                        resolve(e.data.datos);
-                    }
-                });
-
-                // Solicitar ubicación al padre
-                enviarMensaje({
-                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.SOLICITAR_UBICACION,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: getPadreId(),
-                    datos: { contexto: 'btn-ubicacion' }
-                });
-            });
-
-            if (respuestaGPS && respuestaGPS.lat && respuestaGPS.lng) {
-                ubicacionUsuario = respuestaGPS;
-                logger.debug(`🧭 Ubicación obtenida: [${ubicacionUsuario.lat}, ${ubicacionUsuario.lng}]`);
-            }
-        } catch (error) {
-            logger.warn(`🧭 Error obteniendo ubicación GPS: ${error.message}`);
-        }
-
-        // Determinar próximo elemento (parada/tramo) - P-0 por defecto si no hay ninguno completado
-        let proximoElemento = null;
+        logger.info(`${logPrefix} 📍 Usuario solicita volver a la ruta`);
+        
+        // Obtener elemento actual/próximo del padre
+        let elementoDestino = null;
         let elementoId = null;
-
-        // Buscar el elemento actual del padre
-        if (window.parent && window.parent.estadoPadre && window.parent.estadoPadre.elementoActual) {
-            proximoElemento = window.parent.estadoPadre.elementoActual;
-            elementoId = proximoElemento.parada_id || proximoElemento.tramo_id || proximoElemento.padreid;
-            logger.debug(`🎯 Próximo elemento desde padre: ${elementoId}`);
-        } else {
-            // Si no hay elemento actual, usar P-0 como defecto
-            elementoId = 'P-0';
-            // Buscar P-0 en las paradas disponibles
-            if (window.parent && window.parent.AVENTURA_PARADAS) {
-                proximoElemento = window.parent.AVENTURA_PARADAS.find(p =>
-                    p.parada_id === 'P-0' || p.padreid === 'padre-P-0'
-                );
+        
+        try {
+            // Intentar obtener elemento actual del estado del padre
+            if (window.parent && window.parent.estadoPadre && window.parent.estadoPadre.elementoActual) {
+                elementoDestino = window.parent.estadoPadre.elementoActual;
+                elementoId = elementoDestino.parada_id || elementoDestino.tramo_id || elementoDestino.id || 'desconocido';
+                logger.debug(`${logPrefix} Elemento destino desde padre: ${elementoId}`);
+            } else {
+                // Fallback: usar idParadaActual de hijo2
+                elementoId = estadoComponente.idParadaActual || 'P-0';
+                const paradas = estadoComponente.arrayParadasLocal || [];
+                elementoDestino = paradas.find(p => p.id === elementoId || p.parada_id === elementoId || p.tramo_id === elementoId);
+                logger.debug(`${logPrefix} Elemento destino desde hijo2: ${elementoId}`);
             }
-            logger.debug(`🎯 Usando P-0 como elemento por defecto`);
+        } catch (e) {
+            logger.warn(`${logPrefix} Error obteniendo elemento destino:`, e);
+            elementoId = 'P-0'; // Default a inicio
         }
-
-        // Enviar mensaje al padre para mostrar ubicación y polyline
+        
+        // Solicitar al padre que muestre polyline desde ubicación actual hasta destino
         await enviarMensaje({
             tipo: TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE,
             origen: CONFIG_HIJO.IFRAME_ID,
             destino: getPadreId(),
             datos: {
-                ubicacionUsuario: ubicacionUsuario,
-                proximoElemento: proximoElemento,
+                ubicacionUsuario: estadoComponente.posicionActualUsuario,
+                proximoElemento: elementoDestino,
                 elementoId: elementoId,
                 centrar: true,
-                zoom: 15
+                zoom: 16
             }
         });
-
-        actualizarEstado(`Mostrando ruta hacia ${elementoId || 'próximo destino'}`, 'success');
-        logger.info(`[hijo2] Solicitado centrar en ubicación`);
+        
+        actualizarEstado(`Mostrando ruta hacia ${elementoId}`, 'success');
+        logger.info(`${logPrefix} ✅ Polyline solicitada hacia ${elementoId}`);
+        
     } catch (error) {
-        logger.error(`[hijo2] Error al centrar ubicación:`, error);
-        actualizarEstado('Error ubicación', 'error');
+        logger.error(`${logPrefix} Error al mostrar ruta:`, error);
+        actualizarEstado('Error al mostrar ruta', 'error');
     }
 });
 
@@ -2024,6 +2147,29 @@ try {
             estadoComponente.retoActivo = false;
             estadoComponente.ubicacionActiva = false;
             estadoComponente.gpsActivo = false;
+            
+            // Paso 4.1: Resetear timer GPS y actualizar botón según nuevo modo
+            if (estadoComponente.timestampSalioDeRango !== null) {
+                logger.info(`${logPrefix} Reseteando timer GPS por cambio de modo`);
+                estadoComponente.timestampSalioDeRango = null;
+            }
+            
+            const btn = elementosDOM.btnUbicacion;
+            if (btn) {
+                if (modo === 'casa') {
+                    btn.disabled = true;
+                    btn.style.backgroundColor = '#f44336'; // Rojo
+                    btn.style.opacity = '0.6';
+                    btn.title = 'Ubicación no disponible en modo casa';
+                    logger.info(`${logPrefix} → Modo CASA: botón rojo deshabilitado`);
+                } else {
+                    logger.info(`${logPrefix} → Modo AVENTURA: botón controlado por distancias`);
+                    if (estadoComponente.posicionActualUsuario) {
+                        verificarDistanciaYActualizarBotones();
+                    }
+                }
+            }
+            
             logger.debug(`${logPrefix} Estado reseteado para nuevo modo`);
             actualizarEstadoBotones();
 
@@ -2893,34 +3039,110 @@ try {
     });
 
     registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+        const logPrefix = '[hijo2][GPS.UBICACION_ACTUALIZADA]';
         try {
-            console.debug(`[hijo2][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
+            const datos = mensaje.datos || {};
+            const { lat, lng, accuracy, timestamp, cached, fresh, heading } = datos;
+            
+            // Validar datos mínimos
+            if (lat === undefined || lng === undefined) {
+                logger.warn(`${logPrefix} Datos GPS incompletos:`, datos);
+                return { exito: false, error: 'Coordenadas inválidas' };
+            }
+            
+            // Actualizar heading si está disponible (brújula del dispositivo)
+            if (heading !== undefined && heading !== null) {
+                estadoComponente.ultimoHeading = heading;
+            }
+            
+            // Guardar posición en estadoComponente
+            const posicionPrevia = estadoComponente.posicionActualUsuario;
+            estadoComponente.posicionActualUsuario = { lat, lng };
+            logger.info(`${logPrefix} 📍 Ubicación GPS recibida: [${lat}, ${lng}] ±${Math.round(accuracy || 0)}m ${cached ? '(caché)' : fresh ? '(fresca)' : ''}`);
+            
+            // Calcular heading basado en movimiento si no viene del GPS
+            if (heading === undefined && posicionPrevia && posicionPrevia.lat && posicionPrevia.lng) {
+                const deltaLat = lat - posicionPrevia.lat;
+                const deltaLng = lng - posicionPrevia.lng;
+                if (Math.abs(deltaLat) > 0.00001 || Math.abs(deltaLng) > 0.00001) {
+                    // Calcular ángulo de movimiento (0° = Norte, 90° = Este)
+                    estadoComponente.ultimoHeading = Math.atan2(deltaLng, deltaLat) * (180 / Math.PI);
+                    if (estadoComponente.ultimoHeading < 0) estadoComponente.ultimoHeading += 360;
+                }
+            }
+            
+            // Solicitar al padre que actualice el marcador en el mapa (NO tocamos Leaflet aquí)
+            const modoActual = localStorage.getItem('modoActual') || 'casa';
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: getPadreId(),
+                datos: {
+                    lat: lat,
+                    lng: lng,
+                    heading: estadoComponente.ultimoHeading || 0,
+                    accuracy: accuracy || 0,
+                    modo: modoActual // AVENTURA: flecha azul, CASA: emoji 🛸
+                }
+            });
+            
+            // Solo validar distancias si estamos en modo aventura (GPS activo en ambos modos)
+            if (modoActual === 'aventura') {
+                logger.debug(`${logPrefix} 📏 Modo AVENTURA: verificando distancias a paradas`);
+                verificarDistanciaYActualizarBotones();
+            } else {
+                logger.debug(`${logPrefix} 🏠 Modo CASA: GPS activo pero botón siempre rojo deshabilitado`);
+                // Forzar botón rojo en modo casa (no validar distancias)
+                const btn = elementosDOM.btnUbicacion;
+                if (btn) {
+                    btn.disabled = true;
+                    btn.style.backgroundColor = '#f44336'; // Rojo
+                    btn.style.opacity = '0.6';
+                    btn.title = 'Ubicación no disponible en modo casa';
+                }
+            }
+            
+            actualizarEstado(`GPS ±${Math.round(accuracy || 0)}m`, 'success');
             return { exito: true };
+            
         } catch (e) {
-            console.error('[hijo2][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
+            logger.error(`${logPrefix} Error procesando ubicación GPS:`, e);
+            actualizarEstado('Error procesando ubicación', 'error');
             return { exito: false, error: e.message };
         }
     });
 
     registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+        const logPrefix = '[hijo2][GPS.ESTADO_ACTUALIZADO]';
         try {
             const datos = mensaje?.datos || {};
-            console.debug(`[hijo2][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido:`, datos);
-            // Mostrar u ocultar elementos de UI según el estado GPS centralizado
-            try {
-                if (datos.activo) {
-                    elementosDOM.btnUbicacion?.classList?.remove('disabled');
-                    elementosDOM.btnUbicacion && (elementosDOM.btnUbicacion.disabled = false);
-                } else {
-                    elementosDOM.btnUbicacion?.classList?.add('disabled');
-                    elementosDOM.btnUbicacion && (elementosDOM.btnUbicacion.disabled = true);
-                }
-            } catch (uiErr) {
-                console.warn('[hijo2] Error actualizando UI por estado GPS:', uiErr);
+            logger.debug(`${logPrefix} Estado GPS recibido:`, datos);
+            
+            const modoActual = localStorage.getItem('modoActual') || 'casa';
+            const btn = elementosDOM.btnUbicacion;
+            
+            if (!btn) {
+                logger.warn(`${logPrefix} Botón ubicación no encontrado`);
+                return { exito: true };
             }
+            
+            // MODO CASA: Siempre rojo deshabilitado (ignorar estado GPS)
+            if (modoActual === 'casa') {
+                btn.disabled = true;
+                btn.style.backgroundColor = '#f44336'; // Rojo
+                btn.style.opacity = '0.6';
+                btn.title = 'Ubicación no disponible en modo casa';
+                logger.debug(`${logPrefix} Modo casa: botón forzado a rojo deshabilitado`);
+                return { exito: true };
+            }
+            
+            // MODO AVENTURA: Depende de verificación de distancias
+            // No modificar aquí - la lógica la maneja verificarDistanciaYActualizarBotones()
+            logger.debug(`${logPrefix} Modo aventura: estado controlado por distancias`);
+            
             return { exito: true };
         } catch (e) {
-            console.error('[hijo2][GPS.ESTADO_ACTUALIZADO] Error en handler:', e);
+            logger.error(`${logPrefix} Error en handler:`, e);
             return { exito: false, error: e.message };
         }
     });
