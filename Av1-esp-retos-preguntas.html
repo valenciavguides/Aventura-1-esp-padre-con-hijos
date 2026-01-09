@@ -206,12 +206,8 @@
     /* --- Integración con Sistema de Mensajería --- */
     
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
-    import { resolverIdsParada, getPadreId } from './js/utils.js';
-    import { TIPOS_MENSAJE } from './js/constants.js';
-    import logger from './js/logger.js';
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
-    // IMPORTANTE: Definido DESPUÉS de imports para que TIPOS_MENSAJE esté disponible
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
         window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
         window.registrarControladorSeguro = function(tipo, handler, opciones) {
@@ -237,6 +233,10 @@
             }
         };
     }
+
+    import { resolverIdsParada, getPadreId } from './js/utils.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
 
     const CONFIG_HIJO = {
         id: 'hijo4',
@@ -1153,8 +1153,8 @@
                     logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
                     await enviarMensaje({
                         destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
-                        origen: CONFIG_HIJO.IFRAME_ID,
+                        tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                        origen: 'hijo4', // String literal
                         datos: { 
                             modo, 
                             exito: true, 
