@@ -1012,12 +1012,8 @@
 // ==================== INICIALIZACIÓN DE MENSAJERÍA ====================
 
 import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
-import { resolverIdsParada, getPadreId } from './js/utils.js';
-import { TIPOS_MENSAJE } from './js/constants.js';
-import logger from './js/logger.js';
 
 // Wrapper seguro para evitar doble registro de controladores en hijos
-// IMPORTANTE: Definido DESPUÉS de imports para que TIPOS_MENSAJE esté disponible
 if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
     window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
     window.registrarControladorSeguro = function(tipo, handler, opciones) {
@@ -1041,7 +1037,10 @@ if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro ==
             (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
         }
     };
-}
+} 
+import { resolverIdsParada, getPadreId } from './js/utils.js';
+import { TIPOS_MENSAJE } from './js/constants.js';
+import logger from './js/logger.js';
 
 const CONFIG_HIJO = {
     IFRAME_ID: 'hijo2',
@@ -1582,7 +1581,7 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
 
                 // Registrar handler temporal
                 window.addEventListener('message', function tempHandler(e) {
-                    if (e.data && e.data.tipo === TIPOS_MENSAJE.NAVEGACION.UBICACION_ACTUALIZADA) {
+                    if (e.data && e.data.tipo === TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA) {
                         window.removeEventListener('message', tempHandler);
                         clearTimeout(timeout);
                         resolve(e.data.datos);
@@ -1591,7 +1590,7 @@ elementosDOM.btnUbicacion?.addEventListener('click', async () => {
 
                 // Solicitar ubicación al padre
                 enviarMensaje({
-                    tipo: TIPOS_MENSAJE.NAVEGACION.SOLICITAR_UBICACION,
+                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.SOLICITAR_UBICACION,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     destino: getPadreId(),
                     datos: { contexto: 'btn-ubicacion' }
@@ -1994,7 +1993,7 @@ try {
             // Validación explícita antes de enviar
             const destinoEntendido = mensaje.origen;
             const tipoEntendido = 'SISTEMA.CAMBIO_MODO_ENTENDIDO'; // String literal para evitar problemas de timing
-            const origenEntendido = CONFIG_HIJO?.IFRAME_ID;
+            const origenEntendido = 'hijo2'; // String literal para evitar undefined
             
             // DEBUG: Console.log directo para diagnóstico (bypass suppress-warnings)
             if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
@@ -2038,8 +2037,8 @@ try {
             logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
             await enviarMensaje({
                 destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
-                origen: CONFIG_HIJO.IFRAME_ID,
+                tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                origen: 'hijo2', // String literal
                 datos: { 
                     modo, 
                     exito: true, 
