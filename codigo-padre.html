@@ -20,11 +20,9 @@
     <!-- Force HTTPS redirect for valenciavguides.es -->
     <script>
         (function() {
-            // Only enforce HTTPS on production domain, not on localhost or GitHub Pages subdomains
+            // Only enforce HTTPS on production domain (not on localhost or other test domains)
             if (window.location.protocol !== 'https:' && 
-                window.location.hostname === 'valenciavguides.es' &&
-                !window.location.hostname.includes('localhost') &&
-                !window.location.hostname.includes('127.0.0.1')) {
+                window.location.hostname === 'valenciavguides.es') {
                 window.location.href = 'https://' + window.location.hostname + window.location.pathname + window.location.search + window.location.hash;
             }
         })();
