@@ -1516,19 +1516,64 @@
     }
     
     #loading-spinner {
-        width: 70px;
-        height: 70px;
-        border: 6px solid rgba(255, 255, 255, 0.2);
-        border-top: 6px solid #ffffff;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
+        width: 150px;
+        height: auto;
         margin-bottom: 25px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        filter: drop-shadow(0 4px 15px rgba(0, 0, 0, 0.2));
+        color: #ffffff;
     }
     
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    /* Estilos del Pac-Man */
+    .pacman3351-dot {
+        fill: currentColor;
+    }
+
+    .pacman3351-open,
+    .pacman3351-mouth-top,
+    .pacman3351-mouth-bottom {
+        fill: currentColor;
+    }
+
+    .pacman3351-mouth-top,
+    .pacman3351-mouth-bottom {
+        animation-duration: 175ms;
+        animation-timing-function: linear;
+        animation-direction: alternate;
+        animation-iteration-count: infinite;
+        transform-origin: calc(300px/2) 150px;
+    }
+
+    .pacman3351-mouth-top {
+        animation-name: rotate3351-counterclockwise;
+    }
+
+    .pacman3351-mouth-bottom {
+        animation-name: rotate3351-clockwise;
+    }
+
+    @keyframes rotate3351-counterclockwise {
+        100% {
+            transform: rotate(-30deg);
+        }
+    }
+
+    @keyframes rotate3351-clockwise {
+        100% {
+            transform: rotate(30deg);
+        }
+    }
+
+    .pacman3351-dot {
+        animation-name: dot3351-motion;
+        animation-duration: 600ms;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+    }
+
+    @keyframes dot3351-motion {
+        100% {
+            transform: translateX(-100px);
+        }
     }
     
     #loading-text {
@@ -1560,7 +1605,16 @@
 <body class="loading">
     <!-- Indicador de carga global -->
     <div id="loading-overlay">
-        <div id="loading-spinner"></div>
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" id="loading-spinner" class="pacman3351" viewBox="50 0 500 300">
+            <circle class="pacman3351-dot" cx="250" cy="50%" r="10"/>
+            <circle class="pacman3351-dot" cx="350" cy="50%" r="10"/>
+            <circle class="pacman3351-dot" cx="450" cy="50%" r="10"/>
+            <circle class="pacman3351-dot" cx="550" cy="50%" r="10"/>
+            <circle class="pacman3351-dot" cx="650" cy="50%" r="10"/>
+            <path class="pacman3351-mouth-bottom" d="M 150,150 L 220.4,221.0 A 100 100 0 0 0 250,150 Z"/>
+            <path class="pacman3351-mouth-top" d="M 150,150 L 220.4,79.0 A 100 100 0 0 1 250,150 Z"/>
+            <path class="pacman3351-open" d="M 150,150 L 236.6,100 A 100 100 0 1 0 236.6,200 Z"/>
+        </svg>
         <div id="loading-text">Iniciando Valencia VGuides...</div>
         <div id="loading-details">Cargando componentes del sistema</div>
     </div>
@@ -1727,8 +1781,7 @@
                                         if (navigator.geolocation) {
                                             function initGPS(retryCount = 0) {
                                                 const maxRetries = 3;
-                                                // Usar timeout dinámico según conexión (15-45s)
-                                                const timeout = ajustarTimeoutPorConexionSafe(15000);
+                                                const timeout = 60000; // 60 seconds
                                                 
                                                 navigator.geolocation.watchPosition(
                                                     function success(pos) {
@@ -1860,7 +1913,7 @@
         // Asegurar que la mensajería se inicialice en el padre antes de usar funciones
         try {
             const { inicializarMensajeria } = await import('./js/mensajeria.js');
-            await inicializarMensajeria({ rol: 'padre', componenteId: 'codigo-padre', debug: false });
+            await inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
             console.info('[PADRE] Mensajería inicializada como padre');
         } catch (e) {
             console.warn('[PADRE] No se pudo inicializar mensajería automáticamente:', e && e.message ? e.message : e);
@@ -1911,8 +1964,8 @@
         // Inicialización de servicios
         // NOTA: inicializarServicioMapa se llama desde initializeMap() con la instancia del mapa
         // No llamar aquí para evitar doble inicialización del contenedor Leaflet
+        // NOTA: inicializarMensajeria ya se llamó en línea 1862, no duplicar
         await Promise.all([
-            inicializarMensajeria_S1({ rol: 'padre', estado: 'activo' }),
             inicializarMonitoreo_S1()
         ]);
 
@@ -4033,8 +4086,7 @@
         });
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO_ENTENDIDO
-        // IMPORTANTE: Este controlador DEBE estar después de marcarScript2Listo()
-        registrarControlador_S2(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_ENTENDIDO]`;
             
             try {
@@ -4042,8 +4094,8 @@
                 logger.info(`${logPrefix} ${mensaje.origen} entendió CAMBIO_MODO a "${modo}"`);
                 
                 // ACK inmediato
-                await enviarMensaje_S2({
-                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                await enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
                     origen: CONFIG_PADRE.ID,
                     destino: mensaje.origen,
                     datos: { 
@@ -4058,7 +4110,7 @@
         });
 
         // CONTROLADOR: SISTEMA.CAMBIO_MODO_EFECTUADO
-        registrarControlador_S2(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO, async (mensaje) => {
+        registrarControladorSeguro(TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO_EFECTUADO, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CAMBIO_MODO_EFECTUADO]`;
             
             try {
@@ -4523,44 +4575,33 @@
         // ============================================================
         (async function ejecutarInicializacionAutomatica() {
             const logPrefix = '[PADRE][INIT]';
-            const logSafe = window.logger || console;
             
             try {
-                console.log(`${logPrefix} 🚀 Iniciando sistema completo...`);
-                if (logSafe.info) logSafe.info(`${logPrefix} 🚀 Iniciando sistema completo...`);
+                logger.info(`${logPrefix} 🚀 Iniciando sistema completo...`);
                 
                 // 1. Esperar a que Leaflet y el mapa estén listos
-                console.log(`${logPrefix} Esperando Leaflet y mapa...`);
-                if (logSafe.info) logSafe.info(`${logPrefix} Esperando Leaflet y mapa...`);
+                logger.info(`${logPrefix} Esperando Leaflet y mapa...`);
                 await waitForLeafletAndInitialize();
-                console.log(`${logPrefix} ✅ Mapa inicializado`);
-                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Mapa inicializado`);
+                logger.success(`${logPrefix} ✅ Mapa inicializado`);
                 
                 // 2. Pequeña pausa para asegurar que el mapa esté completamente renderizado
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
                 // 3. Cargar iframes secuencialmente
-                console.log(`${logPrefix} Iniciando carga de iframes...`);
-                if (logSafe.info) logSafe.info(`${logPrefix} Iniciando carga de iframes...`);
-                if (typeof updateLoadingStatus === 'function') {
-                    updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
-                }
+                logger.info(`${logPrefix} Iniciando carga de iframes...`);
+                updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
                 await cargarIframeSecuencial();
-                console.log(`${logPrefix} ✅ Iframes cargados`);
-                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Iframes cargados`);
-                if (typeof updateLoadingStatus === 'function') {
-                    updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
-                }
+                logger.success(`${logPrefix} ✅ Iframes cargados`);
+                updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
                 
                 // 4. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
-                console.log(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
-                if (logSafe.success) logSafe.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
+                logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
                 
             } catch (error) {
-                console.error(`${logPrefix} ❌ Error en inicialización:`, error);
-                if (logSafe.error) logSafe.error(`${logPrefix} ❌ Error en inicialización:`, error);
+                logger.error(`${logPrefix} ❌ Error en inicialización:`, error);
+                console.error('Error en inicialización automática:', error);
             }
         })();
 
@@ -5750,6 +5791,128 @@
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando desactivación GPS:`, error);
+            }
+        });
+
+        /**
+         * Controlador: NAVEGACION.GPS.SOLICITAR_UBICACION
+         * Descripción: Responde con la ubicación actual del usuario (PULL bajo demanda)
+         * Origen esperado: cualquier hijo que necesite ubicación on-demand (ej: hijo2 botón centrar)
+         * Respuesta: GPS.UBICACION_ACTUALIZADA con {lat, lng, accuracy, timestamp}
+         * Estrategia: 
+         *   1. Si hay ubicación en caché reciente (<30s): responder inmediatamente
+         *   2. Si no hay o es antigua: obtener nueva con getCurrentPosition
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.SOLICITAR_UBICACION, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.SOLICITAR_UBICACION][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                logger.info(`${logPrefix} Solicitud de ubicación recibida de ${mensaje.origen}`);
+
+                // Verificar ubicación en caché
+                const ahora = Date.now();
+                const ultimaUbicacion = estado.gps.ultimaUbicacion;
+                const timestampUbicacion = ultimaUbicacion?.timestamp || 0;
+                const edadUbicacion = ahora - timestampUbicacion;
+                const UMBRAL_FRESCURA = 30000; // 30 segundos
+
+                let ubicacionRespuesta = null;
+
+                // Si hay ubicación reciente, usarla
+                if (ultimaUbicacion && ultimaUbicacion.lat && ultimaUbicacion.lng && edadUbicacion < UMBRAL_FRESCURA) {
+                    logger.info(`${logPrefix} Usando ubicación en caché (edad: ${Math.round(edadUbicacion/1000)}s)`);
+                    ubicacionRespuesta = {
+                        lat: ultimaUbicacion.lat,
+                        lng: ultimaUbicacion.lng,
+                        accuracy: ultimaUbicacion.accuracy || ultimaUbicacion.precision,
+                        timestamp: ultimaUbicacion.timestamp || ahora,
+                        cached: true,
+                        edadMs: edadUbicacion
+                    };
+                } else {
+                    // Obtener ubicación fresca
+                    logger.info(`${logPrefix} Obteniendo ubicación fresca (caché ${ultimaUbicacion ? 'antigua: ' + Math.round(edadUbicacion/1000) + 's' : 'no disponible'})`);
+                    
+                    try {
+                        const posicion = await new Promise((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                enableHighAccuracy: true,
+                                timeout: ajustarTimeoutPorConexion(15000),
+                                maximumAge: 0
+                            });
+                        });
+
+                        const { latitude, longitude, accuracy } = posicion.coords;
+                        
+                        // Actualizar caché
+                        estado.gps.ultimaUbicacion = {
+                            lat: latitude,
+                            lng: longitude,
+                            accuracy,
+                            timestamp: posicion.timestamp || ahora
+                        };
+
+                        ubicacionRespuesta = {
+                            lat: latitude,
+                            lng: longitude,
+                            accuracy,
+                            timestamp: posicion.timestamp || ahora,
+                            cached: false,
+                            fresh: true
+                        };
+
+                        logger.info(`${logPrefix} Ubicación fresca obtenida: [${latitude.toFixed(6)}, ${longitude.toFixed(6)}] ±${Math.round(accuracy)}m`);
+
+                    } catch (errorGPS) {
+                        logger.warn(`${logPrefix} Error obteniendo ubicación fresca:`, errorGPS);
+                        
+                        // Si falló getCurrentPosition pero hay caché antigua, usarla como fallback
+                        if (ultimaUbicacion && ultimaUbicacion.lat && ultimaUbicacion.lng) {
+                            logger.info(`${logPrefix} Fallback: usando ubicación en caché antigua (edad: ${Math.round(edadUbicacion/1000)}s)`);
+                            ubicacionRespuesta = {
+                                lat: ultimaUbicacion.lat,
+                                lng: ultimaUbicacion.lng,
+                                accuracy: ultimaUbicacion.accuracy || ultimaUbicacion.precision,
+                                timestamp: ultimaUbicacion.timestamp || ahora,
+                                cached: true,
+                                stale: true,
+                                edadMs: edadUbicacion
+                            };
+                        } else {
+                            // No hay ubicación disponible
+                            throw new Error(`GPS no disponible: ${errorGPS.message || errorGPS.code || 'Error desconocido'}`);
+                        }
+                    }
+                }
+
+                // Enviar respuesta al solicitante
+                await enviarMensajePadre({
+                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
+                    origen: getPadreId(),
+                    destino: mensaje.origen,
+                    datos: ubicacionRespuesta
+                });
+
+                logger.success(`${logPrefix} Ubicación enviada a ${mensaje.origen} (${ubicacionRespuesta.cached ? 'caché' : 'fresca'})`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando solicitud de ubicación:`, error);
+
+                // Notificar error al solicitante
+                try {
+                    await enviarMensajePadre({
+                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                        origen: getPadreId(),
+                        destino: mensaje.origen,
+                        datos: {
+                            error: error.message,
+                            contexto: 'gps_solicitar_ubicacion',
+                            mensajeOriginal: mensaje.id
+                        }
+                    });
+                } catch (notifError) {
+                    logger.error(`${logPrefix} Error notificando error:`, notifError);
+                }
             }
         });
 
