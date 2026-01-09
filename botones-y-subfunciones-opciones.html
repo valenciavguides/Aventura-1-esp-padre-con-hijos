@@ -7,12 +7,8 @@
   <script src="js/suppress-warnings.js"></script>
   <script type="module">
     import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
-    import { TIPOS_MENSAJE } from './js/constants.js';
-    import { getPadreId } from './js/utils.js';
-    import logger from './js/logger.js';
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
-    // IMPORTANTE: Definido DESPUÉS de imports para que TIPOS_MENSAJE esté disponible
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
         window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
         window.registrarControladorSeguro = function(tipo, handler, opciones) {
@@ -37,6 +33,9 @@
             }
         };
     }
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import { getPadreId } from './js/utils.js';
+    import logger from './js/logger.js';
 
     // ============================================================
     // CONFIGURACIÓN DEL COMPONENTE
@@ -635,8 +634,8 @@
                     logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado (no-op)`);
                     await enviarMensaje({
                         destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
-                        origen: CONFIG_HIJO.IFRAME_ID,
+                        tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                        origen: 'hijo1-opciones', // String literal
                         datos: { 
                             modo, 
                             exito: true, 
