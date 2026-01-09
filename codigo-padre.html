@@ -3942,24 +3942,15 @@
                         logger.error(`${logPrefix} Error propagando heartbeat control a hijos criticos:`, error);
                     }
 
-                    // ✅ GESTIÓN GPS SEGÚN MODO (PADRE COMO ORQUESTADOR)
+                    // ✅ GESTIÓN OVERLAYS GPS SEGÚN MODO (GPS ya activo desde inicio)
                     if (modo === 'aventura') {
-                        logger.info(`${logPrefix} 🗺️ Modo AVENTURA activado → Activando GPS...`);
-                        try {
-                            await activarGPS();
-                            logger.success(`${logPrefix} ✅ GPS activado correctamente para modo aventura`);
-                        } catch (gpsError) {
-                            logger.error(`${logPrefix} ❌ Error activando GPS:`, gpsError);
-                            // No fallar el cambio de modo por error GPS
-                        }
+                        logger.info(`${logPrefix} 🗺️ Modo AVENTURA → GPS activo con validación de distancias`);
+                        // GPS ya está activo desde DOMContentLoaded
+                        // hijo2 validará distancias automáticamente en este modo
                     } else if (modo === 'casa') {
-                        logger.info(`${logPrefix} 🏠 Modo CASA activado → Desactivando GPS...`);
-                        try {
-                            desactivarGPS();
-                            logger.success(`${logPrefix} ✅ GPS desactivado correctamente para modo casa`);
-                        } catch (gpsError) {
-                            logger.error(`${logPrefix} ❌ Error desactivando GPS:`, gpsError);
-                        }
+                        logger.info(`${logPrefix} 🏠 Modo CASA → GPS activo SIN validaciones (emoji 🛸)`);
+                        // GPS permanece activo, hijo2 NO valida distancias
+                        // Mostrar emoji 🛸 en vez de flecha azul
                         // Ocultar overlays GPS cuando entramos en modo CASA
                         try { hideNextEntityOverlay(); } catch (e) {}
                         try { hideGpsOutOfRangeOverlay(); } catch (e) {}
@@ -4596,12 +4587,23 @@
                 await cargarIframeSecuencial();
                 logger.success(`${logPrefix} ✅ Iframes cargados`);
                 
-                // 4. Marcar sistema como inicializado
+                // 4. 🌍 ACTIVAR GPS DESPUÉS de cargar iframes (evitar race condition)
+                logger.info(`${logPrefix} 🚀 Activando GPS desde el inicio (ambos modos)...`);
+                updateLoadingStatus('Activando GPS...', 'Solicitando permisos de ubicación');
+                try {
+                    await activarGPS();
+                    logger.success(`${logPrefix} ✅ GPS activado correctamente`);
+                } catch (gpsError) {
+                    logger.error(`${logPrefix} ❌ Error activando GPS inicial:`, gpsError);
+                    // Continuar aunque GPS falle (no es crítico para la carga)
+                }
+                
+                // 5. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
                 logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
                 
-                // 5. ✅ REMOVER OVERLAY DE CARGA - TODO LISTO
+                // 6. ✅ REMOVER OVERLAY DE CARGA - TODO LISTO
                 updateLoadingStatus('Sistema listo', '¡Iniciando aplicación!');
                 setTimeout(() => {
                     const overlay = document.getElementById('loading-overlay');
@@ -4834,7 +4836,7 @@
         
         const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = await import('./js/mensajeria.js');
         const { manejarCambioModo: manejarCambioModo_S2, actualizarInterfazModo: actualizarInterfazModo_S2, enviarCambioModo: enviarCambioModo_S2, notificarError: notificarError_S2 } = await import('./js/app.js');
-        const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
+        const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, actualizarMarcadorUsuario, limpiarMarcadorUsuario, limpiarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
 
         // ============================================================
         // USAR ESTADO GLOBAL DEL SCRIPT 1
@@ -6349,6 +6351,41 @@
         });
 
         // ============================================================
+        // CONTROLADOR 9.5: NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO
+        // Actualiza la flecha azul del usuario en el mapa (estilo Google Maps)
+        // ============================================================
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[ACTUALIZAR_MARCADOR_USUARIO]`;
+            
+            try {
+                const { lat, lng, heading, accuracy, modo } = mensaje.datos || {};
+                
+                if (lat === undefined || lng === undefined) {
+                    logger.warn(`${logPrefix} Coordenadas inválidas:`, mensaje.datos);
+                    return { exito: false, error: 'Coordenadas inválidas' };
+                }
+                
+                // Llamar a funciones-mapa para actualizar el marcador con el modo correcto
+                // modo='aventura' → flecha azul, modo='casa' → emoji 🛸
+                const modoActual = modo || 'aventura';
+                const marcador = await actualizarMarcadorUsuario(lat, lng, heading || 0, accuracy || 0, modoActual);
+                
+                if (marcador) {
+                    const icono = modoActual === 'casa' ? '🛸' : '➤';
+                    logger.debug(`${logPrefix} Marcador ${icono} actualizado en [${lat}, ${lng}] (modo: ${modoActual})`);
+                    return { exito: true };
+                } else {
+                    logger.warn(`${logPrefix} No se pudo actualizar marcador`);
+                    return { exito: false, error: 'Error actualizando marcador' };
+                }
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error actualizando marcador de usuario:`, error);
+                return { exito: false, error: error.message };
+            }
+        });
+
+        // ============================================================
         // CONTROLADOR 9.6: NAVEGACION.MOSTRAR_UBICACION_POLYLINE
         // Muestra ubicación del usuario y polyline hasta próximo destino
         // ============================================================
@@ -7832,7 +7869,10 @@
         };
         
         // Register backdrop click handler via messaging system
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            // NOTA: GPS se activa DESPUÉS de cargar iframes (ver ejecutarInicializacionAutomatica)
+            // para evitar race condition donde broadcasts llegan antes de que hijos estén listos
+            
             const backdrop = document.getElementById('backdrop');
             if (backdrop) {
                 backdrop.addEventListener('click', async function() {
