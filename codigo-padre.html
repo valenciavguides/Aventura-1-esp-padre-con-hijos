@@ -4742,6 +4742,46 @@
                 return false;
             }
         };
+
+        // ============================================================
+        // CONTROLADOR: NAVEGACION.SOLICITAR_DATOS_PARADAS (SCRIPT 1)
+        // ============================================================
+        // Movido a Script 1 para evitar warning "Mensaje no reconocido"
+        // cuando hijo5-casa envía el mensaje antes de que Script 2 cargue
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                logger.info(`${logPrefix} Solicitud de datos de paradas recibida`);
+
+                // Validar que AVENTURA_PARADAS existe
+                if (!window.AVENTURA_PARADAS || !Array.isArray(window.AVENTURA_PARADAS)) {
+                    throw new Error('AVENTURA_PARADAS no disponible o inválido');
+                }
+
+                // Enviar respuesta con datos completos (normalizados usando función de Script 1)
+                try {
+                    const paradasNormalizadas = normalizarParadas_S1(window.AVENTURA_PARADAS || []);
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS,
+                        origen: getPadreId(),
+                        datos: {
+                            paradas: paradasNormalizadas,
+                            timestamp: Date.now()
+                        }
+                    });
+                } catch (errSend) {
+                    logger.error(`${logPrefix} Error normalizando/enviando paradas:`, errSend);
+                    throw errSend;
+                }
+
+                logger.info(`${logPrefix} Datos de paradas enviados exitosamente a ${mensaje.origen}`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error enviando datos de paradas:`, error);
+            }
+        });
     </script>
 
     <script>
@@ -5628,46 +5668,8 @@
             }
         });
 
-        // ============================================================
-        // CONTROLADOR: NAVEGACION.SOLICITAR_DATOS_PARADAS
-        // ============================================================
-        // Propósito: Proporcionar datos de paradas a funciones-mapa para inicialización
-        // Origen esperado: hijo2 (funciones-mapa)
-        // Respuesta: NAVEGACION.RESPUESTA_DATOS_PARADAS con AVENTURA_PARADAS
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
-            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                logger.info(`${logPrefix} Solicitud de datos de paradas recibida`);
-
-                // Validar que AVENTURA_PARADAS existe
-                if (!window.AVENTURA_PARADAS || !Array.isArray(window.AVENTURA_PARADAS)) {
-                    throw new Error('AVENTURA_PARADAS no disponible o inválido');
-                }
-
-                // Enviar respuesta con datos completos (normalizados)
-                try {
-                    const paradasNormalizadas = normalizarParadas_S2(window.AVENTURA_PARADAS || []);
-                    await enviarMensajePadre({
-                        destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.NAVEGACION.RESPUESTA_DATOS_PARADAS,
-                        origen: getPadreId(),
-                        datos: {
-                            paradas: paradasNormalizadas,
-                            timestamp: Date.now()
-                        }
-                    });
-                } catch (errSend) {
-                    logger.error(`${logPrefix} Error normalizando/enviando paradas:`, errSend);
-                    throw errSend;
-                }
-
-                logger.info(`${logPrefix} Datos de paradas enviados exitosamente a ${mensaje.origen}`);
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error enviando datos de paradas:`, error);
-            }
-        });
+        // CONTROLADOR SOLICITAR_DATOS_PARADAS movido a Script 1
+        // para evitar warning cuando hijo5-casa envía mensaje temprano
 
         // ============================================================
         // CONFIRMAR A HIJOS QUE CONTROLADORES ESTÁN LISTOS
