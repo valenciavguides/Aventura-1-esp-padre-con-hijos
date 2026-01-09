@@ -4592,12 +4592,40 @@
                 updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
                 await cargarIframeSecuencial();
                 logger.success(`${logPrefix} ✅ Iframes cargados`);
-                updateLoadingStatus('Componentes cargados', 'Esperando controladores avanzados...');
                 
                 // 4. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
                 logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
+                
+                // 5. ✅ REMOVER OVERLAY DE CARGA - TODO LISTO
+                updateLoadingStatus('Sistema listo', '¡Iniciando aplicación!');
+                setTimeout(() => {
+                    const overlay = document.getElementById('loading-overlay');
+                    const body = document.body;
+                    
+                    if (overlay) {
+                        overlay.style.transition = 'opacity 0.5s';
+                        overlay.style.opacity = '0';
+                        setTimeout(() => {
+                            overlay.remove();
+                            logger.info(`${logPrefix} 🎉 Overlay de carga removido`);
+                        }, 500);
+                    }
+                    
+                    if (body) {
+                        body.classList.remove('loading');
+                        logger.info(`${logPrefix} 🎉 UI VISIBLE - Sistema completamente inicializado`);
+                    }
+                    
+                    // Registrar evento de sistema listo
+                    if (typeof window.registrarEvento === 'function') {
+                        window.registrarEvento('SISTEMA_LISTO', {
+                            timestamp: Date.now(),
+                            iframesCargados: window.estadoPadre?.hijosListos?.length || 0
+                        }, 'info');
+                    }
+                }, 300);
                 
             } catch (error) {
                 logger.error(`${logPrefix} ❌ Error en inicialización:`, error);
@@ -7632,9 +7660,9 @@
         // SINCRONIZACIÓN SCRIPT 2 - MARCAR COMO LISTO Y PROCESAR COLA
         // ===================================================================
         
-        // ⏰ TIMEOUT DE SEGURIDAD: Forzar cierre del overlay si tarda más de 20 segundos
+        // ⏰ TIMEOUT DE SEGURIDAD: Forzar cierre del overlay si tarda más de 25 segundos
         const timeoutSeguridad = setTimeout(() => {
-            logger.warn('[TIMEOUT] Forzando cierre del overlay después de 20 segundos');
+            logger.warn('[TIMEOUT] Forzando cierre del overlay después de 25 segundos');
             const overlay = document.getElementById('loading-overlay');
             const body = document.body;
             if (overlay) {
@@ -7643,13 +7671,12 @@
                 setTimeout(() => overlay.remove(), 500);
             }
             if (body) body.classList.remove('loading');
-        }, 20000); // Aumentado a 20 segundos para dar más tiempo en primera carga
+        }, 25000); // 25 segundos como timeout de emergencia
         
         (async () => {
             try {
                 const logPrefix = '[SCRIPT2][SINCRONIZACIÓN]';
                 logger.info(`${logPrefix} Iniciando marcado como listo...`);
-                updateLoadingStatus('Finalizando inicialización...', 'Procesando mensajes pendientes');
                 
                 // Importar función de marcado desde mensajeria.js
                 const { marcarScript2Listo } = await import('./js/mensajeria.js');
@@ -7659,40 +7686,11 @@
                 
                 logger.info(`${logPrefix} Script 2 marcado como LISTO`, resultado);
                 
-                // Esperar un frame para que se procesen todos los mensajes
-                await new Promise(resolve => requestAnimationFrame(resolve));
-                
-                // ✅ CANCELAR TIMEOUT DE SEGURIDAD (inicialización exitosa)
+                // ✅ CANCELAR TIMEOUT DE SEGURIDAD (inicialización está progresando correctamente)
                 clearTimeout(timeoutSeguridad);
                 
-                // ✅ TODO LISTO: Ocultar indicador de carga y mostrar UI
-                setTimeout(() => {
-                    const overlay = document.getElementById('loading-overlay');
-                    const body = document.body;
-                    
-                    if (overlay) {
-                        overlay.style.transition = 'opacity 0.5s';
-                        overlay.style.opacity = '0';
-                        setTimeout(() => {
-                            overlay.remove();
-                            logger.info(`${logPrefix} 🎉 Overlay de carga removido`);
-                        }, 500);
-                    }
-                    
-                    if (body) {
-                        body.classList.remove('loading');
-                        logger.info(`${logPrefix} 🎉 UI VISIBLE - Sistema completamente inicializado`);
-                    }
-                    
-                    // Registrar evento de inicialización completa
-                    if (typeof window.registrarEvento === 'function') {
-                        window.registrarEvento('SISTEMA_LISTO', {
-                            mensajesProcesados: resultado.procesados || 0,
-                            mensajesFallidos: resultado.fallidos || 0,
-                            timestamp: Date.now()
-                        }, 'info');
-                    }
-                }, 500); // Delay para asegurar que se completen los últimos mensajes
+                // ℹ️ NOTA: El overlay se removerá DESPUÉS de cargar todos los iframes
+                // (ver waitForLeafletAndInitialize() donde se llama a cargarIframeSecuencial())
                 
             } catch (error) {
                 logger.error('[SCRIPT2][SINCRONIZACIÓN] Error marcando Script 2 como listo:', error);
