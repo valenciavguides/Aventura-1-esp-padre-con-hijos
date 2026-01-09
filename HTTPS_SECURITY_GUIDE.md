@@ -20,9 +20,7 @@ Added HSTS meta tag to all HTML files:
 Added automatic redirect from HTTP to HTTPS for valenciavguides.es:
 ```javascript
 if (window.location.protocol !== 'https:' && 
-    window.location.hostname === 'valenciavguides.es' &&
-    !window.location.hostname.includes('localhost') &&
-    !window.location.hostname.includes('127.0.0.1')) {
+    window.location.hostname === 'valenciavguides.es') {
     window.location.href = 'https://' + window.location.hostname + 
                            window.location.pathname + 
                            window.location.search + 
@@ -34,7 +32,7 @@ if (window.location.protocol !== 'https:' &&
 - Automatically redirects HTTP requests to HTTPS
 - Only applies to the production domain (valenciavguides.es)
 - Preserves all URL parameters and hash fragments
-- Excludes localhost for development purposes
+- Does not affect localhost or other development domains
 
 ### 3. Content Security Policy (CSP)
 Existing CSP header retained and working in conjunction with HSTS:

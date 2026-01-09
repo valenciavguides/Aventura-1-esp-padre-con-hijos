@@ -54,7 +54,8 @@ echo ""
 
 # Test 4: Check for mixed content (basic check)
 echo "Test 4: Checking for potential mixed content..."
-MIXED_CONTENT=$(curl -s "${URL_HTTPS}" | grep -o 'http://[^"'\'' ]*' | grep -v "localhost" | grep -v "127.0.0.1" | grep -v "xmlns" | grep -v "data:image")
+# Using grep with simpler quoting for better readability
+MIXED_CONTENT=$(curl -s "${URL_HTTPS}" | grep -o "http://[^\"\' ]*" | grep -v "localhost" | grep -v "127.0.0.1" | grep -v "xmlns" | grep -v "data:image")
 if [ -z "$MIXED_CONTENT" ]; then
     echo -e "${GREEN}✓ PASS${NC}: No obvious HTTP resources found in HTML"
 else
