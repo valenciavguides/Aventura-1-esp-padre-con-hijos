@@ -2526,7 +2526,7 @@ export async function diagnosticarGPS() {
             const posicion = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
-                    timeout: ajustarTimeoutPorConexion(5000),
+                    timeout: ajustarTimeoutPorConexion(15000), // Aumentado de 5s a 15s base para primera carga
                     maximumAge: 0
                 });
             });
@@ -4327,7 +4327,7 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL, async (mensaje)
                 },
                 {
                     enableHighAccuracy: true,
-                    timeout: ajustarTimeoutPorConexion(10000),
+                    timeout: ajustarTimeoutPorConexion(15000), // Timeout dinámico
                     maximumAge: 0
                 }
             );
