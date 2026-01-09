@@ -1707,16 +1707,8 @@ elementosDOM.btnMapaJpg?.addEventListener('click', async () => {
 
 // ==================== CONTROLADORES DE MENSAJES ====================
 
-
-// Controlador para actualización de distancia GPS
-registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, (mensaje) => {
-    const { distancia, idParada, tipoParada } = mensaje.datos;
-    estadoComponente.distanciaAlDestino = distancia;
-    estadoComponente.idParadaActual = idParada;
-    estadoComponente.tipoParadaActual = tipoParada;
-    actualizarEstadoBotones();
-    logger.debug(`[hijo2] Distancia actualizada: ${distancia?.toFixed(1) || 'desconocida'}m`);
-});
+// ACTUALIZAR_POSICION eliminado - tipo de mensaje obsoleto (legacy code)
+// Ahora se usa ACTUALIZAR_ESTADO que incluye distancia y otros datos
 
 // 📡 Controlador para actualización de estado GPS (enviado por funciones-mapa.js)
 registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO, (mensaje) => {
