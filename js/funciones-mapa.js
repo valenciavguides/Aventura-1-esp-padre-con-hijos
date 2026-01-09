@@ -3379,7 +3379,7 @@ export function registrarManejadoresMensajes() {
         
         // Registrar manejadores de mensajes con manejo de errores
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.ESTABLECER_DESTINO, manejarEstablecerDestino);
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_POSICION, manejarActualizarPosicion);
+        // ACTUALIZAR_POSICION eliminado - tipo de mensaje obsoleto (legacy code)
         registrarControlador(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, manejarCambioModoMapa);
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_RUTA, manejarMostrarRuta);
         
