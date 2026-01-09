@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
     <meta http-equiv="refresh" content="0; url=codigo-padre.html">
     <title>Valencia VGuides - Redirigiendo...</title>
     <style>
@@ -48,9 +49,12 @@
         <p><small>Si no eres redirigido automáticamente, <a href="codigo-padre.html">haz clic aquí</a>.</small></p>
     </div>
     <script>
-        // Ensure we're using HTTPS
-        if (window.location.protocol === 'http:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            window.location.href = 'https://' + window.location.host + window.location.pathname + window.location.search;
+        // Force HTTPS redirect for valenciavguides.es
+        if (window.location.protocol !== 'https:' && 
+            window.location.hostname === 'valenciavguides.es' &&
+            !window.location.hostname.includes('localhost') &&
+            !window.location.hostname.includes('127.0.0.1')) {
+            window.location.href = 'https://' + window.location.hostname + window.location.pathname + window.location.search + window.location.hash;
         } else {
             // Redirect to codigo-padre.html if meta refresh doesn't work
             setTimeout(function() {
