@@ -3267,9 +3267,8 @@ async function manejarCambioModoMapa(mensaje) {
         // Si cambia a AVENTURA, iniciar GPS para detección secuencial
         if (modo === MODOS.AVENTURA) {
             await iniciarGPSAventura();
-        } else if (modo === MODOS.CASA) {
-            detenerGPS();
         }
+        // En modo CASA, el GPS permanece activo pero sin validaciones de distancia
 
         // Aplicar cambios según el modo usando la lógica existente de limpiarPorEstado
         const limpiado = await limpiarPorEstado({ modo });
@@ -4273,6 +4272,12 @@ export function dibujarPolylineNavegacion(opciones = {}) {
             polylineNavegacion = null;
         }
         
+        // Limpiar marcador de destino anterior si existe
+        if (marcadorDestinoNavegacion) {
+            _mapaInstance.removeLayer(marcadorDestinoNavegacion);
+            marcadorDestinoNavegacion = null;
+        }
+        
         // Crear nueva polyline
         polylineNavegacion = L.polyline([[origen.lat, origen.lng], [destino.lat, destino.lng]], {
             color: color,
@@ -4280,7 +4285,19 @@ export function dibujarPolylineNavegacion(opciones = {}) {
             opacity: 0.7
         }).addTo(_mapaInstance);
         
-        logger.debug(`Polyline de navegación dibujada desde [${origen.lat}, ${origen.lng}] hasta [${destino.lat}, ${destino.lng}]`);
+        // Crear marcador de destino con emoji 🎯
+        marcadorDestinoNavegacion = L.marker([destino.lat, destino.lng], {
+            icon: L.divIcon({
+                className: 'marcador-destino-navegacion',
+                html: `<div style="font-size:32px;text-align:center;line-height:32px;text-shadow:0 2px 4px rgba(0,0,0,0.3);">🎯</div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            }),
+            title: 'Tu destino',
+            zIndexOffset: 500
+        }).addTo(_mapaInstance);
+        
+        logger.debug(`Polyline de navegación dibujada desde [${origen.lat}, ${origen.lng}] hasta [${destino.lat}, ${destino.lng}] con marcador 🎯`);
         return polylineNavegacion;
     } catch (error) {
         logger.error('Error dibujando polyline de navegación:', error);
@@ -4288,8 +4305,125 @@ export function dibujarPolylineNavegacion(opciones = {}) {
     }
 }
 
-// Variable para la polyline de navegación
+// Variables para la polyline y marcador de navegación
 let polylineNavegacion = null;
+let marcadorDestinoNavegacion = null;
+let marcadorUsuarioGPS = null; // Marcador del usuario con flecha azul
+
+/**
+ * Actualiza o crea el marcador del usuario en el mapa
+ * @param {number} lat - Latitud del usuario
+ * @param {number} lng - Longitud del usuario
+ * @param {number} heading - Dirección en grados (0-360, donde 0=Norte)
+ * @param {number} accuracy - Precisión del GPS en metros
+ * @param {string} modo - 'aventura' (flecha azul) o 'casa' (emoji 🛸)
+ */
+export function actualizarMarcadorUsuario(lat, lng, heading = 0, accuracy = 0, modo = 'aventura') {
+    if (!_mapaInstance) {
+        logger.warn('actualizarMarcadorUsuario: Mapa no inicializado');
+        return null;
+    }
+    
+    try {
+        // Limpiar marcador anterior si existe
+        if (marcadorUsuarioGPS) {
+            _mapaInstance.removeLayer(marcadorUsuarioGPS);
+            marcadorUsuarioGPS = null;
+        }
+        
+        // Crear icono según el modo
+        let iconHtml;
+        if (modo === 'casa') {
+            // Modo CASA: Emoji 🛸 grande (60x60px)
+            iconHtml = `<div style="width:60px;height:60px;position:relative;display:flex;align-items:center;justify-content:center;">
+                <!-- Emoji ovni grande -->
+                <div style="font-size:54px;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.3));">
+                    🛸
+                </div>
+                <!-- Pulso sutil alrededor -->
+                <div style="position:absolute;top:50%;left:50%;width:100%;height:100%;border-radius:50%;background:rgba(100,200,255,0.2);transform:translate(-50%,-50%);animation:gpsPulse 2s infinite;"></div>
+            </div>`;
+        } else {
+            // Modo AVENTURA: Flecha azul estilo Google Maps (40x40px)
+            const rotation = heading || 0;
+            iconHtml = `<div style="width:40px;height:40px;position:relative;">
+                <!-- Flecha principal estilo Google Maps -->
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(${rotation}deg);transition:transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);">
+                    <!-- Sombra de la flecha -->
+                    <div style="position:absolute;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-bottom:30px solid rgba(0,0,0,0.2);filter:blur(3px);transform:translate(2px,2px);"></div>
+                    <!-- Borde blanco de la flecha -->
+                    <div style="position:absolute;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:32px solid white;"></div>
+                    <!-- Flecha azul principal (Google Maps style) -->
+                    <div style="position:absolute;width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-bottom:28px solid #4285F4;transform:translate(1px,2px);"></div>
+                </div>
+                <!-- Punto central azul con pulso -->
+                <div style="position:absolute;top:50%;left:50%;width:14px;height:14px;background:#4285F4;border:3px solid white;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(66,133,244,0.8), 0 0 0 0 rgba(66,133,244,0.4);animation:gpsPulse 2s infinite;"></div>
+            </div>`;
+        }
+        
+        marcadorUsuarioGPS = L.marker([lat, lng], {
+            icon: L.divIcon({
+                className: modo === 'casa' ? 'marcador-usuario-gps-ovni' : 'marcador-usuario-gps-flecha',
+                html: iconHtml + `
+                <style>
+                    @keyframes gpsPulse {
+                        0%, 100% { box-shadow: 0 0 12px rgba(66,133,244,0.8), 0 0 0 0 rgba(66,133,244,0.4); }
+                        50% { box-shadow: 0 0 12px rgba(66,133,244,0.8), 0 0 0 8px rgba(66,133,244,0); }
+                    }
+                </style>`,
+                iconSize: modo === 'casa' ? [60, 60] : [40, 40],
+                iconAnchor: modo === 'casa' ? [30, 30] : [20, 20]
+            }),
+            title: modo === 'casa' 
+                ? `🛸 Tu ubicación ±${Math.round(accuracy)}m` 
+                : `Tu ubicación ±${Math.round(accuracy)}m (${Math.round(heading || 0)}°)`,
+            zIndexOffset: 1000
+        }).addTo(_mapaInstance);
+        
+        const iconoLog = modo === 'casa' ? '🛸' : '➤';
+        logger.debug(`Marcador ${iconoLog} actualizado en [${lat}, ${lng}] (modo: ${modo}, heading: ${Math.round(heading || 0)}°)`);
+        return marcadorUsuarioGPS;
+    } catch (error) {
+        logger.error('Error actualizando marcador de usuario:', error);
+        return null;
+    }
+}
+
+/**
+ * Elimina el marcador del usuario del mapa
+ */
+export function limpiarMarcadorUsuario() {
+    if (_mapaInstance && marcadorUsuarioGPS) {
+        try {
+            _mapaInstance.removeLayer(marcadorUsuarioGPS);
+            marcadorUsuarioGPS = null;
+            logger.debug('Marcador de usuario eliminado');
+        } catch (error) {
+            logger.error('Error eliminando marcador de usuario:', error);
+        }
+    }
+}
+
+/**
+ * Elimina la polyline y marcador de destino del mapa
+ */
+export function limpiarPolylineNavegacion() {
+    if (!_mapaInstance) return;
+    
+    try {
+        if (polylineNavegacion) {
+            _mapaInstance.removeLayer(polylineNavegacion);
+            polylineNavegacion = null;
+        }
+        if (marcadorDestinoNavegacion) {
+            _mapaInstance.removeLayer(marcadorDestinoNavegacion);
+            marcadorDestinoNavegacion = null;
+        }
+        logger.debug('Polyline y marcador de destino eliminados');
+    } catch (error) {
+        logger.error('Error limpiando polyline de navegación:', error);
+    }
+}
 
 // Controlador para estado global GPS
 registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL, async (mensaje) => {
