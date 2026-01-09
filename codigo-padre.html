@@ -13,8 +13,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload" />
     <meta http-equiv="Permissions-Policy" content="geolocation=*" />
     <title>Aventura 1 - Padre</title>
+    
+    <!-- Force HTTPS redirect for valenciavguides.es -->
+    <script>
+        (function() {
+            // Only enforce HTTPS on production domain (not on localhost or other test domains)
+            if (window.location.protocol !== 'https:' && 
+                window.location.hostname === 'valenciavguides.es') {
+                window.location.href = 'https://' + window.location.hostname + window.location.pathname + window.location.search + window.location.hash;
+            }
+        })();
+    </script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🗺️%3C/text%3E%3C/svg%3E">
 
     <!-- Carga de Leaflet desde CDN -->
