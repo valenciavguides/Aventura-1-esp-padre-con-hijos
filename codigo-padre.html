@@ -787,7 +787,7 @@
             }
         }
         
-        /* Mensaje de rotación para móviles */
+        /* Mensaje de rotación SOLO para teléfonos móviles (NO tablets ni PCs) */
         .rotation-message {
             display: none;
             position: fixed;
@@ -795,38 +795,33 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            color: white;
+            background: rgba(0, 0, 0, 0.95);
             z-index: 9999;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
-            text-align: center;
-            padding: 20px;
         }
         
         .rotation-message.show {
             display: flex;
         }
         
-        .rotation-message .icon {
-            font-size: 48px;
-            margin-bottom: 20px;
+        .rotation-message .rotation-icon {
+            max-width: 80%;
+            max-height: 80%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
         }
         
-        /* Ocultar mensaje en portrait */
+        /* Ocultar siempre en portrait */
         @media (orientation: portrait) {
             .rotation-message {
                 display: none !important;
             }
         }
         
-        /* Mostrar mensaje en landscape en teléfonos móviles */
-        @media (orientation: landscape) and (max-height: 500px) and (max-width: 1024px) {
-            .rotation-message {
-                display: flex !important;
-            }
-        }
+        /* NOTA: La visibilidad real se controla por JavaScript usando esTelefonoMovil() */
+        /* CSS solo aplica regla base - JS decide si es teléfono móvil real o no */
         
         /* Responsive para tablets */
         @media (min-width: 768px) and (max-width: 1024px) {
@@ -1621,10 +1616,7 @@
 
     <!-- Mensaje de rotación para teléfonos móviles -->
     <div id="rotation-message" class="rotation-message">
-        <div class="rotation-inner">
-            <div class="icon">📱</div>
-            <p>Por favor, rota tu dispositivo a vertical para una mejor experiencia.</p>
-        </div>
+        <img src="fotos-botones/movil-vertical.png" alt="Rotar dispositivo a vertical" class="rotation-icon">
     </div>
 
     <!-- Contenedores de la UI -->
@@ -2123,11 +2115,10 @@
             // Importar la función de detección
             import('./js/device-detection.js').then(({ esTelefonoMovil }) => {
                 const isLandscape = window.innerHeight < window.innerWidth;
-                const isSmallHeight = window.innerHeight < 500;
-                const isMobileWidth = window.innerWidth <= 1024;
                 
-                // Mostrar solo en teléfonos móviles en landscape con altura pequeña
-                if (esTelefonoMovil() && isLandscape && isSmallHeight && isMobileWidth) {
+                // Mostrar SOLO si es teléfono móvil real (NO tablet, NO PC) Y está en landscape
+                // Independientemente del tamaño de pantalla
+                if (esTelefonoMovil() && isLandscape) {
                     rotationMessage.classList.add('show');
                 } else {
                     rotationMessage.classList.remove('show');
