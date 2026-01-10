@@ -1863,28 +1863,8 @@
         });
 
         // ============================================================
-        // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+        // HANDLERS GPS
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
-            try {
-                console.debug(`[hijo3][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-                return { exito: true };
-            } catch (e) {
-                console.error('[hijo3][GPS.ACTIVAR] Error en handler no-op:', e);
-                return { exito: false, error: e.message };
-            }
-        });
-
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
-            try {
-                console.debug(`[hijo3][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-                return { exito: true };
-            } catch (e) {
-                console.error('[hijo3][GPS.DESACTIVAR] Error en handler no-op:', e);
-                return { exito: false, error: e.message };
-            }
-        });
-
         registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
             try {
                 console.debug(`[hijo3][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
