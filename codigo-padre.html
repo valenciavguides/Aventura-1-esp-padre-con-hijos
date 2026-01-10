@@ -2854,11 +2854,30 @@
                     logger.debug(`${logPrefix} getCurrentPosition iniciales fallaron:`, e);
                 }
 
+                // ✅ DIAGNÓSTICO GPS: Historial de posiciones para análisis
+                if (!window._gpsHistorial) {
+                    window._gpsHistorial = [];
+                    window._gpsActivadoEn = Date.now();
+                }
+
                 // Iniciar watchPosition
                 est.gps.watchId = navigator.geolocation.watchPosition(
                     // Success callback
                     (position) => {
                         const { latitude: lat, longitude: lng, accuracy } = position.coords;
+
+                        // Guardar en historial para diagnóstico
+                        window._gpsHistorial.push({
+                            lat,
+                            lng,
+                            accuracy,
+                            timestamp: position.timestamp,
+                            recibidoEn: Date.now(),
+                            heading: position.coords.heading,
+                            speed: position.coords.speed
+                        });
+                        // Mantener solo las últimas 20 posiciones
+                        if (window._gpsHistorial.length > 20) window._gpsHistorial.shift();
 
                         // ✅ CORRECCIÓN CRÍTICA: Filtro de precisión reducido de 100m a 50m
                         // Solo actualizar si precisión < 50m para evitar mostrar posiciones inexactas
@@ -3177,6 +3196,114 @@
                 // Sincronizar estado local con global
                 window.estadoPadre = window.estadoPadre || {};
                 window.estadoPadre.gps = est.gps;
+
+                // ✅ FUNCIÓN DE DIAGNÓSTICO GPS: Exponer en window para uso desde consola
+                window.diagnosticarGPS = function() {
+                    console.clear();
+                    console.log('%c╔══════════════════════════════════════════════════════════════╗', 'color: #00ff00; font-weight: bold');
+                    console.log('%c║         🛰️  DIAGNÓSTICO GPS - Valencia Guides              ║', 'color: #00ff00; font-weight: bold');
+                    console.log('%c╚══════════════════════════════════════════════════════════════╝', 'color: #00ff00; font-weight: bold');
+                    console.log('');
+
+                    // Estado actual
+                    const ahora = Date.now();
+                    const tiempoActivo = window._gpsActivadoEn ? Math.round((ahora - window._gpsActivadoEn) / 1000) : 0;
+                    console.log('%c📊 ESTADO ACTUAL:', 'color: #ffaa00; font-weight: bold');
+                    console.log(`   GPS Activo: ${tiempoActivo}s (${Math.floor(tiempoActivo / 60)}m ${tiempoActivo % 60}s)`);
+                    console.log(`   WatchID: ${est.gps.watchId || 'N/A'}`);
+                    console.log(`   Permisos: ${est.gps.permisos ? '✅ Concedidos' : '❌ Denegados'}`);
+                    console.log('');
+
+                    // Posición actual
+                    if (est.gps.posicionUsuario) {
+                        const pos = est.gps.posicionUsuario;
+                        const edad = pos.timestamp ? Math.round((ahora - pos.timestamp) / 1000) : '?';
+                        const fuente = pos.accuracy < 20 ? '🛰️ GPS Satelital' :
+                                      pos.accuracy < 50 ? '📡 GPS (buena señal)' :
+                                      pos.accuracy < 100 ? '📶 Cell/WiFi (precisión media)' :
+                                      '📶 Cell/WiFi (baja precisión)';
+                        const calidad = pos.accuracy < 20 ? '🟢 EXCELENTE' :
+                                       pos.accuracy < 50 ? '🟡 BUENA' :
+                                       pos.accuracy < 100 ? '🟠 MEDIA' :
+                                       '🔴 BAJA';
+
+                        console.log('%c📍 POSICIÓN ACTUAL:', 'color: #00aaff; font-weight: bold');
+                        console.log(`   Coordenadas: [${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}]`);
+                        console.log(`   Precisión: ±${Math.round(pos.accuracy)}m ${calidad}`);
+                        console.log(`   Fuente estimada: ${fuente}`);
+                        console.log(`   Edad: ${edad}s`);
+                        console.log(`   Timestamp: ${new Date(pos.timestamp).toLocaleTimeString()}`);
+                    } else {
+                        console.log('%c📍 POSICIÓN ACTUAL: ❌ No disponible', 'color: #ff0000; font-weight: bold');
+                    }
+                    console.log('');
+
+                    // Historial
+                    if (window._gpsHistorial && window._gpsHistorial.length > 0) {
+                        console.log('%c📜 HISTORIAL (últimas posiciones):', 'color: #aa00ff; font-weight: bold');
+                        
+                        // Estadísticas
+                        const precisionMedia = window._gpsHistorial.reduce((sum, p) => sum + p.accuracy, 0) / window._gpsHistorial.length;
+                        const precisionMin = Math.min(...window._gpsHistorial.map(p => p.accuracy));
+                        const precisionMax = Math.max(...window._gpsHistorial.map(p => p.accuracy));
+                        const aceptadas = window._gpsHistorial.filter(p => p.accuracy <= 50).length;
+                        const rechazadas = window._gpsHistorial.filter(p => p.accuracy > 50).length;
+
+                        console.log(`   Total recibidas: ${window._gpsHistorial.length}`);
+                        console.log(`   Aceptadas (<50m): ${aceptadas} (${Math.round(aceptadas * 100 / window._gpsHistorial.length)}%)`);
+                        console.log(`   Rechazadas (>50m): ${rechazadas} (${Math.round(rechazadas * 100 / window._gpsHistorial.length)}%)`);
+                        console.log(`   Precisión promedio: ±${Math.round(precisionMedia)}m`);
+                        console.log(`   Mejor precisión: ±${Math.round(precisionMin)}m`);
+                        console.log(`   Peor precisión: ±${Math.round(precisionMax)}m`);
+                        console.log('');
+
+                        // Tendencia (últimas 5 posiciones)
+                        const ultimas5 = window._gpsHistorial.slice(-5);
+                        const tendencia = ultimas5.map((p, i) => {
+                            const fuente = p.accuracy < 20 ? 'GPS🛰️' :
+                                          p.accuracy < 50 ? 'GPS📡' :
+                                          p.accuracy < 100 ? 'Cell📶' : 'WiFi📶';
+                            const estado = p.accuracy <= 50 ? '✅' : '❌';
+                            const tiempo = new Date(p.timestamp).toLocaleTimeString();
+                            return `   ${i + 1}. ${estado} ±${Math.round(p.accuracy).toString().padStart(6)}m [${fuente}] - ${tiempo}`;
+                        });
+                        console.log('%c🔄 TENDENCIA (últimas 5):', 'color: #ff00ff; font-weight: bold');
+                        tendencia.forEach(t => console.log(t));
+                        console.log('');
+
+                        // Análisis de mejora
+                        if (ultimas5.length >= 2) {
+                            const primera = ultimas5[0].accuracy;
+                            const ultima = ultimas5[ultimas5.length - 1].accuracy;
+                            const mejora = primera - ultima;
+                            if (mejora > 0) {
+                                console.log(`%c✅ MEJORANDO: Precisión mejoró ${Math.round(mejora)}m en últimas ${ultimas5.length} lecturas`, 'color: #00ff00; font-weight: bold');
+                            } else if (mejora < 0) {
+                                console.log(`%c⚠️ EMPEORANDO: Precisión empeoró ${Math.round(-mejora)}m en últimas ${ultimas5.length} lecturas`, 'color: #ff6600; font-weight: bold');
+                            } else {
+                                console.log(`%c➡️ ESTABLE: Precisión sin cambios significativos`, 'color: #ffaa00; font-weight: bold');
+                            }
+                        }
+                    } else {
+                        console.log('%c📜 HISTORIAL: ❌ Sin datos', 'color: #ff0000; font-weight: bold');
+                    }
+                    console.log('');
+
+                    // Recomendaciones
+                    if (est.gps.posicionUsuario && est.gps.posicionUsuario.accuracy > 50) {
+                        console.log('%c💡 RECOMENDACIONES:', 'color: #ffff00; font-weight: bold');
+                        console.log('   • Espera 30-60 segundos para lock satelital GPS');
+                        console.log('   • Asegúrate de estar en exterior o cerca de ventana');
+                        console.log('   • El GPS necesita "ver el cielo" para precisión <50m');
+                        console.log('   • Las primeras posiciones suelen ser WiFi/Cell (imprecisas)');
+                    } else if (est.gps.posicionUsuario && est.gps.posicionUsuario.accuracy <= 50) {
+                        console.log('%c✅ GPS FUNCIONANDO CORRECTAMENTE', 'color: #00ff00; font-weight: bold');
+                        console.log('   Lock satelital conseguido - precisión aceptable');
+                    }
+                    console.log('');
+                    console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color: #00ff00');
+                    console.log('%cLlama diagnosticarGPS() de nuevo para actualizar el estado', 'color: #888888; font-style: italic');
+                };
 
                 return true;
 
