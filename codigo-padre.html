@@ -529,6 +529,146 @@
         }
 
         #gps-error-action:active { transform: scale(0.98); }
+
+        /* Overlay para GPS restringido por distancia - Visual sin texto */
+        #gps-restricted-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1000045;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.24s ease-in-out;
+        }
+
+        #gps-restricted-overlay.show {
+            display: flex;
+            opacity: 1;
+            animation: fadeInMedia 0.4s ease-out;
+        }
+
+        #gps-restricted-overlay .restricted-inner {
+            position: relative;
+            width: 320px;
+            max-width: 90vw;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        #gps-restricted-overlay .btn-cerrar-overlay {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 36px;
+            height: 36px;
+            background: #ff8c00;
+            border: 2px solid #ff0000;
+            border-radius: 50%;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            z-index: 1000070;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        #gps-restricted-overlay .btn-cerrar-overlay:hover {
+            background: #ff6600;
+            transform: scale(1.1);
+        }
+
+        #gps-restricted-overlay .restricted-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        #gps-restricted-overlay .emoji-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 36px;
+        }
+
+        #gps-restricted-overlay .distance-row {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        #gps-restricted-overlay .distance-current {
+            color: #ff4444;
+            font-size: 32px;
+        }
+
+        #gps-restricted-overlay .distance-max {
+            color: #00aa00;
+            font-size: 32px;
+        }
+
+        #gps-restricted-overlay .distance-unit {
+            font-size: 18px;
+            color: #666;
+        }
+
+        #gps-restricted-overlay .distance-separator {
+            font-size: 24px;
+            color: #999;
+            margin: 0 4px;
+        }
+
+        #gps-restricted-overlay .progress-container {
+            width: 100%;
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #gps-restricted-overlay .progress-fill {
+            height: 100%;
+            background: #ff4444;
+            transition: width 0.5s ease, background 0.3s ease;
+            border-radius: 12px 0 0 12px;
+        }
+
+        #gps-restricted-overlay .emoji-status {
+            font-size: 48px;
+        }
+
+        @media (max-width: 600px) {
+            #gps-restricted-overlay .restricted-inner {
+                width: 280px;
+                padding: 20px;
+            }
+            #gps-restricted-overlay .emoji-row {
+                font-size: 32px;
+            }
+            #gps-restricted-overlay .distance-row {
+                font-size: 24px;
+            }
+            #gps-restricted-overlay .distance-current,
+            #gps-restricted-overlay .distance-max {
+                font-size: 28px;
+            }
+        }
     
         /* Corregir estilos para asegurar visibilidad de los iframes */
         #hijo3 {
@@ -1781,49 +1921,8 @@
                                     if (ok === true) {
                                         console.log('Map initialized successfully');
                                         
-                                        // Initialize GPS after map is ready (non-blocking)
-                                        if (navigator.geolocation) {
-                                            function initGPS(retryCount = 0) {
-                                                const maxRetries = 3;
-                                                const timeout = 60000; // 60 seconds
-                                                
-                                                navigator.geolocation.watchPosition(
-                                                    function success(pos) {
-                                                        window.__ultimaPosicionGPS = pos;
-                                                        console.log('[GPS] Posición recibida:', {
-                                                            lat: pos.coords.latitude,
-                                                            lng: pos.coords.longitude,
-                                                            accuracy: pos.coords.accuracy,
-                                                            timestamp: pos.timestamp
-                                                        });
-                                                    },
-                                                    function error(err) {
-                                                        console.warn(`[GPS] Error al inicializar (intento ${retryCount + 1}/${maxRetries + 1}):`, {
-                                                            code: err.code,
-                                                            message: err.message
-                                                        });
-                                                        
-                                                        // Retry on timeout, up to maxRetries times
-                                                        if (err.code === 3 && retryCount < maxRetries) {
-                                                            console.log(`[GPS] Reintentando GPS en 5 segundos...`);
-                                                            setTimeout(() => initGPS(retryCount + 1), 5000);
-                                                        } else if (err.code === 1) {
-                                                            console.warn('[GPS] Permisos denegados - GPS no disponible');
-                                                        } else {
-                                                            console.warn('[GPS] GPS falló definitivamente');
-                                                        }
-                                                    },
-                                                    {
-                                                        enableHighAccuracy: true,
-                                                        maximumAge: 0,
-                                                        timeout: timeout
-                                                    }
-                                                );
-                                            }
-                                            
-                                            initGPS();
-                                            console.log('[GPS] Inicialización automática lanzada después del mapa (con reintentos)');
-                                        }
+                                        // NOTA: GPS se activa centralizadamente vía activarGPS() después de cargar iframes
+                                        // No inicializar GPS aquí (watchPosition duplicado eliminado)
                                         
                                         resolve(map);
                                         return;
@@ -2761,9 +2860,12 @@
                     (position) => {
                         const { latitude: lat, longitude: lng, accuracy } = position.coords;
 
-                        // Agregar verificación de precisión al inicio
-                        if (accuracy > 100) { // Solo actualizar si precisión < 100m
-                            logger.warn(`${logPrefix} Precisión GPS insuficiente (${accuracy}m), ignorando actualización`);
+                        // ✅ CORRECCIÓN CRÍTICA: Filtro de precisión reducido de 100m a 50m
+                        // Solo actualizar si precisión < 50m para evitar mostrar posiciones inexactas
+                        if (accuracy > 50) {
+                            logger.warn(`${logPrefix} Precisión GPS insuficiente (${Math.round(accuracy)}m > 50m), ignorando actualización`);
+                            // Mostrar overlay visual al usuario
+                            try { if (typeof showGpsOutOfRangeOverlay === 'function') showGpsOutOfRangeOverlay(accuracy); } catch (e) { /* ignore */ }
                             return;
                         }
 
@@ -3007,8 +3109,8 @@
                     // Options
                     {
                         enableHighAccuracy: true,  // Forzar alta precisión (usa GPS si disponible)
-                        timeout: 10000,            // Timeout de 10s
-                        maximumAge: 60000          // Usar posiciones de hasta 1 min de antigüedad
+                        timeout: 30000,            // ✅ CORRECCIÓN: Timeout aumentado a 30s (antes 10s) para permitir fix GPS preciso
+                        maximumAge: 0              // ✅ CORRECCIÓN CRÍTICA: maximumAge = 0 (antes 60s) para obtener SOLO posiciones frescas
                     }
                 );
 
@@ -3269,6 +3371,91 @@
                 try {
                     const next = document.getElementById('gps-next-entity-overlay');
                     if (next) next.style.display = 'none';
+
+        /**
+         * UI: Overlay para GPS restringido por distancia
+         * Muestra feedback visual (sin texto) de la distancia actual vs rango permitido
+         * @param {number} distanciaActual - Distancia del usuario a la parada en metros
+         * @param {number} rangoMaximo - Distancia máxima permitida en metros
+         * @param {string} idParada - ID de la parada objetivo
+         */
+        function showGpsRestrictedOverlay(distanciaActual, rangoMaximo, idParada) {
+            try {
+                _ensureGpsRestrictedOverlay();
+                const el = document.getElementById('gps-restricted-overlay');
+                if (!el) return;
+                
+                // Actualizar información
+                const distSpan = el.querySelector('.distance-current');
+                const maxSpan = el.querySelector('.distance-max');
+                const progressBar = el.querySelector('.progress-fill');
+                
+                if (distSpan) distSpan.textContent = Math.round(distanciaActual);
+                if (maxSpan) maxSpan.textContent = Math.round(rangoMaximo);
+                
+                // Calcular progreso visual (invertido: más lejos = menos progreso)
+                const progreso = Math.max(0, Math.min(100, (rangoMaximo / distanciaActual) * 100));
+                if (progressBar) {
+                    progressBar.style.width = progreso + '%';
+                    // Color según proximidad
+                    if (progreso < 30) progressBar.style.background = '#ff4444'; // Muy lejos
+                    else if (progreso < 60) progressBar.style.background = '#ff8800'; // Lejos
+                    else progressBar.style.background = '#ffaa00'; // Cerca pero fuera
+                }
+                
+                el.classList.add('show');
+                logger.info(`[PADRE][GPS][RESTRICTED] Overlay mostrado: ${Math.round(distanciaActual)}m / ${Math.round(rangoMaximo)}m (parada: ${idParada})`);
+            } catch (e) {
+                logger.warn('[PADRE][GPS][RESTRICTED] Error mostrando overlay:', e && e.message);
+            }
+        }
+
+        function hideGpsRestrictedOverlay() {
+            try {
+                const el = document.getElementById('gps-restricted-overlay');
+                if (!el) return;
+                el.classList.remove('show');
+            } catch (e) {
+                logger.warn('[PADRE][GPS][RESTRICTED] Error ocultando overlay:', e && e.message);
+            }
+        }
+
+        function _ensureGpsRestrictedOverlay() {
+            if (document.getElementById('gps-restricted-overlay')) return;
+            const el = document.createElement('div');
+            el.id = 'gps-restricted-overlay';
+            el.setAttribute('role', 'status');
+            el.setAttribute('aria-live', 'polite');
+            el.innerHTML = `
+                <div class="restricted-inner">
+                    <button class="btn-cerrar-overlay" type="button" aria-label="Cerrar" title="Cerrar">✖</button>
+                    <div class="restricted-content">
+                        <div class="emoji-row">
+                            <span class="emoji-user">🚶‍♂️</span>
+                            <span class="emoji-arrow">➡️</span>
+                            <span class="emoji-target">🎯</span>
+                        </div>
+                        <div class="distance-row">
+                            <span class="distance-current">0</span><span class="distance-unit">m</span>
+                            <span class="distance-separator">/</span>
+                            <span class="distance-max">0</span><span class="distance-unit">m</span>
+                        </div>
+                        <div class="progress-container">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <div class="emoji-status">❌</div>
+                    </div>
+                </div>
+            `;
+            
+            // Close button handler
+            const closeBtn = el.querySelector('.btn-cerrar-overlay');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => hideGpsRestrictedOverlay());
+            }
+            
+            document.body.appendChild(el);
+        }
                 } catch (e) { /* ignore */ }
             } catch (e) {
                 console.warn('[PADRE][GPS][OVERLAY] Error ocultando overlay:', e && e.message);
@@ -4598,6 +4785,25 @@
                     // Continuar aunque GPS falle (no es crítico para la carga)
                 }
                 
+                // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
+                logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
+                try {
+                    await enviarMensaje_S1({
+                        tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                        origen: CONFIG_PADRE.ID,
+                        destino: 'todos',
+                        datos: {
+                            paradaId: 'P-0',
+                            padreid: 'padre-P-0',
+                            timestamp: Date.now(),
+                            origen: 'inicializacion_sistema'
+                        }
+                    });
+                    logger.success(`${logPrefix} ✅ Parada inicial configurada`);
+                } catch (paradaError) {
+                    logger.error(`${logPrefix} ❌ Error configurando parada inicial:`, paradaError);
+                }
+                
                 // 5. Marcar sistema como inicializado
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
@@ -5830,128 +6036,6 @@
         });
 
         /**
-         * Controlador: NAVEGACION.GPS.SOLICITAR_UBICACION
-         * Descripción: Responde con la ubicación actual del usuario (PULL bajo demanda)
-         * Origen esperado: cualquier hijo que necesite ubicación on-demand (ej: hijo2 botón centrar)
-         * Respuesta: GPS.UBICACION_ACTUALIZADA con {lat, lng, accuracy, timestamp}
-         * Estrategia: 
-         *   1. Si hay ubicación en caché reciente (<30s): responder inmediatamente
-         *   2. Si no hay o es antigua: obtener nueva con getCurrentPosition
-         */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.SOLICITAR_UBICACION, async (mensaje) => {
-            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.SOLICITAR_UBICACION][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                logger.info(`${logPrefix} Solicitud de ubicación recibida de ${mensaje.origen}`);
-
-                // Verificar ubicación en caché
-                const ahora = Date.now();
-                const ultimaUbicacion = estado.gps.ultimaUbicacion;
-                const timestampUbicacion = ultimaUbicacion?.timestamp || 0;
-                const edadUbicacion = ahora - timestampUbicacion;
-                const UMBRAL_FRESCURA = 30000; // 30 segundos
-
-                let ubicacionRespuesta = null;
-
-                // Si hay ubicación reciente, usarla
-                if (ultimaUbicacion && ultimaUbicacion.lat && ultimaUbicacion.lng && edadUbicacion < UMBRAL_FRESCURA) {
-                    logger.info(`${logPrefix} Usando ubicación en caché (edad: ${Math.round(edadUbicacion/1000)}s)`);
-                    ubicacionRespuesta = {
-                        lat: ultimaUbicacion.lat,
-                        lng: ultimaUbicacion.lng,
-                        accuracy: ultimaUbicacion.accuracy || ultimaUbicacion.precision,
-                        timestamp: ultimaUbicacion.timestamp || ahora,
-                        cached: true,
-                        edadMs: edadUbicacion
-                    };
-                } else {
-                    // Obtener ubicación fresca
-                    logger.info(`${logPrefix} Obteniendo ubicación fresca (caché ${ultimaUbicacion ? 'antigua: ' + Math.round(edadUbicacion/1000) + 's' : 'no disponible'})`);
-                    
-                    try {
-                        const posicion = await new Promise((resolve, reject) => {
-                            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                                enableHighAccuracy: true,
-                                timeout: ajustarTimeoutPorConexion(15000),
-                                maximumAge: 0
-                            });
-                        });
-
-                        const { latitude, longitude, accuracy } = posicion.coords;
-                        
-                        // Actualizar caché
-                        estado.gps.ultimaUbicacion = {
-                            lat: latitude,
-                            lng: longitude,
-                            accuracy,
-                            timestamp: posicion.timestamp || ahora
-                        };
-
-                        ubicacionRespuesta = {
-                            lat: latitude,
-                            lng: longitude,
-                            accuracy,
-                            timestamp: posicion.timestamp || ahora,
-                            cached: false,
-                            fresh: true
-                        };
-
-                        logger.info(`${logPrefix} Ubicación fresca obtenida: [${latitude.toFixed(6)}, ${longitude.toFixed(6)}] ±${Math.round(accuracy)}m`);
-
-                    } catch (errorGPS) {
-                        logger.warn(`${logPrefix} Error obteniendo ubicación fresca:`, errorGPS);
-                        
-                        // Si falló getCurrentPosition pero hay caché antigua, usarla como fallback
-                        if (ultimaUbicacion && ultimaUbicacion.lat && ultimaUbicacion.lng) {
-                            logger.info(`${logPrefix} Fallback: usando ubicación en caché antigua (edad: ${Math.round(edadUbicacion/1000)}s)`);
-                            ubicacionRespuesta = {
-                                lat: ultimaUbicacion.lat,
-                                lng: ultimaUbicacion.lng,
-                                accuracy: ultimaUbicacion.accuracy || ultimaUbicacion.precision,
-                                timestamp: ultimaUbicacion.timestamp || ahora,
-                                cached: true,
-                                stale: true,
-                                edadMs: edadUbicacion
-                            };
-                        } else {
-                            // No hay ubicación disponible
-                            throw new Error(`GPS no disponible: ${errorGPS.message || errorGPS.code || 'Error desconocido'}`);
-                        }
-                    }
-                }
-
-                // Enviar respuesta al solicitante
-                await enviarMensajePadre({
-                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA,
-                    origen: getPadreId(),
-                    destino: mensaje.origen,
-                    datos: ubicacionRespuesta
-                });
-
-                logger.success(`${logPrefix} Ubicación enviada a ${mensaje.origen} (${ubicacionRespuesta.cached ? 'caché' : 'fresca'})`);
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando solicitud de ubicación:`, error);
-
-                // Notificar error al solicitante
-                try {
-                    await enviarMensajePadre({
-                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                        origen: getPadreId(),
-                        destino: mensaje.origen,
-                        datos: {
-                            error: error.message,
-                            contexto: 'gps_solicitar_ubicacion',
-                            mensajeOriginal: mensaje.id
-                        }
-                    });
-                } catch (notifError) {
-                    logger.error(`${logPrefix} Error notificando error:`, notifError);
-                }
-            }
-        });
-
-        /**
          * Controlador: NAVEGACION.GPS.UBICACION_ACTUALIZADA
          * Descripción: Recibe actualizaciones de ubicación GPS de funciones-mapa y las reenvía a todos los hijos
          * Origen esperado: funciones-mapa
@@ -6103,14 +6187,21 @@
          * Controlador: NAVEGACION.GPS.RESTRINGIDO
          * Descripción: Maneja notificaciones de GPS restringido desde hijos
          * Origen esperado: hijo2
-         * Respuesta: Registra la restricción
+         * Respuesta: Muestra feedback visual al usuario (telemetría ACTIVA)
          */
         registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.RESTRINGIDO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
                 logger.info(`${logPrefix} GPS restringido notificado desde ${mensaje.origen}`);
-                // Aquí se puede agregar lógica adicional si es necesario, como actualizar estado o notificar a otros componentes
+                
+                // Telemetría ACTIVA: Mostrar feedback visual al usuario
+                const { idParada, distancia } = mensaje.datos || {};
+                if (distancia && idParada) {
+                    // Obtener rango máximo de coordenadas.json
+                    const rangoMaximo = window.rangosGPS?.[idParada] || 20; // default 20m
+                    showGpsRestrictedOverlay(distancia, rangoMaximo, idParada);
+                }
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando GPS restringido:`, error);
             }
@@ -7088,6 +7179,45 @@
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando llegada detectada:`, error);
+            }
+        });
+
+        // ============================================================
+        // CONTROLADOR: NAVEGACION.USUARIO_FUERA_RANGO
+        // Recibido desde hijo2 cuando usuario está >5min fuera de rango (>50m)
+        // Acción: Limpiar polylines y preparar para reactivación
+        // ============================================================
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.USUARIO_FUERA_RANGO, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[USUARIO_FUERA_RANGO][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                const { distancia, tiempoFuera, elementoMasCercano, timestamp } = mensaje.datos || {};
+                
+                logger.warn(`${logPrefix} Usuario fuera de rango: ${Math.ceil(distancia)}m por ${Math.ceil(tiempoFuera/1000)}s (elemento más cercano: ${elementoMasCercano || 'desconocido'})`);
+                
+                // Limpiar polylines de navegación activas
+                if (window.funcionesMapa && typeof window.funcionesMapa.limpiarPolylineNavegacion === 'function') {
+                    try {
+                        await window.funcionesMapa.limpiarPolylineNavegacion();
+                        logger.info(`${logPrefix} Polylines de navegación limpiadas`);
+                    } catch (err) {
+                        logger.warn(`${logPrefix} Error limpiando polylines:`, err);
+                    }
+                }
+                
+                // Actualizar estado para indicar que usuario está fuera de rango
+                estado.usuarioFueraRango = {
+                    activo: true,
+                    distancia: distancia,
+                    tiempoFuera: tiempoFuera,
+                    elementoMasCercano: elementoMasCercano,
+                    timestamp: timestamp || Date.now()
+                };
+                
+                logger.info(`${logPrefix} Estado actualizado: usuario fuera de rango durante ${Math.ceil(tiempoFuera/60000)}min`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando usuario fuera de rango:`, error);
             }
         });
 
