@@ -3899,6 +3899,16 @@ async function procesarPosicionGPSParaAventura(posicion) {
 
         logger.debug(`${logPrefix} Distancia a ${siguienteParada.padreid}: ${Math.ceil(distancia)}m (tolerancia: ${toleranciaGPS}m)`);
 
+        // ✅ CRÍTICO: Actualizar marcador visual del usuario en el mapa (flecha azul)
+        // DEBE llamarse ANTES de enviar mensajes para que el usuario vea su posición en tiempo real
+        try {
+            const heading = posicion?.coords?.heading ?? posicion?.heading ?? 0;
+            await actualizarMarcadorUsuario(latitude, longitude, heading, accuracy, 'aventura');
+            logger.debug(`${logPrefix} 🗺️ Marcador de usuario actualizado en mapa: [${latitude.toFixed(6)}, ${longitude.toFixed(6)}]`);
+        } catch (errorMarcador) {
+            logger.warn(`${logPrefix} Error actualizando marcador de usuario:`, errorMarcador);
+        }
+
         // 📤 Enviar actualización de distancia a hijo2 (botones) periódicamente
         // CRÍTICO: Incluir toleranciaGPS para que hijo2 ajuste lógica de botones dinámicamente
         try {
@@ -3965,6 +3975,25 @@ async function procesarPosicionGPSParaAventura(posicion) {
                 logger.debug(`${logPrefix} ✅ Polylines removidas automáticamente`);
             } catch (errorPolyline) {
                 logger.warn(`${logPrefix} Error removiendo polylines:`, errorPolyline);
+            }
+        } else if (distancia > 50 && !polylineNavegacion) {
+            // ✅ DIBUJAR POLYLINE AUTOMÁTICAMENTE cuando usuario está lejos (>50m)
+            logger.info(`${logPrefix} 🗺️ Distancia >50m, dibujando polyline automáticamente desde usuario hasta siguiente parada`);
+            try {
+                // Dibujar polyline azul desde usuario hasta siguiente parada
+                polylineNavegacion = L.polyline(
+                    [[latitude, longitude], [siguienteParada.coordenadas.lat, siguienteParada.coordenadas.lng]],
+                    {
+                        color: '#3388ff',
+                        weight: 5,
+                        opacity: 0.7,
+                        dashArray: '10, 10'
+                    }
+                ).addTo(_mapaInstance);
+                
+                logger.debug(`${logPrefix} ✅ Polyline automática dibujada desde usuario hasta ${siguienteParada.padreid}`);
+            } catch (errorPolyline) {
+                logger.warn(`${logPrefix} Error dibujando polyline automática:`, errorPolyline);
             }
         }
 
@@ -4377,7 +4406,7 @@ export function actualizarMarcadorUsuario(lat, lng, heading = 0, accuracy = 0, m
             title: modo === 'casa' 
                 ? `🛸 Tu ubicación ±${Math.round(accuracy)}m` 
                 : `Tu ubicación ±${Math.round(accuracy)}m (${Math.round(heading || 0)}°)`,
-            zIndexOffset: 1000
+            zIndexOffset: 400  // ✅ CORREGIDO: 400 en lugar de 1000 para NO tapar iframes (z-index final: 900 < 1500)
         }).addTo(_mapaInstance);
         
         const iconoLog = modo === 'casa' ? '🛸' : '➤';
