@@ -523,32 +523,8 @@
             });
 
             // ============================================================
-            // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+            // HANDLERS GPS
             // ============================================================
-            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
-                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.ACTIVAR]`;
-                try {
-                    if (!mensaje || !mensaje.origen) return { exito: false };
-                    logger.debug(`${gPrefix} Recibido ACTIVAR GPS (no-op)`);
-                    return { exito: true };
-                } catch (e) {
-                    logger.error(`${gPrefix} Error en handler no-op:`, e);
-                    return { exito: false, error: e.message };
-                }
-            });
-
-            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
-                const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.DESACTIVAR]`;
-                try {
-                    if (!mensaje || !mensaje.origen) return { exito: false };
-                    logger.debug(`${gPrefix} Recibido DESACTIVAR GPS (no-op)`);
-                    return { exito: true };
-                } catch (e) {
-                    logger.error(`${gPrefix} Error en handler no-op:`, e);
-                    return { exito: false, error: e.message };
-                }
-            });
-
             registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
                 const gPrefix = `${CONFIG_HIJO.LOG_PREFIX}[GPS.UBICACION_ACTUALIZADA]`;
                 try {
