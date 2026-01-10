@@ -1268,18 +1268,6 @@ function actualizarEstadoBotones() {
             if (distanciaEnRango) {
                 activarBoton(elementosDOM.btnGps);
                 logger.debug(`🛰️ Botón GPS ACTIVADO (${esTramo ? 'TRAMO' : 'PARADA'}): distancia ${distanciaAlDestino.toFixed(1)}m en rango ${rangoMinimo}-${rangoMaximo}m`);
-                enviarMensaje({
-                    tipo: TIPOS_MENSAJE.NAVEGACION.GPS.PERMITIDO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    destino: getPadreId(),
-                    datos: {
-                        idParada: idParadaActual,
-                        distancia: distanciaAlDestino,
-                        permiso: 'gps_completo',
-                        esTramo: esTramo,
-                        toleranciaUsada: rangoMaximo
-                    }
-                }).catch(e => logger.debug('[hijo2] Error notificando GPS permitido:', e.message));
             } else {
                 desactivarBoton(elementosDOM.btnGps);
                 logger.debug(`🛰️ Botón GPS DESACTIVADO: distancia ${distanciaAlDestino?.toFixed(1) || 'desconocida'}m fuera de rango ${rangoMinimo}-${rangoMaximo}m`);
@@ -1297,19 +1285,20 @@ function actualizarEstadoBotones() {
         }
     }
 
-    // 📍 UBICACIÓN: Deshabilitado en modo casa, habilitado en aventura >10.50m
+    // 📍 UBICACIÓN: Deshabilitado en modo casa, habilitado en aventura >50m
+    // ✅ CORRECCIÓN: Umbral actualizado de 22m a 50m para consistencia con verificarDistanciaYActualizarBotones()
     if (elementosDOM.btnUbicacion) {
         if (modo === 'casa') {
             desactivarBoton(elementosDOM.btnUbicacion);
             logger.debug('🧭 Botón ubicación DESACTIVADO: modo casa (forzado)');
-        } else if (modo === 'aventura' && distanciaAlDestino !== null && distanciaAlDestino > 22) {
+        } else if (modo === 'aventura' && distanciaAlDestino !== null && distanciaAlDestino > 50) {
             if (!estadoComponente.paradaPendiente) {
                 activarBoton(elementosDOM.btnUbicacion);
             } else {
                 desactivarBoton(elementosDOM.btnUbicacion);
                 logger.debug(`[hijo2] Botón ubicación deshabilitado por pendiente activo`);
             }
-            logger.debug(`🧭 Botón ubicación ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (>22m)`);
+            logger.debug(`🧭 Botón ubicación ACTIVADO: distancia ${distanciaAlDestino.toFixed(1)}m (>50m)`);
             enviarMensaje({
                 tipo: TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA,
                 origen: CONFIG_HIJO.IFRAME_ID,
@@ -1322,7 +1311,7 @@ function actualizarEstadoBotones() {
             }).catch(e => logger.debug('[hijo2] Error notificando parada completada:', e.message));
         } else {
             desactivarBoton(elementosDOM.btnUbicacion);
-            logger.debug(`🧭 Botón ubicación DESACTIVADO: fuera de condiciones (<=22m)`);
+            logger.debug(`🧭 Botón ubicación DESACTIVADO: fuera de condiciones (≤50m)`);
         }
     }
 
@@ -1466,6 +1455,8 @@ function verificarDistanciaYActualizarBotones() {
         if (estadoComponente.timestampSalioDeRango !== null) {
             logger.info(`${logPrefix} ✅ Usuario volvió DENTRO de rango (timer reseteado)`);
             estadoComponente.timestampSalioDeRango = null;
+            // ✅ Resetear flag de notificación para permitir nueva notificación si vuelve a salir
+            estadoComponente._notificacionFueraRangoEnviada = false;
         }
     } else {
         // FUERA de rango (>50m)
@@ -1486,6 +1477,26 @@ function verificarDistanciaYActualizarBotones() {
             btn.style.opacity = '1';
             btn.title = `Haz click para volver a la ruta (${distanciaMinima.toFixed(0)}m de distancia)`;
             logger.info(`${logPrefix} ✅ HABILITADO: Usuario >5min fuera de rango`);
+            
+            // ✅ NOTIFICAR AL PADRE (solo una vez cuando se cumple el tiempo)
+            // ⚠️ PROTECCIÓN ANTI-SPAM: Solo enviar si no se ha notificado antes
+            if (!estadoComponente._notificacionFueraRangoEnviada) {
+                estadoComponente._notificacionFueraRangoEnviada = true;
+                
+                enviarMensaje({
+                    tipo: TIPOS_MENSAJE.NAVEGACION.USUARIO_FUERA_RANGO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: getPadreId(),
+                    datos: {
+                        distancia: distanciaMinima,
+                        tiempoFuera: tiempoFuera,
+                        elementoMasCercano: elementoMasCercano?.id || null,
+                        timestamp: Date.now()
+                    }
+                }).catch(e => logger.debug(`${logPrefix} Error notificando usuario fuera de rango:`, e.message));
+                
+                logger.info(`${logPrefix} 📢 Notificación USUARIO_FUERA_RANGO enviada al padre`);
+            }
         } else {
             // Menos de 5 min fuera → ROJO DESHABILITADO (esperando)
             btn.disabled = true;
@@ -1504,18 +1515,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Event listeners para los botones
     elementosDOM.btnGps?.addEventListener('click', async () => {
     try {
-        if (estadoComponente.modo === 'casa') {
-            actualizarEstado('GPS no disponible en modo casa', 'warn');
-            return;
-        }
-
-        if (estadoComponente.distanciaAlDestino === null ||
-            estadoComponente.distanciaAlDestino < 5 ||
-            estadoComponente.distanciaAlDestino > 20) {
-            actualizarEstado('GPS solo disponible entre 5-20m de la parada', 'warn');
-            return;
-        }
-
+        // Las validaciones de rango se manejan en actualizarEstadoBotones() mediante button.disabled
+        // Si el click llega aquí, el botón está habilitado y las condiciones son válidas
         estadoComponente.gpsActivo = !estadoComponente.gpsActivo;
         setBotonActivo(estadoComponente.gpsActivo ? 'btnGps' : null);
 
@@ -1863,6 +1864,40 @@ registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_ESTADO, (mensaje)
         if (ubicacionActiva !== undefined) {
             estadoComponente.ubicacionActiva = ubicacionActiva;
             logger.info(`${logPrefix} 🧭 Estado de ubicación actualizado: ${ubicacionActiva ? 'ACTIVA' : 'INACTIVA'}`);
+        }
+        
+        // ✅ CORRECCIÓN CRÍTICA: Detectar llegada a TRAMOS (paradas se manejan en funciones-mapa.js)
+        // Las paradas se detectan con watchPosition en funciones-mapa.js, pero los tramos necesitan notificación desde hijo2
+        if (tipoParada === 'tramo' && typeof distanciaAlDestino === 'number' && typeof toleranciaGPS === 'number') {
+            if (distanciaAlDestino <= toleranciaGPS) {
+                // Usuario llegó al rango del tramo → notificar al padre
+                // ⚠️ PROTECCIÓN ANTI-DUPLICADOS: Solo enviar una vez por tramo
+                if (!estadoComponente._llegadaNotificada || estadoComponente._llegadaNotificada !== idParada) {
+                    estadoComponente._llegadaNotificada = idParada;
+                    
+                    logger.info(`${logPrefix} 🎯 Llegada detectada a tramo ${idParada} (${distanciaAlDestino.toFixed(1)}m ≤ ${toleranciaGPS}m)`);
+                    
+                    // Notificar al PADRE (no comunicación cruzada)
+                    enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: getPadreId(),
+                        datos: {
+                            paradaId: idParada,
+                            parada_id: idParada,
+                            distancia: distanciaAlDestino,
+                            tipoParada: 'tramo',
+                            timestamp: Date.now()
+                        }
+                    }).catch(e => logger.warn(`${logPrefix} Error notificando llegada a tramo:`, e.message));
+                }
+            } else {
+                // Usuario salió del rango → resetear flag para permitir nueva detección
+                if (estadoComponente._llegadaNotificada === idParada && distanciaAlDestino > toleranciaGPS * 1.5) {
+                    logger.debug(`${logPrefix} 🔄 Usuario salió del rango de ${idParada}, reseteando flag de llegada`);
+                    estadoComponente._llegadaNotificada = null;
+                }
+            }
         }
         
         // Recalcular estados de botones según nueva información
@@ -3016,28 +3051,8 @@ try {
     });
 
     // ============================================================
-    // HANDLERS GPS (no-op) - Evitar warnings cuando el padre envía broadcasts
+    // HANDLERS GPS
     // ============================================================
-    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
-        try {
-            console.debug(`[hijo2][GPS.ACTIVAR] Recibido ACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-            return { exito: true };
-        } catch (e) {
-            console.error('[hijo2][GPS.ACTIVAR] Error en handler no-op:', e);
-            return { exito: false, error: e.message };
-        }
-    });
-
-    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
-        try {
-            console.debug(`[hijo2][GPS.DESACTIVAR] Recibido DESACTIVAR GPS (no-op) desde ${mensaje?.origen}`);
-            return { exito: true };
-        } catch (e) {
-            console.error('[hijo2][GPS.DESACTIVAR] Error en handler no-op:', e);
-            return { exito: false, error: e.message };
-        }
-    });
-
     registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
         const logPrefix = '[hijo2][GPS.UBICACION_ACTUALIZADA]';
         try {
