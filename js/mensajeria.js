@@ -2308,16 +2308,36 @@ export function marcarScript2Listo() {
             logger.debug(`${logPrefix} [${index + 1}/${cola.length}] Procesando: ${mensajePendiente.tipo} (edad: ${edad}ms)`);
             
             // Re-procesar el mensaje ahora que Script 2 está listo
-            // Usar manejarMensajeRecibido en lugar de procesarMensaje
-            manejarMensajeRecibido({ data: mensajePendiente })
-                .then(() => {
-                    mensajesProcesados.push(mensajePendiente.tipo);
-                    logger.debug(`${logPrefix} ✅ Mensaje procesado: ${mensajePendiente.tipo}`);
-                })
-                .catch(error => {
+            // Buscar el controlador y ejecutarlo directamente
+            const mapa = __vv_getManejadores();
+            const controlador = mapa && mapa.get ? mapa.get(mensajePendiente.tipo) : undefined;
+            
+            if (controlador && typeof controlador === 'function') {
+                try {
+                    const resultado = controlador(mensajePendiente);
+                    // Si el controlador devuelve una promesa, manejarla
+                    if (resultado && typeof resultado.then === 'function') {
+                        resultado
+                            .then(() => {
+                                mensajesProcesados.push(mensajePendiente.tipo);
+                                logger.debug(`${logPrefix} ✅ Mensaje procesado (async): ${mensajePendiente.tipo}`);
+                            })
+                            .catch(error => {
+                                mensajesFallidos.push({ tipo: mensajePendiente.tipo, error: error.message });
+                                logger.error(`${logPrefix} ❌ Error procesando mensaje (async): ${mensajePendiente.tipo}`, error);
+                            });
+                    } else {
+                        mensajesProcesados.push(mensajePendiente.tipo);
+                        logger.debug(`${logPrefix} ✅ Mensaje procesado (sync): ${mensajePendiente.tipo}`);
+                    }
+                } catch (error) {
                     mensajesFallidos.push({ tipo: mensajePendiente.tipo, error: error.message });
-                    logger.error(`${logPrefix} ❌ Error procesando mensaje: ${mensajePendiente.tipo}`, error);
-                });
+                    logger.error(`${logPrefix} ❌ Error ejecutando controlador: ${mensajePendiente.tipo}`, error);
+                }
+            } else {
+                mensajesFallidos.push({ tipo: mensajePendiente.tipo, error: 'Controlador no encontrado' });
+                logger.warn(`${logPrefix} ⚠️ Controlador no encontrado para: ${mensajePendiente.tipo}`);
+            }
                 
         } catch (error) {
             mensajesFallidos.push({ tipo: mensajePendiente.tipo || 'desconocido', error: error.message });
