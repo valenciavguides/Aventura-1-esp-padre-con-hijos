@@ -1,7 +1,7 @@
 # 📘 DOCUMENTACIÓN - VALENCIA VGUIDES v3.3
 
 **Fecha de creación**: Noviembre 20, 2025  
-# Abrir en navegador https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html 
+# Abrir en navegador https://valenciavguides.es/codigo-padre.html 
 # Abrir codigo-padre.html en un servidor local o directamente
 **Versión**: 3.3 - Mejoras de Rendimiento y Estabilidad  
 **Estado**: ✅ Completamente Verificado y Actualizado  
@@ -141,10 +141,10 @@ Valencia VGuides es una **aplicación turística interactiva** que combina:
 
 ```bash
 # Clonar repositorio
-git clone https://github.com/tu-usuario/valencia-vguides.git
-cd valencia-vguides
+git clone https://github.com/valenciavguides/Aventura-1-esp-padre-con-hijos.git
+cd Aventura-1-esp-padre-con-hijos
 
-# Abrir en navegador https://valenciavguides.github.io/Aventura-1-esp-padre-con-hijos/codigo-padre.html 
+# Abrir en navegador https://valenciavguides.es/codigo-padre.html 
 # Abrir codigo-padre.html en un servidor local o directamente
 ```
 
