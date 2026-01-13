@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
+    <title>audio-hijo3</title>
+    <script src="js/suppress-warnings.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --btn-size: 60px;
+            --icon-size: 1.5em;
+            --progress-thick: 20px;
+            --trapecio-width: 290px;
+            --trapecio-height: 135px; /* Reducido de 140px a 135px */
+            --trapecio-bg: white;
+            --trapecio-shadow: 0 2px 12px rgba(0,0,0,0.13);
+            --trapecio-radius: 15px;
+            --progress-color: #0077cc;
+            --progress-bg: #e0e0e0;
+            --timer-font-size: 1.1em;
+            --timer-color: #333;
+        }
+
+        /* Encapsular estilos */
+        .hijo3-container body, .hijo3-container html {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+        }
+
+        body {
+            font-family: "Book Antiqua", "Palatino Linotype", Palatino, Georgia, serif;
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+        }
+
+        .audio-player-controls {
+            width: var(--trapecio-width);
+            max-width: 98vw;
+            min-width: 180px;
+            height: var(--trapecio-height);
+            background: var(--trapecio-bg);
+            clip-path: polygon(8% 0%, 92% 0%, 100% 100%, 0% 100%);
+            border-radius: var(--trapecio-radius);
+            box-shadow: var(--trapecio-shadow);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            gap: 0.05em;
+            z-index: 9999; /* Aseguramos que esté por encima de otros elementos */
+            padding: 5px 8px 5px 8px;
+            box-sizing: border-box;
+            border: 0px solid #0077cc; /* Borde para mejor visibilidad */
+            margin: 5px 0;
+            position: fixed; /* Fijo en la pantalla */
+            bottom: 10px; /* Posicionado en la parte inferior */
+            left: 50%; /* Centrado horizontalmente */
+            transform: translateX(-50%); /* Centrado exacto */
+            opacity: 1 !important; /* Forzar visibilidad */
+            visibility: visible !important; /* Forzar visibilidad */
+            background-color: white !important; /* Fondo blanco para mejor contraste */
+        }
+
+        .player-buttons-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            margin-bottom: 1px; /* MODIFICADO: Reducido de 2px a 1px (mitad) */
+        }
+
+        #playPauseBtn {
+            width: var(--btn-size);
+            height: var(--btn-size);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: linear-gradient(to right, #28a745, #218838);
+            color: white;
+            font-size: var(--icon-size);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            padding: 0;
+        }
+
+        #playPauseBtn .icon-play {
+            color: white;
+            font-size: 35px;
+            font-weight: bold;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
+        }
+
+        #playPauseBtn:active:not(:disabled) { 
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (hover: hover) {
+            #playPauseBtn:hover:not(:disabled) {
+                transform: scale(1.05);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        #playPauseBtn:disabled { 
+            background: linear-gradient(to right, #dc3545, #c82333);
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        #retosBtn {
+            width: var(--btn-size);
+            height: var(--btn-size);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: linear-gradient(to right, #28a745, #218838);
+            color: white;
+            font-size: var(--icon-size);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            padding: 0;
+        }
+
+        #retosBtn .icon-puzzle {
+            color: white;
+            font-weight: bold;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
+        }
+
+        #retosBtn:disabled { 
+            background: linear-gradient(to right, #dc3545, #c82333);
+            cursor: not-allowed; 
+            opacity: 0.6;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        #retosBtn:active:not(:disabled) { 
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (hover: hover) {
+            #retosBtn:hover:not(:disabled) {
+                transform: scale(1.05);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        /* Imagen dentro del botón retos */
+        #retosBtn img {
+            width: 55px;
+            height: 55px;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+            border-radius: 50%;
+        }
+
+        .progress-row {
+            display: flex;
+            align-items: center;
+            width: 90%;
+            margin: 0 0 1px 0; /* Ajustado a 1px para espaciado total de 1px */
+            padding: 0;
+            justify-content: center;
+        }
+
+        .progress-container {
+            flex: 1;
+            width: 100%;
+            height: var(--progress-thick);
+            background-color: #f0f0f0;
+            border-radius: calc(var(--progress-thick) / 2);
+            cursor: pointer;
+            position: relative;
+            margin: 0;
+            min-width: 0;
+            overflow: visible;
+            display: flex;
+            align-items: center;
+            border: 1px solid #ddd;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        #progressBar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #28a745, #1e7e34);
+            border-radius: calc(var(--progress-thick) / 2);
+            transition: width 0.1s linear;
+            position: relative;
+        }
+
+        #progressBar::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #007bff;
+            border: 3px solid white;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+            display: block;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        #playPauseBtn:disabled ~ .progress-row #progressBar::after {
+            opacity: 0;
+        }
+
+        .time-display {
+            display: flex;
+            justify-content: space-between;
+            width: 90%;
+            font-size: var(--timer-font-size);
+            color: var(--timer-color);
+            margin-top: 0; /* Eliminado para tener un espaciado total de 1px */
+            font-weight: 500;
+        }
+
+        .time-display span {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Estilos para los botones del hijo3 */
+        #hijo3 .boton {
+            transition: background 0.3s ease, color 0.3s ease;
+            background: none; /* Se asegura que no haya colores adicionales */
+        }
+
+        /* Botón habilitado: degradado verde */
+        #hijo3 .boton.habilitado {
+            background: linear-gradient(to right, #28a745, #218838);
+            color: white;
+        }
+
+        /* Botón deshabilitado: degradado rojo */
+        #hijo3 .boton.deshabilitado {
+            background: linear-gradient(to right, #dc3545, #c82333);
+            color: white;
+        }
+
+        /* Estilos para el modo casa (controles completamente visibles y habilitados) */
+        body.modo-casa .audio-player-controls {
+            display: flex;
+            opacity: 1;
+        }
+
+        /* Estilos de modo casa eliminados - los botones siguen el estado habilitado/deshabilitado estándar */
+
+        /* Estilos para el modo aventura (controles normales) */
+        body.modo-aventura .audio-player-controls {
+            display: flex;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="modo-aventura hijo3-container">
+    <!-- ARRAY DE AUDIOS - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear audioId a archivos MP3. Cualquier cambio debe coordinarse con el padre. -->
+    <script type="module">
+        // ╔════════════════════════════════════════════════════════════════════════════╗
+        // ║ ARRAY VACÍO - Los audios se cargan desde el PADRE via mensaje CARGAR_AUDIOS ║
+        // ║ El array de backup está comentado abajo por si necesitamos restaurar        ║
+        // ╚════════════════════════════════════════════════════════════════════════════╝
+        const audioFiles = [];
+        
+        // Función getter que prioriza datos del padre sobre datos locales
+        function obtenerAudioFiles() {
+            // Prioridad 1: Datos recibidos del padre
+            if (window.__vv_audioFiles && Array.isArray(window.__vv_audioFiles) && window.__vv_audioFiles.length > 0) {
+                return window.__vv_audioFiles;
+            }
+            // Prioridad 2: Array local como fallback de emergencia
+            console.warn('[hijo3] ⚠️ Usando audioFiles local vacío - ¿Se cargaron los audios desde el padre?');
+            return audioFiles;
+        }
+        
+        // Exponer función globalmente
+        window.obtenerAudioFiles = obtenerAudioFiles;
+        
+        /* ═══════════════════════════════════════════════════════════════════════════════
+         * ██ BACKUP: Array de audios original - COMENTADO PARA USAR DATOS CENTRALIZADOS
+         * ██ Descomentar solo si falla el flujo centralizado y necesitamos fallback
+         * ═══════════════════════════════════════════════════════════════════════════════
+        
+        // Array de audios correspondientes a las paradas y tramos del recorrido
+        // Usando P- para paradas y TR- para tramos, coincidiendo con los IDs del hijo 2
+        const audioFiles_BACKUP = [
+            // Parada 0 - Inicio
+            { 
+                id: "audio-P-0", 
+                title: "Torres de Serranos (inicio)", 
+                file: "Av1_audio_esp/02 Intro ESPAÑOL 2.mp3"
+            },
+            
+            // Tramo 1: Torres de Serranos → Plaza de la crida (Puente de Serranos)
+            { 
+                id: "audio-TR-1", 
+                title: "Tramo 1: Torres de Serranos → Plaza de la crida", 
+                file: "Av1_audio_esp/03 Av1 Pista 3 ESPAÑOL.mp3"
+            },
+            
+            // Parada 1: Plaza de la crida (Puente de Serranos)
+            { 
+                id: "audio-P-1", 
+                title: "Parada 1: Plaza de la crida (Puente de Serranos - Reto 3)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 2: Plaza de la crida → Calle Muro de Santa Ana
+            { 
+                id: "audio-TR-2", 
+                title: "Tramo 2: Plaza de la crida → Calle Muro de Santa Ana", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 2: Calle Muro de Santa Ana
+            { 
+                id: "audio-P-2", 
+                title: "Parada 2: Calle Muro de Santa Ana (Reto 4)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 3: Calle Muro de Santa Ana → Palacio de los Borgia
+            { 
+                id: "audio-TR-3", 
+                title: "Tramo 3: Calle Muro de Santa Ana → Palacio de los Borgia", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 3: Iglesia de San Lorenzo
+            { 
+                id: "audio-P-3", 
+                title: "Parada 3: Iglesia de San Lorenzo (Reto 5)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 4: Iglesia de San Lorenzo → Plaza de la Virgen
+            { 
+                id: "audio-TR-4", 
+                title: "Tramo 4: Iglesia de San Lorenzo → Plaza de la Virgen", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 4: Plaza de la Virgen (Reto 6)
+            { 
+                id: "audio-P-4", 
+                title: "Parada 4: Plaza de la Virgen (Reto 6)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 5: Plaza de la Virgen (Reto 7, 8 Puzzle plaza de la virgen)
+            { 
+                id: "audio-P-5", 
+                title: "Parada 5: Plaza de la Virgen (Reto 7, 8 Puzzle)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 5: Plaza de la Virgen → Plaza de la Almoína
+            { 
+                id: "audio-TR-5", 
+                title: "Tramo 5: Plaza de la Virgen → Plaza de la Almoína", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 6: Panel cerámico muro Catedral
+            { 
+                id: "audio-P-6", 
+                title: "Parada 6: Panel cerámico muro Catedral", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 7: Capilla exterior catedral Reto 10
+            { 
+                id: "audio-P-7", 
+                title: "Parada 7: Capilla exterior catedral (Reto 10)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 8: Capilla exterior catedral Reto 11
+            { 
+                id: "audio-P-8", 
+                title: "Parada 8: Capilla exterior catedral (Reto 11)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 9: Arco Novo Catedral y Puerta Negra Basílica
+            { 
+                id: "audio-P-9", 
+                title: "Parada 9: Arco Novo Catedral y Puerta Negra Basílica", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 10: Casa del Punt de Gantxo
+            { 
+                id: "audio-P-10", 
+                title: "Parada 10: Casa del Punt de Gantxo", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 6: Plaza de la Almoína → Museo Arqueológico
+            { 
+                id: "audio-TR-6", 
+                title: "Tramo 6: Plaza de la Almoína → Museo Arqueológico", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 11: Museo arqueológico La Almoína
+            { 
+                id: "audio-P-11", 
+                title: "Parada 11: Museo arqueológico La Almoína", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 12: Museo arqueológico La Almoína (segunda parte)
+            { 
+                id: "audio-P-12", 
+                title: "Parada 12: Museo arqueológico La Almoína (continuación)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 13: Vista de la Catedral, Cimborrio
+            { 
+                id: "audio-P-13", 
+                title: "Parada 13: Vista de la Catedral, Cimborrio", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 7: Museo arqueológico La Almoína → Palacio Arzobispal
+            { 
+                id: "audio-TR-7", 
+                title: "Tramo 7: Museo arqueológico → Palacio Arzobispal", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 14: Palacio Arzobispal y Puerta Románica de la Catedral
+            { 
+                id: "audio-P-14", 
+                title: "Parada 14: Palacio Arzobispal y Puerta Románica", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 15: Puerta Románica de la Catedral
+            { 
+                id: "audio-P-15", 
+                title: "Parada 15: Puerta Románica de la Catedral", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 8: Puerta Románica de la Catedral → Plaza del Ayuntamiento
+            { 
+                id: "audio-TR-8", 
+                title: "Tramo 8: Puerta Románica → Plaza del Ayuntamiento", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 16: Plaza del Ayuntamiento
+            { 
+                id: "audio-P-16", 
+                title: "Parada 16: Plaza del Ayuntamiento", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 9: Plaza del Ayuntamiento → Edificio del Ayuntamiento de València
+            { 
+                id: "audio-TR-9", 
+                title: "Tramo 9: Plaza del Ayuntamiento → Edificio del Ayuntamiento", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 17: Edificio del Ayuntamiento
+            { 
+                id: "audio-P-17", 
+                title: "Parada 17: Edificio del Ayuntamiento", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 18: Edificio del Ayuntamiento (segunda parte)
+            { 
+                id: "audio-P-18", 
+                title: "Parada 18: Edificio del Ayuntamiento (continuación)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 10: Edificio del Ayuntamiento → Estación del Norte
+            { 
+                id: "audio-TR-10", 
+                title: "Tramo 10: Ayuntamiento → Estación del Norte", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 19: Estación del Norte
+            { 
+                id: "audio-P-19", 
+                title: "Parada 19: Estación del Norte", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 11: Estación del Norte → Plaza de Toros de València
+            { 
+                id: "audio-TR-11", 
+                title: "Tramo 11: Estación del Norte → Plaza de Toros", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 12: Plaza de Toros → Casa estilo Árabe
+            { 
+                id: "audio-TR-12", 
+                title: "Tramo 12: Plaza de Toros → Casa estilo Árabe", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 20: Casa estilo Árabe
+            { 
+                id: "audio-P-20", 
+                title: "Parada 20: Casa estilo Árabe", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 21: Casa estilo Árabe, mitad Aventura
+            { 
+                id: "audio-P-21", 
+                title: "Parada 21: Casa estilo Árabe (mitad Aventura)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 13: Casa estilo Árabe → Palacio de Comunicaciones (Correos)
+            { 
+                id: "audio-TR-13", 
+                title: "Tramo 13: Casa estilo Árabe → Palacio de Comunicaciones", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 22: Palacio de Comunicaciones: Correos
+            { 
+                id: "audio-P-22", 
+                title: "Parada 22: Palacio de Comunicaciones (Correos)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 23: Edificio Suay
+            { 
+                id: "audio-P-23", 
+                title: "Parada 23: Edificio Suay", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 14: Palacio de Comunicaciones → Banco de València
+            { 
+                id: "audio-TR-14", 
+                title: "Tramo 14: Palacio de Comunicaciones → Banco de València", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 24: Banco de Valencia
+            { 
+                id: "audio-P-24", 
+                title: "Parada 24: Banco de Valencia", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 15: Banco de València → Palacio del Marqués de Dos Aguas
+            { 
+                id: "audio-TR-15", 
+                title: "Tramo 15: Banco de València → Palacio del Marqués de Dos Aguas", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 25: Palacio del Marqués de Dos Aguas (Museo Nacional de Cerámica)
+            { 
+                id: "audio-P-25", 
+                title: "Parada 25: Palacio del Marqués de Dos Aguas (Museo de Cerámica)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 16: Palacio del Marqués → Mercado Central
+            { 
+                id: "audio-TR-16", 
+                title: "Tramo 16: Palacio del Marqués → Mercado Central", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 26: Mercado central
+            { 
+                id: "audio-P-26", 
+                title: "Parada 26: Mercado central", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 17: Mercado Central → Iglesia de los Santos Juanes
+            { 
+                id: "audio-TR-17", 
+                title: "Tramo 17: Mercado Central → Iglesia de los Santos Juanes", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 27: Iglesia de los Santos Juanes reto 24
+            { 
+                id: "audio-P-27", 
+                title: "Parada 27: Iglesia de los Santos Juanes (Reto 24)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 28: Iglesia de los Santos Juanes reto 25
+            { 
+                id: "audio-P-28", 
+                title: "Parada 28: Iglesia de los Santos Juanes (Reto 25)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 18: Iglesia Santos Juanes → Lonja de València (Mercado de la Seda)
+            { 
+                id: "audio-TR-18", 
+                title: "Tramo 18: Iglesia Santos Juanes → Lonja de València", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 29: Lonja Puerta de Los Pecados barquero
+            { 
+                id: "audio-P-29", 
+                title: "Parada 29: Lonja - Puerta de Los Pecados (barquero)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 30: Lonja Puerta de Los Pecados árbol muerto
+            { 
+                id: "audio-P-30", 
+                title: "Parada 30: Lonja - Puerta de Los Pecados (árbol muerto)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 19: Lonja Gárgolas
+            { 
+                id: "audio-TR-19", 
+                title: "Tramo 19: Lonja - Gárgolas", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 31: Lonja Gárgolas ángel vasija
+            { 
+                id: "audio-P-31", 
+                title: "Parada 31: Lonja - Gárgola del ángel con vasija", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 32: Lonja Gárgolas barbudo y león
+            { 
+                id: "audio-P-32", 
+                title: "Parada 32: Lonja - Gárgola del barbudo con león", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 33: Lonja Gárgolas fornicador ventana
+           { 
+                id: "audio-P-33", 
+                title: "Parada 33: Lonja - Gárgola del fornicador en ventana", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 20: Lonja → Plaza del Doctor Collado
+            { 
+                id: "audio-TR-20", 
+                title: "Tramo 20: Lonja → Plaza del Doctor Collado", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 21: Plaza del Doctor Collado → Plaza del Negrito (Fuente del Negrito)
+            { 
+                id: "audio-TR-21", 
+                title: "Tramo 21: Plaza del Doctor Collado → Fuente del Negrito", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 34: Fuente del Negrito
+            { 
+                id: "audio-P-34", 
+                title: "Parada 34: Fuente del Negrito", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 22: Plaza del Negrito → Calle Caballeros
+            { 
+                id: "audio-TR-22", 
+                title: "Tramo 22: Fuente del Negrito → Calle Caballeros", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 35: Palau de la Generalitat
+            { 
+                id: "audio-P-35", 
+                title: "Parada 35: Palau de la Generalitat", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Tramo 23: Palacio de la Generalitat → Calle de los Serranos (FINAL)
+            { 
+                id: "audio-TR-23", 
+                title: "Tramo 23: Palacio de la Generalitat → Calle de los Serranos", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            },
+            
+            // Parada 36 - FINAL: Torres de Serranos Final
+            { 
+                id: "audio-P-36", 
+                title: "Parada 36: Torres de Serranos (Final del recorrido)", 
+                file: "Av1_audio_esp/12 Av1 Pista 8 ESPAÑOL montada.mp3"
+            }
+        ]; // Fin de audioFiles_BACKUP
+        
+        ═══════════════════════════════════════════════════════════════════════════════ */
+        
+        // ✅ Exponer función getter globalmente (sustituye la exposición directa del array)
+        // La línea original era: try { window.__vv_audioFiles = audioFiles; } catch (e) { /* ignore */ }
+        // Ahora los audios llegan desde el padre via CARGAR_AUDIOS
+    </script>
+    
+    <div class="audio-player-controls">
+        <div class="player-buttons-row">
+            <button id="playPauseBtn" aria-label="Reproducir/Pausar">
+                <i class="fas fa-play icon-play"></i>
+            </button>
+            <button id="retosBtn" aria-label="Retos">
+                <img src="fotos-botones/H4-fotoretos.png" alt="Retos">
+            </button>
+        </div>
+        <div class="progress-row">
+            <div class="progress-container" id="progressContainer" role="slider" aria-label="Barra de progreso de audio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                <div id="progressBar"></div>
+            </div>
+        </div>
+        <div class="time-display">
+            <span id="currentTime">00:00</span>
+            <span id="duration">00:00</span>
+        </div>
+    </div>
+
+    <audio id="audioPlayer" preload="metadata">
+        Tu navegador no soporta el elemento de audio.
+    </audio>
+
+    <script type="module">
+    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+
+    // Wrapper seguro para evitar doble registro de controladores en hijos
+    if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
+        window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                    return;
+                }
+                if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                    return;
+                }
+                window.__CONTROLADOR_REGISTRADOS.add(tipo);
+                if (typeof registrarControlador === 'function') {
+                    return registrarControlador(tipo, handler, opciones);
+                }
+                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+                globalThis.__vv_manejadores.set(tipo, handler);
+                return;
+            } catch (e) {
+                (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
+            }
+        };
+    }
+    import { resolverIdsParada, getPadreId } from './js/utils.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
+
+    const CONFIG_HIJO = {
+        IFRAME_ID: 'hijo3',
+        COMPONENTE_ID: 'AUDIO',
+        DEBUG: true
+    };
+
+    // Exportar CONFIG_HIJO para compatibilidad con mensajeria.js y para que el padre lo consulte
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = CONFIG_HIJO;
+    } else {
+        window.CONFIG_HIJO = CONFIG_HIJO;
+    }
+
+    let currentAudioId = null;
+    let isPlaying = false; // Estado de reproducción - ACTUALIZADO 2026-01-08
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🔧 UTILIDADES - AJUSTE DINÁMICO DE TIMEOUTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Calcula multiplicador de timeout según tipo de conexión
+     * Metodología consistente con codigo-padre.html (utils.js)
+     * @returns {number} Multiplicador (1.0-3.0)
+     */
+    function calcularMultiplicadorTimeoutConexion() {
+        try {
+            if (!navigator.connection) {
+                return 1.5; // Valor moderado si no hay info de conexión
+            }
+
+            const effectiveType = navigator.connection.effectiveType || 'unknown';
+            const multiplicadores = {
+                '4g': 1.0,      // Conexión rápida
+                '3g': 1.5,      // Conexión media - 50% más tiempo
+                '2g': 2.0,      // Conexión lenta - doble tiempo
+                'slow-2g': 3.0, // Conexión muy lenta - triple tiempo
+                'unknown': 1.5  // Desconocido - moderado
+            };
+
+            return multiplicadores[effectiveType] || 1.5;
+        } catch (error) {
+            console.warn('[HIJO3][TIMEOUT] Error calculando multiplicador:', error);
+            return 1.5;
+        }
+    }
+
+    /**
+     * Ajusta timeout según conexión de red actual
+     * @param {number} timeoutBase - Timeout base en ms
+     * @returns {number} Timeout ajustado
+     */
+    function ajustarTimeoutPorConexion(timeoutBase) {
+        const multiplicador = calcularMultiplicadorTimeoutConexion();
+        const timeoutAjustado = Math.round(timeoutBase * multiplicador);
+        console.debug(`[HIJO3][TIMEOUT] ${timeoutBase}ms -> ${timeoutAjustado}ms (${multiplicador}x)`);
+        return timeoutAjustado;
+    }
+
+    // Estado del componente (homologado con otros hijos)
+    const estado = {
+        inicializado: false,
+        modoActual: 'aventura',
+        pendingCambioModo: null
+    };
+
+    // Funciones de reproductor (fusionadas y adaptadas)
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function updateUI() {
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        if (audioPlayer.paused) {
+            playPauseBtn.innerHTML = '<i class="fas fa-play icon-play"></i>';
+            isPlaying = false;
+        } else {
+            playPauseBtn.innerHTML = '<i class="fas fa-pause icon-play"></i>';
+            isPlaying = true;
+        }
+    }
+
+    // Prepara el audio en el reproductor y opcionalmente lo reproduce.
+    // autoplay: boolean (por defecto false) — si es true intentará iniciar reproducción inmediatamente.
+    async function cargarYReproducirAudio(audioId, autoplay = false) {
+        // ✅ Usar función centralizada que prioriza datos del padre
+        const files = obtenerAudioFiles();
+        if (!files || !Array.isArray(files) || files.length === 0) {
+            logger.error(`Audio array no disponible o vacío. Imposible preparar ${audioId}. ¿Se cargaron los audios desde el padre?`);
+            return { exito: false, error: 'audioFiles_missing' };
+        }
+        const audioData = files.find(audio => audio.id === audioId || audio.id === `audio-${audioId}`);
+        if (!audioData) {
+            logger.error(`Audio no encontrado: ${audioId}`);
+            return { exito: false, error: 'audio_not_found' };
+        }
+
+        // Preparar la fuente siempre (permite que el usuario pulse Play más tarde)
+        audioPlayer.src = audioData.file;
+        currentAudioId = audioId;
+
+        if (autoplay) {
+            try {
+                await audioPlayer.play();
+                return { exito: true, reproducido: true };
+            } catch (playError) {
+                // Es posible que el intento de autoplay sea bloqueado por la política del navegador.
+                logger.warn(`[hijo3] Intento de autoplay bloqueado o fallido para ${audioId}:`, playError && playError.message ? playError.message : playError);
+                return { exito: true, reproducido: false, autoplayBlocked: true };
+            }
+        }
+
+        // Si no se debe reproducir automáticamente, indicamos que la carga fue correcta
+        return { exito: true, reproducido: false };
+    }
+
+    // Elementos DOM
+    const audioPlayer = document.getElementById('audioPlayer');
+    const progressBar = document.getElementById('progressBar');
+    const currentTimeElement = document.getElementById('currentTime');
+    const durationElement = document.getElementById('duration');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const retosBtn = document.getElementById('retosBtn');
+
+    // Event listener para botón de Play/Pause
+    playPauseBtn.addEventListener('click', () => {
+        if (audioPlayer.paused) {
+            audioPlayer.play();
+        } else {
+            audioPlayer.pause();
+        }
+    });
+
+    // Event listener para botón de Retos
+    retosBtn.addEventListener('click', async () => {
+        try {
+            logger.info(`[hijo3] Botón de retos clickeado, solicitando reto al padre`);
+            
+            // Enviar solicitud al padre para mostrar un reto
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.RETO.SOLICITAR_RETO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: getPadreId(),
+                datos: { 
+                    contexto: 'manual',
+                    audioId: currentAudioId 
+                }
+            });
+            
+            logger.debug(`[hijo3] Solicitud de reto enviada exitosamente`);
+        } catch (error) {
+            logger.error(`[hijo3] Error al solicitar reto:`, error);
+        }
+    });
+
+    // Event listener para barra de progreso (seek)
+    const progressContainer = document.getElementById('progressContainer');
+    // Allow vertical page scrolling while enabling horizontal drag on the bar
+    // `pan-y` lets vertical scrolling but allows us to intercept horizontal gestures.
+    progressContainer.style.touchAction = 'pan-y';
+    // Internal state for dragging/seeking
+    let isSeeking = false;
+    let activePointerId = null;
+    let initialX = 0;
+    let initialY = 0;
+    let lockedToSeeking = null; // null = undecided, true = seeking (horizontal), false = allow vertical scroll
+    let wasPlayingDuringSeek = false;
+
+    function updateProgressFromClientX(clientX) {
+        try {
+            const rect = progressContainer.getBoundingClientRect();
+            const clickX = clientX - rect.left;
+            const percent = clickX / rect.width;
+            const validPercent = Math.max(0, Math.min(1, percent));
+            // Update progress bar UI
+            if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
+                progressBar.style.width = `${validPercent * 100}%`;
+                // Update accessible attribute
+                progressContainer.setAttribute('aria-valuenow', Math.round(validPercent * 100));
+            } else {
+                // If duration not available, just update visual width temporarily
+                progressBar.style.width = `${validPercent * 100}%`;
+            }
+            return validPercent;
+        } catch (error) {
+            logger.error('[hijo3] updateProgressFromClientX error', error);
+            return 0;
+        }
+    }
+
+    progressContainer.addEventListener('click', (e) => {
+        try {
+            // Calcular posición del click relativa a la barra
+            const percent = updateProgressFromClientX(e.clientX);
+            
+            // Validar rango (0-100%)
+            const validPercent = Math.max(0, Math.min(1, percent));
+            
+            // Validar que el audio esté cargado y duration sea finito
+            if (!audioPlayer || !isFinite(audioPlayer.duration) || audioPlayer.duration === 0) {
+                logger.warn(`[hijo3] Audio no cargado o duration inválido, ignorando seek`);
+                return;
+            }
+            
+            // Saltar a la posición clickeada
+            audioPlayer.currentTime = validPercent * audioPlayer.duration;
+            
+            logger.debug(`[hijo3] Seek en barra de progreso: ${(validPercent * 100).toFixed(1)}%`);
+        } catch (error) {
+            logger.error(`[hijo3] Error al hacer seek en barra de progreso:`, error);
+        }
+    });
+
+    // Pointer/touch drag handlers for seamless mobile and desktop seeking
+    progressContainer.addEventListener('pointerdown', (e) => {
+        try {
+            if (e.pointerType === 'mouse' && e.button !== 0) return; // only left button
+            isSeeking = true;
+            lockedToSeeking = null;
+            initialX = e.clientX;
+            initialY = e.clientY;
+            activePointerId = e.pointerId;
+            // We defer pausing until the user moves horizontally and we lock the gesture to seeking.
+            activePointerId = e.pointerId;
+            // Do not set pointer capture yet to allow normal vertical scrolling unless we lock to seeking.
+            // updateProgressFromClientX(e.clientX); // only set on lock
+        } catch (err) {
+            logger.error('[hijo3] pointerdown error', err);
+        }
+    });
+
+    progressContainer.addEventListener('pointermove', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            // If undecided, check if movement leans horizontal vs vertical to lock behavior
+            if (lockedToSeeking === null) {
+                const dx = Math.abs(e.clientX - initialX);
+                const dy = Math.abs(e.clientY - initialY);
+                const H_LOCK_THRESHOLD = 10; // pixels before locking
+                // If horizontal movement is more pronounced than vertical, lock to seeking
+                if (dx > H_LOCK_THRESHOLD && dx > dy * 1.5) {
+                    lockedToSeeking = true;
+                    // Capture pointer now to receive subsequent pointer events without the page scrolling
+                    try { progressContainer.setPointerCapture(activePointerId); } catch (err) {}
+                    wasPlayingDuringSeek = !audioPlayer.paused && !audioPlayer.ended;
+                    if (wasPlayingDuringSeek) audioPlayer.pause();
+                    e.preventDefault();
+                    updateProgressFromClientX(e.clientX);
+                } else if (dy > H_LOCK_THRESHOLD && dy > dx * 1.5) {
+                    // Lock to vertical scrolling and stop seeking behavior
+                    lockedToSeeking = false;
+                    // Release pointer capture if previously set
+                    try { progressContainer.releasePointerCapture(activePointerId); } catch (err) {}
+                    isSeeking = false; // allow page to scroll vertically
+                } else {
+                    // Not enough movement to decide yet; do nothing
+                }
+            } else if (lockedToSeeking === true) {
+                // We are currently seeking; update progress
+                e.preventDefault();
+                updateProgressFromClientX(e.clientX);
+            } else {
+                // lockedToSeeking === false -> vertical scroll in progress; ignore pointermove
+            }
+        } catch (err) {
+            logger.error('[hijo3] pointermove error', err);
+        }
+    });
+
+    function finalizeSeek(clientX) {
+        try {
+            const percent = updateProgressFromClientX(clientX);
+            if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
+                audioPlayer.currentTime = percent * audioPlayer.duration;
+            }
+            // resume playback if it was playing before seek
+            if (wasPlayingDuringSeek) {
+                audioPlayer.play().catch(err => logger.warn('[hijo3] Unable to resume playback after seek', err));
+            }
+        } catch (err) {
+            logger.error('[hijo3] finalizeSeek error', err);
+        }
+    }
+
+    progressContainer.addEventListener('pointerup', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            if (lockedToSeeking === true) {
+                finalizeSeek(e.clientX);
+            }
+            // Clean up
+            isSeeking = false;
+            lockedToSeeking = null;
+            try { progressContainer.releasePointerCapture(e.pointerId); } catch (_) {}
+            activePointerId = null;
+        } catch (err) {
+            logger.error('[hijo3] pointerup error', err);
+        }
+    });
+
+    progressContainer.addEventListener('pointercancel', (e) => {
+        try {
+            if (!isSeeking || e.pointerId !== activePointerId) return;
+            if (lockedToSeeking === true) finalizeSeek(e.clientX);
+            isSeeking = false;
+            lockedToSeeking = null;
+            try { progressContainer.releasePointerCapture(e.pointerId); } catch(_){}
+            activePointerId = null;
+        } catch (err) {
+            logger.error('[hijo3] pointercancel error', err);
+        }
+    });
+
+    // Fallback for older browsers: touch events (if pointer events unsupported)
+    progressContainer.addEventListener('touchstart', (e) => {
+        try {
+            const touch = e.touches[0];
+            isSeeking = true;
+            lockedToSeeking = null;
+            initialX = touch.clientX;
+            initialY = touch.clientY;
+            // don't update yet until the user moves horizontally enough
+            e.preventDefault();
+        } catch (err) { logger.error('[hijo3] touchstart error', err); }
+    }, { passive: false });
+    progressContainer.addEventListener('touchmove', (e) => {
+        try {
+            if (!isSeeking) return;
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - initialX);
+            const dy = Math.abs(touch.clientY - initialY);
+            const H_LOCK_THRESHOLD = 10;
+            if (lockedToSeeking === null) {
+                if (dx > H_LOCK_THRESHOLD && dx > dy * 1.5) {
+                    lockedToSeeking = true;
+                    wasPlayingDuringSeek = !audioPlayer.paused && !audioPlayer.ended;
+                    if (wasPlayingDuringSeek) audioPlayer.pause();
+                    e.preventDefault();
+                    updateProgressFromClientX(touch.clientX);
+                } else if (dy > H_LOCK_THRESHOLD && dy > dx * 1.5) {
+                    lockedToSeeking = false;
+                    isSeeking = false;
+                    // allow scrolling
+                }
+            } else if (lockedToSeeking === true) {
+                e.preventDefault();
+                updateProgressFromClientX(touch.clientX);
+            } else {
+                // locked to vertical scrolling - ignore
+            }
+        } catch (err) { logger.error('[hijo3] touchmove error', err); }
+    }, { passive: false });
+    progressContainer.addEventListener('touchend', (e) => {
+        try {
+            if (!isSeeking) return;
+            // touchend has no touches, use changedTouches
+            const touch = e.changedTouches[0];
+            if (lockedToSeeking === true) finalizeSeek(touch.clientX);
+            isSeeking = false;
+            lockedToSeeking = null;
+        } catch (err) { logger.error('[hijo3] touchend error', err); }
+    });
+
+    // Keyboard support: seek with left/right arrow while progress container is focused
+    progressContainer.addEventListener('keydown', (e) => {
+        try {
+            const step = 5; // 5 seconds per keypress
+            if (!audioPlayer || !isFinite(audioPlayer.duration)) return;
+            if (e.key === 'ArrowLeft') {
+                audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - step);
+                e.preventDefault();
+            } else if (e.key === 'ArrowRight') {
+                audioPlayer.currentTime = Math.min(audioPlayer.duration, audioPlayer.currentTime + step);
+                e.preventDefault();
+            }
+        } catch (err) {
+            logger.error('[hijo3] keydown error on progressContainer', err);
+        }
+    });
+
+    // Event listeners para audio (adaptados para notificar al padre con enviarMensaje)
+    audioPlayer.addEventListener('timeupdate', () => {
+        // Validar que duration sea finito antes de calcular porcentaje
+        if (isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
+            const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+            progressBar.style.width = `${percent}%`;
+            progressContainer.setAttribute('aria-valuenow', Math.round(percent));
+            currentTimeElement.textContent = formatTime(audioPlayer.currentTime);
+        }
+    });
+
+    audioPlayer.addEventListener('loadedmetadata', () => {
+        durationElement.textContent = formatTime(audioPlayer.duration);
+    });
+
+    audioPlayer.addEventListener('play', async () => {
+        updateUI();
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: getPadreId(),
+                datos: { audioId: currentAudioId, estado: 'reproduciendo' }
+            });
+        }
+    });
+
+    audioPlayer.addEventListener('pause', async () => {
+        updateUI();
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO,
+                origen: CONFIG_HIJO.IFRAME_ID, // Se agrega el valor correcto
+                datos: { audioId: currentAudioId, estado: 'pausado' }
+            });
+        }
+    });
+
+    audioPlayer.addEventListener('ended', async () => {
+        if (currentAudioId) {
+            await enviarMensaje({
+                tipo: TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: getPadreId(),
+                datos: { audioId: currentAudioId, estado: 'finalizado' }
+            });
+        }
+        updateUI();
+    });
+
+    audioPlayer.addEventListener('error', async () => {
+        // Enviar AUDIO.ERROR al padre en caso de fallo
+        await enviarMensaje({
+            tipo: TIPOS_MENSAJE.AUDIO.ERROR,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            destino: getPadreId(),
+            datos: { audioId: currentAudioId, error: audioPlayer.error?.message || 'Error desconocido' }
+        });
+    });
+
+    // Normaliza un valor de modo (acepta string u objeto) y devuelve
+    // una cadena segura para usar en clases CSS y dataset.
+    function normalizarModo(modo) {
+        try {
+            if (typeof modo === 'string') {
+                modo = modo.trim();
+            } else if (modo && typeof modo === 'object') {
+                modo = modo.actual || modo.modo || modo.nombre || Object.values(modo).find(v => typeof v === 'string') || '';
+            } else if (modo === null || typeof modo === 'undefined') {
+                modo = '';
+            } else {
+                modo = String(modo);
+            }
+            modo = String(modo || '').trim().toLowerCase();
+            // Dejar sólo caracteres seguros para clases: a-z0-9_- (reemplazar otros con guión)
+            modo = modo.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+            return modo;
+        } catch (e) {
+            return '';
+        }
+    }
+
+    // Función para actualizar la interfaz según el modo
+    function actualizarInterfazModo(modo) {
+        const modoSeguro = normalizarModo(modo);
+        console.log(`[AUDIO] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
+        const body = document.body;
+
+        // Actualizar clases CSS (sólo si hay un modo válido)
+        body.classList.remove('modo-casa', 'modo-aventura');
+        if (modoSeguro) body.classList.add(`modo-${modoSeguro}`);
+
+        logger.info(`[hijo3] Interfaz actualizada para modo: ${modoSeguro}`);
+    }
+
+    // Inicialización y controladores (adaptados a mensajería actual)
+    try {
+        // Ocultar la UI hasta que el padre confirme que los controladores están listos
+        let _uiConfirmado = false;
+        const _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+        try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+        function mostrarUI() {
+            if (!_uiConfirmado) { console.warn('[hijo3] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; }
+            try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo3] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {}
+        }
+
+        await inicializarMensajeria({
+            iframeId: window.frameElement.id,
+            debug: CONFIG_HIJO.DEBUG
+        });
+
+        // ============================================================
+        // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+        // ============================================================
+        logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo3][PADRE_LISTO]`;
+
+            try {
+                if (!mensaje || !mensaje.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_LISTO`);
+
+                // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                if (mensaje.datos) {
+                    const { modo, paradas, paradaActual } = mensaje.datos;
+
+                    if (modo) {
+                        logger.info(`${logPrefix} Procesando modo inicial del padre: ${modo}`);
+                        actualizarInterfazModo(modo);
+                    }
+
+                    if (paradas) {
+                        logger.debug(`${logPrefix} Paradas recibidas: ${paradas.length}`);
+                        // Procesar paradas si necesario
+                    }
+
+                    if (paradaActual) {
+                        logger.debug(`${logPrefix} Parada actual: ${paradaActual}`);
+                        // Procesar parada actual si necesario
+                    }
+                }
+
+                // Enviar HIJO_LISTO directamente después de procesar datos
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: 'hijo3',
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['audio', 'retos-button'],
+                        timestamp: Date.now()
+                    }
+                });
+                estado.inicializado = true;
+                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando PADRE_LISTO:`, error);
+            }
+        });
+
+        /**
+         * Controlador: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
+         * Descripción: Recibe confirmación del padre de que los controladores están listos
+         * Origen esperado: padre
+         * Respuesta: Ninguna (preparado para futuras solicitudes de datos)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+            const logPrefix = `[hijo3][PADRE_CONFIRMA_HIJO_LISTO][${mensaje?.origen || 'desconocido'}]`;
+
+            try {
+                console.log('[hijo3] PADRE_CONFIRMA_HIJO_LISTO recibido:', mensaje);
+                if (!mensaje?.origen) {
+                    logger.error(`${logPrefix} Mensaje sin origen válido`, mensaje);
+                    return;
+                }
+
+                logger.info(`${logPrefix} Confirmación recibida del padre - controladores listos`);
+
+                // Aplicar cambio de modo encolado si existía
+                try {
+                    if (estado && estado.pendingCambioModo && estado.pendingCambioModo.modo) {
+                        const modoPendiente = estado.pendingCambioModo.modo;
+                        logger.info(`${logPrefix} Aplicando modo pendiente: ${modoPendiente}`);
+                        actualizarInterfazModo(modoPendiente);
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { tipo: 'inicializacion', modo: modoPendiente }
+                        });
+                        if (estado) delete estado.pendingCambioModo;
+                    }
+                    // Mostrar UI ahora que el padre confirmó
+                    try { _uiConfirmado = true; mostrarUI(); } catch (e) { /* ignore */ }
+                    try { enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }).catch(() => {}); } catch (e) { /* ignore */ }
+                } catch (err) {
+                    logger.error(`${logPrefix} Error aplicando modo pendiente:`, err);
+                }
+
+                // 🔥 NUEVO: Procesar modo inicial si viene en datos
+                const { modoInicial } = mensaje.datos || {};
+                if (modoInicial) {
+                    logger.info(`${logPrefix} Modo inicial recibido: ${modoInicial}`);
+                    actualizarInterfazModo(modoInicial);
+                    logger.debug(`${logPrefix} Interfaz actualizada según modo inicial`);
+                }
+
+                // Preparado para futuras solicitudes de datos adicionales del padre
+                logger.debug(`${logPrefix} Componente listo para recibir datos adicionales si es necesario`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación del padre:`, error);
+            }
+        });
+
+        // ============================================================
+        // CONTROLADOR: DATOS.CARGAR_AUDIOS
+        // Recibe audios centralizados del padre al iniciar aventura
+        // ============================================================
+        
+        /**
+         * Controlador: DATOS.CARGAR_AUDIOS
+         * Descripción: Recibe y almacena los audios de la aventura seleccionada
+         * Origen: padre (codigo-padre.html)
+         * Datos recibidos: { aventura, idioma, audios: Array, total, timestamp }
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.CARGAR_AUDIOS, async (mensaje) => {
+            const logPrefix = `[hijo3][CARGAR_AUDIOS]`;
+            
+            try {
+                const { aventura, idioma, audios, total, timestamp } = mensaje.datos || {};
+                
+                logger.info(`${logPrefix} 📥 Recibiendo audios de ${aventura} (${idioma}): ${total} pistas`);
+                
+                if (!audios || !Array.isArray(audios)) {
+                    throw new Error('Datos de audios inválidos o no son un array');
+                }
+                
+                // Almacenar en estado global para uso en funciones de reproducción
+                window.__vv_audioFiles = audios;
+                window.__vv_aventuraActual = aventura;
+                window.__vv_idiomaActual = idioma;
+                
+                // También exponer como variable local si audioFiles estaba definida
+                if (typeof audioFiles !== 'undefined') {
+                    // audioFiles ya existe como const, no se puede reasignar
+                    // Los audios están disponibles en window.__vv_audioFiles
+                }
+                
+                logger.info(`${logPrefix} ✅ ${audios.length} audios almacenados en window.__vv_audioFiles`);
+                
+                // Enviar confirmación al padre
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.DATOS.AUDIOS_CARGADOS,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: getPadreId(),
+                    datos: {
+                        exito: true,
+                        aventura: aventura,
+                        idioma: idioma,
+                        totalCargados: audios.length,
+                        timestamp: Date.now()
+                    }
+                });
+                
+                logger.success(`${logPrefix} ✅ Confirmación AUDIOS_CARGADOS enviada al padre`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error cargando audios:`, error);
+                
+                // Enviar error al padre
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.DATOS.AUDIOS_CARGADOS,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: getPadreId(),
+                        datos: {
+                            exito: false,
+                            error: error.message,
+                            timestamp: Date.now()
+                        }
+                    });
+                } catch (sendError) {
+                    logger.error(`${logPrefix} Error enviando confirmación de error:`, sendError);
+                }
+            }
+        });
+
+        // Controlador para reproducir audio (REQUEST del padre)
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.REPRODUCIR_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] REPRODUCIR_REQUEST recibido:`, mensaje.datos);
+                const { audioId, autoplay = false } = mensaje.datos || {};
+
+                if (!audioId) {
+                    throw new Error('audioId no proporcionado');
+                }
+
+                const resultado = await cargarYReproducirAudio(audioId, !!autoplay);
+
+                // Enviar RESPONSE confirmando (indicar si la reproducción realmente comenzó)
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: Object.assign({
+                        audioId,
+                        exito: resultado.exito === true,
+                        mensajeOriginal: mensaje.id
+                    }, resultado ? { reproducido: !!resultado.reproducido, autoplayBlocked: !!resultado.autoplayBlocked } : {})
+                });
+            } catch (error) {
+                logger.error(`[hijo3] Error procesando REPRODUCIR_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            }
+        });
+
+        // Controlador para pausar audio (REQUEST del padre)
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.PAUSA_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] PAUSA_REQUEST recibido:`, mensaje.datos);
+                audioPlayer.pause();
+                
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.PAUSA_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: true,
+                        audioId: currentAudioId,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            } catch (error) {
+                logger.error(`[hijo3] Error procesando PAUSA_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.PAUSA_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            }
+        });
+
+        // Controlador para control genérico (REQUEST del padre)
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.CONTROL_REQUEST, async (mensaje) => {
+            try {
+                logger.debug(`[hijo3] CONTROL_REQUEST recibido:`, mensaje.datos);
+                const { accion } = mensaje.datos || {};
+                
+                if (accion === 'pausar') {
+                    audioPlayer.pause();
+                } else if (accion === 'reproducir') {
+                    audioPlayer.play();
+                } else if (accion === 'detener') {
+                    audioPlayer.pause();
+                    audioPlayer.currentTime = 0;
+                }
+                
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.CONTROL_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: true,
+                        accion,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            } catch (error) {
+                logger.error(`[hijo3] Error procesando CONTROL_REQUEST:`, error);
+                await enviarMensaje({
+                    tipo: TIPOS_MENSAJE.AUDIO.CONTROL_RESPONSE,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: mensaje.origen,
+                    datos: { 
+                        exito: false,
+                        error: error.message,
+                        mensajeOriginal: mensaje.id 
+                    }
+                });
+            }
+        });
+
+        /**
+         * Controlador: SISTEMA.CAMBIO_MODO
+         * Descripción: Actualiza la interfaz según el modo (casa/aventura)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+            const logPrefix = `[hijo3][CAMBIO_MODO]`;
+
+            try {
+                // Validar carga secuencial
+                if (!mensaje.datos?.secuenciaCompleta) {
+                    logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                    if (estado) estado.pendingCambioModo = mensaje.datos || { modo: null };
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: {
+                            error: 'Secuencia no completa',
+                            esperarPermiso: true,
+                            tipoOriginal: mensaje.tipo,
+                            modoSolicitado: mensaje.datos?.modo
+                        }
+                    });
+                    return;
+                }
+
+                // Extraer y validar datos
+                const { modo } = mensaje.datos || {};
+                if (!modo || !['casa', 'aventura'].includes(modo)) {
+                    logger.error(`${logPrefix} Modo inválido: ${modo}`);
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { error: 'Modo inválido', modoRecibido: modo }
+                    });
+                    return;
+                }
+
+                // Enviar ENTENDIDO
+                logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                
+                // Validación explícita antes de enviar
+                const destinoEntendido = mensaje.origen;
+                const tipoEntendido = 'SISTEMA.CAMBIO_MODO_ENTENDIDO'; // String literal para evitar problemas de timing
+                const origenEntendido = CONFIG_HIJO?.IFRAME_ID;
+                
+                // DEBUG: Console.log directo para diagnóstico (bypass suppress-warnings)
+                if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
+                    const debugInfo = {
+                        destino: destinoEntendido,
+                        tipo: tipoEntendido,
+                        origen: origenEntendido,
+                        TIPOS_MENSAJE_exists: typeof TIPOS_MENSAJE !== 'undefined',
+                        TIPOS_MENSAJE_SISTEMA_exists: typeof TIPOS_MENSAJE?.SISTEMA !== 'undefined',
+                        CONFIG_HIJO_exists: typeof CONFIG_HIJO !== 'undefined',
+                        mensaje_origen: mensaje?.origen
+                    };
+                    console.error('[hijo3][CAMBIO_MODO] 🔴 DEBUG CAMPOS UNDEFINED:', JSON.stringify(debugInfo, null, 2));
+                    logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, debugInfo);
+                    throw new Error('Campos undefined en CAMBIO_MODO_ENTENDIDO');
+                }
+                
+                await enviarMensaje({
+                    destino: destinoEntendido,
+                    tipo: tipoEntendido,
+                    origen: origenEntendido,
+                    datos: { 
+                        modo, 
+                        timestamp: Date.now(),
+                        mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                    }
+                });
+                
+                // Procesar cambio
+                logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+                const audioPlayer = document.getElementById('audioPlayer');
+                if (audioPlayer && !audioPlayer.paused) {
+                    audioPlayer.pause();
+                    audioPlayer.currentTime = 0;
+                }
+                currentAudioId = null;
+                isPlaying = false;
+                // Fix: updateProgressBar no existe, usar DOM directo
+                const progressBar = document.getElementById('progressBar');
+                const progressContainer = document.getElementById('progressContainer');
+                if (progressBar) progressBar.style.width = '0%';
+                if (progressContainer) progressContainer.setAttribute('aria-valuenow', 0);
+                logger.debug(`${logPrefix} Estado de audio reseteado`);
+                actualizarInterfazModo(modo);
+
+                // Enviar EFECTUADO
+                logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                    origen: 'hijo3', // String literal
+                    datos: { 
+                        modo, 
+                        exito: true, 
+                        timestamp: Date.now(),
+                        mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                    }
+                });
+
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen || 'padre',
+                        datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                    });
+                } catch (e) {
+                    logger.error(`${logPrefix} Error notificando fallo:`, e);
+                }
+            }
+        });
+
+        // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+            const logPrefix = `[hijo3][CAMBIO_MODO_APLICADO]`;
+            try {
+                const { modo } = mensaje.datos || {};
+                logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error:`, error);
+            }
+        });
+
+        /**
+         * Controlador: CONTROL.HABILITAR
+         * Descripción: Habilita controles específicos según el mensaje del padre
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+            try {
+                const { control } = mensaje.datos;
+                logger.info(`[hijo3] CONTROL.HABILITAR recibido para: ${control}`);
+
+                // Solo aplicar en modo aventura - en modo casa los botones siempre están habilitados
+                if (document.body.classList.contains('modo-aventura')) {
+                    if (control === 'retosBtn') {
+                        retosBtn.disabled = false;
+                        retosBtn.style.opacity = '1';
+                        retosBtn.style.pointerEvents = 'auto';
+                        logger.debug(`[hijo3] Botón de retos habilitado (modo aventura)`);
+                    }
+                } else {
+                    logger.debug(`[hijo3] CONTROL.HABILITAR ignorado - modo casa mantiene botones siempre habilitados`);
+                }
+            } catch (error) {
+                logger.error(`[hijo3] Error en CONTROL.HABILITAR:`, error);
+            }
+        });
+
+        /**
+         * Controlador: CONTROL.DESHABILITAR
+         * Descripción: Deshabilita controles específicos según el mensaje del padre
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+            try {
+                const { control } = mensaje.datos;
+                logger.info(`[hijo3] CONTROL.DESHABILITAR recibido para: ${control}`);
+
+                // Solo aplicar en modo aventura - en modo casa los botones siempre están habilitados
+                if (document.body.classList.contains('modo-aventura')) {
+                    if (control === 'retosBtn') {
+                        retosBtn.disabled = true;
+                        retosBtn.style.opacity = '0.5';
+                        retosBtn.style.pointerEvents = 'none';
+                        logger.debug(`[hijo3] Botón de retos deshabilitado (modo aventura)`);
+                    }
+                } else {
+                    logger.debug(`[hijo3] CONTROL.DESHABILITAR ignorado - modo casa mantiene botones siempre habilitados`);
+                }
+            } catch (error) {
+                logger.error(`[hijo3] Error en CONTROL.DESHABILITAR:`, error);
+            }
+        });
+
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+            enviarMensaje({
+                destino: mensaje.origen,
+                tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: { timestamp: Date.now() }
+            });
+            logger.debug(`[hijo3] HEARTBEAT recibido, respuesta enviada.`);
+        });
+
+        // Controlador: SISTEMA.HEARTBEAT.START
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+            const logPrefix = `[hijo3][HEARTBEAT_START][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                window.__HEARTBEAT_ACTIVO = true;
+                logger.info(`${logPrefix} Activado heartbeat local`);
+                return { started: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_START:`, error);
+                return { started: false, error: error && error.message };
+            }
+        });
+
+        // Controlador: SISTEMA.HEARTBEAT.PAUSE
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+            const logPrefix = `[hijo3][HEARTBEAT_PAUSE][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                window.__HEARTBEAT_ACTIVO = false;
+                logger.info(`${logPrefix} Pausado heartbeat local`);
+                return { paused: true };
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HEARTBEAT_PAUSE:`, error);
+                return { paused: false, error: error && error.message };
+            }
+        });
+
+        // Controlador: NAVEGACION.CAMBIO_PARADA (acepta cambio y confirma)
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+            const logPrefix = `[hijo3][NAVEGACION.CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
+            try {
+                    const resolved = resolverIdsParada(mensaje.datos || {});
+                    const padreId = resolved.padreId;
+                    const paradaId = resolved.paradaId;
+                    logger.info(`${logPrefix} Cambio de parada recibido: ${padreId || paradaId}`);
+                // Actualizar estado local para audio si corresponde
+                if (paradaId) window.__hijo3_paradaActual = paradaId;
+                // Enviar confirmación al padre
+                try {
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen || getPadreId(),
+                            datos: { paradaId: paradaId || null, parada_id: paradaId || null, padreId: padreId || null, padreid: padreId || null, timestamp: Date.now() }
+                    });
+                    logger.info(`${logPrefix} Confirmación enviada`);
+                } catch (err) { logger.warn(`${logPrefix} No se pudo enviar confirmación:`, err); }
+            } catch (error) {
+                logger.warn(`${logPrefix} Error procesando CAMBIO_PARADA:`, error);
+            }
+        });
+
+        await enviarMensaje({
+            destino: getPadreId(),
+            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            datos: {
+                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                version: '1.0.0',
+                    capacidades: ['audio', 'retos-button', 'navegacion'],
+                timestamp: Date.now()
+            }
+        });
+
+        // Controlador para solicitud de audio del padre
+        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.SOLICITAR_AUDIO, async (mensaje) => {
+            const logPrefix = `[hijo3][AUDIO.SOLICITAR_AUDIO][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                const { paradaId, tipoConsulta } = mensaje.datos;
+                
+                // Validar datos requeridos
+                if (!paradaId) {
+                    logger.error(`${logPrefix} paradaId requerido faltante`);
+                    return;
+                }
+                if (!tipoConsulta) {
+                    logger.error(`${logPrefix} tipoConsulta requerido faltante`);
+                    return;
+                }
+                if (tipoConsulta !== 'AUDIO') {
+                    logger.error(`${logPrefix} tipoConsulta inválido: ${tipoConsulta}, esperado: AUDIO`);
+                    return;
+                }
+                
+                logger.debug(`${logPrefix} Solicitud de audio para ${paradaId}`);
+                
+                // Buscar audio en array (simulado, en producción mapear paradaId a audioId)
+                const audioData = {
+                    paradaId,
+                    url: `audio/parada_${paradaId.replace('padre-P-', '')}.mp3`, // Ejemplo
+                    duracion: 30,
+                    descripcion: `Audio para ${paradaId}`
+                };
+                
+                // Responder al padre (incluir referencia al mensaje original
+                // para que el padre pueda resolver confirmaciones pendientes)
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.AUDIO.RESPUESTA_AUDIO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: Object.assign({}, audioData, {
+                        // audioId útil para reproducciones posteriores
+                        audioId: audioData.audioId || `audio-${paradaId}`,
+                        // Referencia al mensaje original: preferir mensaje.datos.mensajeId si existe
+                        mensajeOriginal: (mensaje && (mensaje.datos && mensaje.datos.mensajeId)) || mensaje && mensaje.id
+                    })
+                });
+                
+                logger.info(`${logPrefix} Audio enviado para ${paradaId}`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error respondiendo audio:`, error);
+            }
+        });
+
+        // Controlador para acciones de UI desde botones horizontales
+        registrarControladorSeguro(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
+            const logPrefix = `[hijo3][UI.ACCION_USUARIO][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                const { accion, elemento, contexto } = mensaje?.datos || {};
+                
+                if (accion === 'simular_click' && elemento && contexto === 'boton_horizontal') {
+                    logger.info(`${logPrefix} Simulando click en ${elemento} desde boton horizontal`);
+                    
+                    // Buscar el elemento y simular click
+                    const boton = document.getElementById(elemento);
+                    if (boton) {
+                        logger.info(`${logPrefix} ✅ Elemento ${elemento} encontrado, ejecutando click`);
+                        boton.click();
+                        
+                        // Enviar confirmación al padre
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                accion: 'click_ejecutado',
+                                elemento,
+                                exito: true,
+                                timestamp: Date.now()
+                            }
+                        });
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ Elemento ${elemento} no encontrado`);
+                        
+                        // Enviar error al padre
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                codigo: 'ELEMENTO_NO_ENCONTRADO',
+                                mensaje: `Elemento ${elemento} no existe`,
+                                elemento,
+                                timestamp: Date.now()
+                            }
+                        });
+                    }
+                } else {
+                    logger.warn(`${logPrefix} Acción no reconocida:`, { accion, elemento, contexto });
+                }
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando acción UI:`, error);
+            }
+        });
+
+        // Controlador para ACK del sistema
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+            const logPrefix = `[hijo3][SISTEMA.ACK][${mensaje?.origen || 'desconocido'}]`;
+            
+            try {
+                logger.debug(`${logPrefix} ACK recibido, respondiendo...`);
+                
+                // Responder al ACK
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        timestamp: Date.now(),
+                        estado: 'activo'
+                    }
+                });
+                
+                logger.debug(`${logPrefix} ACK respondido`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error respondiendo ACK:`, error);
+            }
+        });
+
+        // ============================================================
+        // HANDLERS GPS
+        // ============================================================
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+            try {
+                console.debug(`[hijo3][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
+                return { exito: true };
+            } catch (e) {
+                console.error('[hijo3][GPS.ESTADO_ACTUALIZADO] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+            try {
+                const datos = mensaje?.datos || {};
+                const { codigo } = datos;
+                const errorMensaje = datos.mensaje || datos.message || null;
+                const contexto = datos.contexto || datos.context || 'desconocido';
+                const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+                const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
+                let details;
+                try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
+                logger.error(`[hijo3][GPS.ERROR] Error GPS recibido: ${details}`);
+                // Telemetría: incrementar contador por código de error GPS en hijo3
+                try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                // Enviar métrica a monitoreo (si mensajería disponible)
+                try {
+                    if (typeof enviarMensaje === 'function') {
+                        enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo3', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {});
+                    }
+                } catch (ignore) { /* ignore */ }
+                return { exito: true };
+            } catch (e) {
+                logger.error('[hijo3][GPS.ERROR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+
+        logger.info(`[hijo3] Inicialización completada exitosamente`);
+    } catch (error) {
+        logger.error(`[hijo3] Error durante la inicialización:`, error);
+    }
+
+    // Implementar pagehide para limpiar recursos
+    window.addEventListener('pagehide', () => {
+        logger.info(`[hijo3] Limpiando recursos en pagehide`);
+    });
+    </script>
+</body>
+</html>

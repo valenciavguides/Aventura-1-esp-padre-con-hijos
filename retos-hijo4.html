@@ -1,0 +1,1571 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
+    <title>retos-hijo4</title>
+    <script src="js/suppress-warnings.js"></script>
+    <script>
+        // Definir ejecutarValidacion globalmente lo antes posible para evitar errores de "not defined"
+        window.ejecutarValidacion = function(reto, respuestaUsuario) {
+            try {
+                console.log(`[hijo4] ejecutarValidacion: Validación personalizada por defecto para reto ${reto?.id || 'desconocido'}`);
+                // Validación personalizada por defecto - siempre pasa
+                return true;
+            } catch (error) {
+                console.error('Error en ejecutarValidacion:', error);
+                return false;
+            }
+        };
+    </script>
+    <style>
+        body {
+            font-family: "Book Antiqua", "Palatino Linotype", "Palatino", Georgia, serif;
+            margin: 1em;
+            background: #fff;
+            color: #222;
+            font-size: 16px; /* Asegura un tamaño base para 'em' */
+        }
+        h2 { /* Este es el título visible en la página */
+            margin-bottom: 0.8em;
+        }
+        h3 {
+            margin-bottom: 0.2em;
+            font-size: 1.5em; /* Aumentado para que las preguntas de retos normales sean más grandes */
+            text-align: center; /* Centrar la pregunta por defecto */
+        }
+        #reto {
+            /* Los bordes deben ser siempre de igual grosor. */
+            border: 3px solid #ccc; /* Grosor de borde constante */
+            border-radius: 8px;
+            padding: 1em;
+            margin-bottom: 1em;
+            position: relative;
+            min-height: 220px;
+        }
+            .respuesta {
+            margin: 0.4em 0;
+            font-size: 1.3em; /* Aumentado el tamaño de las opciones de respuesta */
+            display: flex;
+            align-items: center;
+        }
+        .respuesta input[type="radio"] {
+            margin-right: 0.7em;
+            transform: scale(1.3);
+            cursor: pointer;
+        }
+        .respuesta input[type="checkbox"] {
+            margin-right: 0.7em;
+            transform: scale(1.3);
+            cursor: pointer;
+        }
+        .respuesta input[type="text"] {
+            flex-grow: 1;
+            font-size: 1.3em; /* Aumentado el tamaño del input de texto para respuestas */
+            padding: 0.3em 0.5em;
+            border-radius: 4px;
+            border: 1px solid #999;
+        }
+        /* Contenedor para los botones para que estén en la misma línea */
+        #button-container {
+            display: flex;
+            flex-wrap: wrap; /* Permite que los botones salten de línea si no hay espacio */
+            gap: 1em; /* Espacio entre los botones */
+            margin-top: 1em;
+            justify-content: center; /* Centra los botones horizontalmente */
+            align-items: center; /* Alinea verticalmente los botones si tienen alturas diferentes */
+        }
+
+        button.btn, button#btnMostrarRespuesta, button#btnNextAfterReto {
+            padding: 0.6em 1.2em;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background-color: #0077cc;
+            color: white;
+            user-select: none;
+            transition: background-color 0.3s ease;
+        }
+        button.btn:hover, button#btnNextAfterReto:hover {
+            background-color: #005699;
+        }
+        button.btn:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
+        #btnMostrarRespuesta {
+            background-color: #28a745;
+        }
+        #btnMostrarRespuesta:hover {
+            background-color: #1e7e34;
+        }
+        #btnNextAfterReto {
+            background-color: #0077cc;
+        }
+
+
+        #respuestaCorrectaTexto {
+            margin-top: 1em;
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 1em;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            font-size: 1.5em; /* Aumentado el tamaño del texto de la respuesta correcta */
+            color: #222;
+            z-index: 20;
+            display: none;
+            box-sizing: border-box;
+        }
+        #fuegos {
+            pointer-events: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            overflow: hidden;
+            display: none;
+        }
+
+        /* Border colors for correct/incorrect */
+        #reto.correct {
+            border-color: #28a745;
+        }
+        #reto.incorrect {
+            border-color: #c00;
+        }
+
+        /* Estilos específicos para el iframe del puzzle */
+        #puzzleIframe {
+            width: 100%;
+            /* Por defecto, para pantallas más grandes o portrait: */
+            max-width: 980px; /* Ancho máximo en pantallas grandes (el que ya definiste) */
+            max-height: 650px; /* Alto máximo en pantallas grandes (el que ya definiste) */
+            height: 650px; /* Altura de respaldo si max-height no es suficiente, o si no hay otra regla */
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            display: block;
+            margin: 1em auto; /* Centrarlo y darle un margen */
+        }
+
+        /* Media Query para móviles en horizontal: oculta el h2 y ajusta el espacio */
+        @media (max-width: 800px) and (orientation: landscape) {
+            h2 {
+                display: none; /* Oculta el título "Reto Valencia be Guides" */
+            }
+            /* Oculta la pregunta del reto, solo si el reto NO es un puzzle */
+            #reto:not(.puzzle-active) h3 {
+                font-size: 1.2em; /* Puedes ajustar el tamaño para landscape si es necesario */
+            }
+            /* Oculta la pregunta del reto de puzzle en landscape */
+            #reto.puzzle-active h3 {
+                display: none;
+            }
+            body {
+                margin: 0.5em; /* Reduce los márgenes del body para ganar espacio */
+            }
+            #reto {
+                min-height: auto; /* Permite que el contenedor del puzzle se ajuste a la altura del iframe */
+                padding: 0.8em; /* Reduce el padding del reto */
+            }
+            button.btn, button#btnMostrarRespuesta, button#btnNextAfterReto {
+                font-size: 1em; /* Reduce el tamaño de fuente de los botones */
+                padding: 0.5em 1em; /* Reduce el padding de los botones */
+            }
+            .respuesta {
+                font-size: 1em; /* Reduce el tamaño de fuente de las opciones */
+            }
+            .respuesta input[type="radio"], .respuesta input[type="checkbox"] {
+                transform: scale(1.1); /* Reduce un poco el tamaño de los radios/checkboxes */
+            }
+            #puzzleIframe {
+                /* Altura para móviles en horizontal, usando dvh para mejor comportamiento */
+                height: calc(100dvh - 80px); /* Ajustado para dar más espacio a botones y márgenes */
+                max-width: 100%; /* Asegurarse de que no esté limitado por la regla de pantallas grandes */
+                margin: 0.5em auto; /* Ajustar el margen en móviles */
+            }
+        }
+
+        /* Media Query para pantallas más grandes o portrait */
+        @media (min-width: 801px) or (orientation: portrait) {
+            /* Esto es CLAVE: el h3 dentro de #reto SOLO será pequeño si #reto tiene la clase .puzzle-active */
+            #reto.puzzle-active h3 {
+                text-align: center; /* Centrar la pregunta */
+                margin-top: 0; /* Subir al máximo */
+                margin-bottom: 0.3em; /* Margen inferior ajustado */
+                font-size: 1em; /* Letra más pequeña (ajustado de 1.1em a 1em) */
+            }
+        }
+    </style>
+
+    <script type="module">
+    /* --- Integración con Sistema de Mensajería --- */
+    
+    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+
+    // Wrapper seguro para evitar doble registro de controladores en hijos
+    if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
+        window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                    return;
+                }
+                if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                    return;
+                }
+                window.__CONTROLADOR_REGISTRADOS.add(tipo);
+                if (typeof registrarControlador === 'function') {
+                    return registrarControlador(tipo, handler, opciones);
+                }
+                // Encolar para que el padre/mensajería lo migre cuando esté lista
+                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
+                globalThis.__vv_manejadores.set(tipo, handler);
+                return;
+            } catch (e) {
+                (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
+            }
+        };
+    }
+
+    import { resolverIdsParada, getPadreId } from './js/utils.js';
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import logger from './js/logger.js';
+
+    const CONFIG_HIJO = {
+        id: 'hijo4',
+        IFRAME_ID: 'hijo4',  // Alias para compatibilidad con enviarMensaje (origen)
+        nombre: 'Retos',
+        COMPONENTE_ID: 'RETOS',
+        DEBUG: true
+    };
+
+    // Exportar CONFIG_HIJO para compatibilidad con mensajeria.js
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = CONFIG_HIJO;
+    } else {
+        window.CONFIG_HIJO = CONFIG_HIJO;
+    }
+
+    const estado = {
+        retoActualId: null,
+        inicializado: false,
+        modoActual: 'aventura'
+        ,padreIdActual: null,
+        paradaIdActual: null
+        ,paradaPendiente: false
+    };
+
+    // ╔════════════════════════════════════════════════════════════════════════════╗
+    // ║ ARRAY VACÍO - Los retos se cargan desde el PADRE via mensaje CARGAR_RETOS   ║
+    // ║ El array de backup está comentado abajo por si necesitamos restaurar        ║
+    // ╚════════════════════════════════════════════════════════════════════════════╝
+    const retosAventura1Es = [];
+    
+    // Función getter que prioriza datos del padre sobre datos locales
+    function obtenerRetos() {
+        // Prioridad 1: Datos recibidos del padre
+        if (window.__vv_retosAventura && Array.isArray(window.__vv_retosAventura) && window.__vv_retosAventura.length > 0) {
+            return window.__vv_retosAventura;
+        }
+        // Prioridad 2: Array local como fallback de emergencia
+        console.warn('[hijo4] ⚠️ Usando retosAventura1Es local vacío - ¿Se cargaron los retos desde el padre?');
+        return retosAventura1Es;
+    }
+    
+    // Exponer función globalmente
+    window.obtenerRetos = obtenerRetos;
+    
+    /* ═══════════════════════════════════════════════════════════════════════════════
+     * ██ BACKUP: Array de retos original - COMENTADO PARA USAR DATOS CENTRALIZADOS
+     * ██ Descomentar solo si falla el flujo centralizado y necesitamos fallback
+     * ═══════════════════════════════════════════════════════════════════════════════
+    
+    // Array de retos - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear retos/puzzles. Cualquier cambio debe coordinarse con el padre.
+    const retosAventura1Es_BACKUP = [
+        {
+            reto: 1,
+            id: "R-1",
+            tipo: "opcion",
+            pregunta: "1. ¿Cuántas Aventuras pueden hacerse con Valencia be Guides?",
+            opciones: ["4", "5", "6", "7"],
+            correctas: ["7"],
+            multiple: false
+        },
+        {
+            reto: 2,
+            id: "R-2",
+            tipo: "opcion",
+            pregunta: "2. ¿Sabía decirme cómo se llaman estas Torres?",
+            opciones: ["Torres de Quart", "Torres de Serranos", "Torre del Miguelete", "Torre de Santa catalina"],
+            correctas: ["Torres de Serranos"],
+            multiple: false
+        },
+        {
+            reto: 3,
+            id: "R-3",
+            tipo: "opcion",
+            pregunta: "3. ¿En la cumbre de las torres ondea la bandera de Valencia: sus colores se componen de rojo, amarillo y… ?",
+            opciones: ["Violeta", "Verde", "Azul"],
+            correctas: ["Azul"],
+            multiple: false
+        },
+        {
+            reto: 4,
+            id: "R-4",
+            tipo: "texto",
+            pregunta: "4. ¿Sabría decirme el nombre de la calle?",
+            correctas: ["Calle Muro de Santa Ana"]
+        },
+        {
+            reto: 5,
+            id: "R-5",
+            tipo: "opcion",
+            pregunta: "5. ¿Qué porta San Lorenzo en la mano?",
+            opciones: ["Una Paloma", "Una cuchara", "Una parrilla"],
+            correctas: ["Una parrilla"],
+            multiple: false
+        },
+        {
+            reto: 6,
+            id: "R-6",
+            tipo: "opcion",
+            pregunta: "6. ¿Con qué mano sujeta Neptuno la cornucopia?",
+            opciones: ["Izquierda", "Derecha"],
+            correctas: ["Derecha"],
+            multiple: false
+        },
+        {
+            reto: 7,
+            id: "R-7",
+            tipo: "texto",
+            pregunta: "7. ¿Cuántas figuras rodean la fuente?",
+            correctas: ["8"]
+        },
+        {
+            reto: 8,
+            id: "PZ-8",
+            tipo: "puzzle",
+            pregunta: "8. Plaza de la Virgen",
+            src: "P8_puzzle_plaza_virgen.html"
+        },
+        {
+            reto: 9,
+            id: "R-9",
+            tipo: "opcion",
+            pregunta: "9. ¿Qué figura esculpida puede verse en el marco del cuadro?",
+            opciones: ["Un Dragón", "Un Murciélago", "Una Corona"],
+            correctas: ["Una Corona"],
+            multiple: false
+        },
+        {
+            reto: 10,
+            id: "R-10",
+            tipo: "opcion-multiple",
+            pregunta: "10. ¿Qué puede verse dentro?",
+            opciones: ["Un Altar", "Una bandera", "Una espada"],
+            correctas: ["Un Altar", "Una bandera"],
+            multiple: true
+        },
+        {
+            reto: 11,
+            id: "R-11",
+            tipo: "texto",
+            pregunta: "11. Sobre ésta hay una placa conmemorativa. ¿En qué año fue expuesta dicha placa?",
+            correctas: ["1952"]
+        },
+        {
+            reto: 12,
+            id: "R-12",
+            tipo: "texto",
+            pregunta: "12. ¿En qué año se edificó esta finca? ¡Pista! Mire en la parte superior de la fachada.",
+            correctas: ["1906"]
+        },
+        {
+            reto: 13,
+            id: "R-13",
+            tipo: "opcion",
+            pregunta: "13. ¿Qué puede verse dentro?",
+            opciones: ["Una Plaza de Toros", "Unos baños romanos", "Una estación de metro"],
+            correctas: ["Unos baños romanos"],
+            multiple: false
+        },
+        {
+            reto: 14,
+            id: "R-14",
+            tipo: "opcion",
+            pregunta: "14. ¿Sabría determinar qué geometría tiene?",
+            opciones: ["hexagonal", "Octogonal", "Cuadrangular"],
+            correctas: ["hexagonal"],
+            multiple: false
+        },
+        {
+            reto: 15,
+            id: "R-15",
+            tipo: "texto",
+            pregunta: "15. ¿Cuántos Arcos componen la puerta?",
+            correctas: ["6"]
+        },
+        {
+            reto: 16,
+            id: "R-16",
+            tipo: "opcion",
+            pregunta: "16. ¿Recuerda qué animal corona el escudo municipal?",
+            opciones: ["Un Dragón", "Un Murciélago", "Un Caballo"],
+            correctas: ["Un Murciélago"],
+            multiple: false
+        },
+        {
+            reto: 17,
+            id: "R-17",
+            tipo: "opcion",
+            pregunta: "17. ¡Preste atención a la fachada de la primera torre! ¿Qué Fruta Cítrica natural de Valencia decora la fachada?",
+            opciones: ["Limones", "Pomelos", "Naranjas"],
+            correctas: ["Naranjas"],
+            multiple: false
+        },
+        {
+            reto: 18,
+            id: "PZ-18",
+            tipo: "puzzle",
+            pregunta: "18. Plaza de Toros y Estación del Norte",
+            src: "P18_puzzle_plaza_de_Toros_y_estacion_norte.html"
+        },
+        {
+            reto: 19,
+            id: "R-19",
+            tipo: "texto",
+            pregunta: "19. ¿Sabría decirme qué comercio alberga dicho edificio?",
+            correctas: ["?"]
+        },
+        {
+            reto: 20,
+            id: "R-20",
+            tipo: "opcion-multiple",
+            pregunta: "20. Sobre la entrada principal, en un arco de medio punto, figuras alegóricas representan a los cinco continentes. ¿Qué porta la figura central en sus manos?",
+            opciones: ["Una Corona", "Una Espada", "Una Antorcha"],
+            correctas: ["Una Antorcha", "Una Espada"],
+            multiple: true
+        },
+        {
+            reto: 21,
+            id: "R-21",
+            tipo: "opcion",
+            pregunta: "21. ¿Qué porta la figura en la mano?",
+            opciones: ["Una balanza", "Un libro", "Una pluma"],
+            correctas: ["Una balanza"],
+            multiple: false
+        },
+        {
+            reto: 22,
+            id: "R-22",
+            tipo: "texto",
+            pregunta: "22. ¿Cuantas plantas tiene el edificio?",
+            correctas: ["10"]
+        },
+        {
+            reto: 23,
+            id: "R-23",
+            tipo: "opcion",
+            pregunta: "23. Busque la vidriera con los colores de la Señera valenciana en la fachada del edificio. ¿Sabría determinar qué forma tiene?",
+            opciones: ["Cuadrangular", "Redonda", "Triangular"],
+            correctas: ["Redonda"],
+            multiple: false
+        },
+        {
+            reto: 24,
+            id: "R-24",
+            tipo: "opcion-multiple",
+            pregunta: "24. ¿Qué sostiene la virgen en sus manos?",
+            opciones: ["Un Rosario", "Un niño", "Una corona"],
+            correctas: ["Un Rosario", "Un niño"],
+            multiple: true
+        },
+        {
+            reto: 25,
+            id: "R-25",
+            tipo: "opcion",
+            pregunta: "25. ¿Qué le entrega el ángel al niño?",
+            opciones: ["Una paloma", "Un orbe", "Alimentos"],
+            correctas: ["Un orbe"],
+            multiple: false
+        },
+        {
+            reto: 26,
+            id: "PZ-26",
+            tipo: "puzzle",
+            pregunta: "26. Lonja de la Seda",
+            src: "P26_puzzle_lonja.html"
+        },
+        {
+            reto: 27,
+            id: "R-27",
+            tipo: "opcion-multiple",
+            pregunta: "27. El barquero que rema a contracorriente.",
+            opciones: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
+            correctas: ["Un hombre con rostro triste manejando un pequeño bote de madera escapa a contracorriente de un monstruo."],
+            multiple: true
+        },
+        {
+            reto: 28,
+            id: "R-28",
+            tipo: "opcion-multiple",
+            pregunta: "28. Un árbol muerto: símbolo del Pecado, se ve entre las dos hojas de la puerta y cumple la función de parteluz.",
+            opciones: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
+            correctas: ["Observe en la copa del árbol una figura con forma de cabeza humana."],
+            multiple: true
+        }
+    ]; // Fin de retosAventura1Es_BACKUP
+    
+    ═══════════════════════════════════════════════════════════════════════════════ */
+
+    const estadoRetos = {
+        retosCompletados: new Set(),
+        progreso: { completados: 0, total: obtenerRetos().length },
+        ultimoReto: null,
+        estadisticas: {
+            tiempoPromedio: 0,
+            intentosPromedio: 0,
+            aciertosConsecutivos: 0
+        }
+    };
+
+    // Duración de la animación de fuegos artificiales
+    const DURACION_TOTAL_MS = 3000;
+
+    // Variables globales para elementos del DOM
+    let retoDiv;
+    let btnEnviar;
+    let btnMostrarRespuesta;
+    let divRespuestaCorrecta;
+    let btnNext;
+    let fuegosDiv;
+
+    let retoActual = null; // Objeto del reto actual
+
+    // Helper: ocultar controles comunes de forma segura
+    function ocultarControles() {
+        try {
+            if (btnEnviar) btnEnviar.style.display = 'none';
+            // btnMostrarRespuesta y btnNext permanecen visibles siempre
+            if (divRespuestaCorrecta) { divRespuestaCorrecta.style.display = 'none'; divRespuestaCorrecta.textContent = ''; }
+        } catch (e) {
+            logger && logger.warn && logger.warn('[hijo4] ocultarControles error:', e);
+        }
+    }
+
+    /* Función: fuegosArtificiales()
+       Muestra una animación de fuegos artificiales en la pantalla.
+    */
+    function fuegosArtificiales() {
+        if (!fuegosDiv) {
+            return;
+        }
+        fuegosDiv.innerHTML = ""; // Limpiar fuegos anteriores
+        fuegosDiv.style.display = "block"; // Mostrar el contenedor de fuegos
+
+        const NUM_CHISPAS_POR_FUEGO = 30;
+        const NUM_EXPLOSIONES = 15;
+
+        for (let e = 0; e < NUM_EXPLOSIONES; e++) {
+            const delayExplosion = (DURACION_TOTAL_MS / NUM_EXPLOSIONES) * e;
+
+            setTimeout(() => {
+                const containerWidth = fuegosDiv.offsetWidth || window.innerWidth;
+                const containerHeight = fuegosDiv.offsetHeight || window.innerHeight;
+
+                const startX = Math.random() * containerWidth;
+                const startY = Math.random() * containerHeight;
+
+                for (let i = 0; i < NUM_CHISPAS_POR_FUEGO; i++) {
+                    let chispa = document.createElement("div");
+                    chispa.style.position = "absolute";
+                    chispa.style.borderRadius = "50%";
+                    chispa.style.width = "12px";
+                    chispa.style.height = "12px";
+                    chispa.style.background = `hsl(${Math.random() * 360}, 100%, 70%)`;
+                    chispa.style.opacity = "1";
+                    chispa.style.left = `${startX}px`;
+                    chispa.style.top = `${startY}px`;
+                    chispa.style.zIndex = "10";
+
+                    fuegosDiv.appendChild(chispa);
+
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * 80 + 40;
+                    const endX = startX + distance * Math.cos(angle);
+                    const endY = startY + distance * Math.sin(angle);
+
+                    const chispaDuration = DURACION_TOTAL_MS / NUM_EXPLOSIONES * 1.5;
+
+                    chispa.offsetWidth; // Forzar reflow para asegurar que la transición se aplique
+                    chispa.style.transition = `all ${chispaDuration}ms ease-out`;
+                    chispa.style.left = `${endX}px`;
+                    chispa.style.top = `${endY}px`;
+                    chispa.style.opacity = "0";
+                    chispa.style.transform = "scale(0.5)";
+
+                    setTimeout(() => {
+                        if (chispa.parentNode) {
+                            chispa.parentNode.removeChild(chispa);
+                        }
+                    }, chispaDuration + 50);
+                }
+            }, delayExplosion);
+        }
+        setTimeout(() => {
+            fuegosDiv.style.display = "none";
+        }, DURACION_TOTAL_MS + 100);
+    }
+
+    /* Función: vibrar()
+       Activa una vibración corta en dispositivos compatibles.
+    */
+    function vibrar() {
+        if (navigator.vibrate) navigator.vibrate(300);
+    }
+
+    // Asegura que el script se ejecute una vez que el DOM esté completamente cargado.
+    document.addEventListener("DOMContentLoaded", async function() {
+
+        // Asignar los elementos del DOM a las variables globales
+        retoDiv = document.getElementById("reto");
+        btnEnviar = document.createElement("button");
+        btnEnviar.textContent = "Enviar";
+        btnEnviar.className = "btn";
+
+        btnMostrarRespuesta = document.getElementById("btnMostrarRespuesta");
+        divRespuestaCorrecta = document.getElementById("respuestaCorrectaTexto");
+        btnNext = document.getElementById("btnNextAfterReto");
+        fuegosDiv = document.getElementById("fuegos");
+
+        // Verificar que todos los elementos necesarios se encontraron
+        if (!retoDiv || !btnMostrarRespuesta || !divRespuestaCorrecta || !btnNext || !fuegosDiv) {
+            console.error("ERROR CRÍTICO: No se pudieron encontrar todos los elementos del DOM necesarios. Asegúrate de que los IDs sean correctos en el HTML.");
+            return; // Detener la ejecución si faltan elementos clave
+        }
+
+        /* Función: mostrarReto(retoId)
+           Carga y muestra el reto especificado por ID.
+        */
+        function mostrarReto(retoId) {
+            logger.debug(`[hijo4] mostrarReto llamado con retoId: ${retoId}`);
+            // Buscar el reto usando función centralizada
+            const retosArray = obtenerRetos();
+            const reto = retosArray.find(r => r.id === retoId);
+            if (!reto) {
+                console.error(`Reto con ID ${retoId} no encontrado`);
+                return;
+            }
+            logger.debug(`[hijo4] Reto encontrado:`, reto);
+            
+            // ✅ CRÍTICO: Asignar retoActual para que verificar() funcione
+            retoActual = reto;
+            estado.retoActualId = retoId;
+
+            // Ocultar todos los botones y mensajes al inicio de un nuevo reto
+            ocultarControles();
+
+            // Los botones están siempre visibles, pero btnNext está deshabilitado hasta respuesta correcta
+            if (btnNext) btnNext.disabled = true;
+            if (btnMostrarRespuesta) btnMostrarRespuesta.disabled = false;
+
+            retoDiv.classList.remove("correct", "incorrect");
+            fuegosDiv.innerHTML = "";
+            fuegosDiv.style.display = "none";
+
+            retoDiv.innerHTML = ""; // Limpiar contenido anterior del reto
+            retoDiv.setAttribute("tabindex", "0");
+            retoDiv.classList.remove('puzzle-active'); // Remover la clase puzzle-active
+
+            let preguntaElem = document.createElement("h3");
+            preguntaElem.textContent = `${reto.pregunta}`;
+            retoDiv.appendChild(preguntaElem);
+
+            if (reto.tipo === "opcion" || reto.tipo === "opcion-multiple") {
+                const inputType = reto.multiple ? "checkbox" : "radio";
+                reto.opciones.forEach((opcion, i) => {
+                    const divOpcion = document.createElement("div");
+                    divOpcion.className = "respuesta";
+                    const input = document.createElement("input");
+                    input.type = inputType;
+                    input.name = "op";
+                    input.value = opcion;
+                    input.id = "opcion" + i;
+                    divOpcion.appendChild(input);
+
+                    const label = document.createElement("label");
+                    label.htmlFor = input.id;
+                    label.textContent = opcion;
+                    divOpcion.appendChild(label);
+                    retoDiv.appendChild(divOpcion);
+                });
+                // Insertar btnEnviar en el button-container para mantener estilos consistentes
+                const buttonContainer = document.getElementById('button-container');
+                if (buttonContainer && !buttonContainer.contains(btnEnviar)) {
+                    buttonContainer.insertBefore(btnEnviar, buttonContainer.firstChild);
+                }
+                btnEnviar.style.display = "inline-block"; // Mostrar el botón Enviar
+                btnEnviar.disabled = false;
+            }
+            else if (reto.tipo === "texto") {
+                const inputTexto = document.createElement("input");
+                inputTexto.type = "text";
+                inputTexto.id = "respuestaTexto";
+                inputTexto.autocomplete = "off";
+                inputTexto.spellcheck = false;
+                inputTexto.setAttribute("inputmode", "text");
+                inputTexto.style.fontSize = "1.2em";
+                inputTexto.style.width = "100%";
+                inputTexto.placeholder = "Escriba su respuesta aquí...";
+                retoDiv.appendChild(inputTexto);
+                // Insertar btnEnviar en el button-container para mantener estilos consistentes
+                const buttonContainer = document.getElementById('button-container');
+                if (buttonContainer && !buttonContainer.contains(btnEnviar)) {
+                    buttonContainer.insertBefore(btnEnviar, buttonContainer.firstChild);
+                }
+                btnEnviar.style.display = "inline-block"; // Mostrar el botón Enviar
+                btnEnviar.disabled = false;
+                setTimeout(() => inputTexto.focus(), 200);
+            }
+            else if (reto.tipo === "puzzle") {
+                retoDiv.classList.add('puzzle-active');
+                const puzzleIframe = document.createElement("iframe");
+                puzzleIframe.id = "puzzleIframe";
+                puzzleIframe.src = reto.src;
+                puzzleIframe.frameBorder = "0";
+                puzzleIframe.allowFullscreen = true;
+                retoDiv.appendChild(puzzleIframe);
+
+                // Ocultar botones de la página principal para puzzles, ya que el puzzle gestiona su propia lógica.
+                ocultarControles();
+            }
+        }
+
+        /* Función: verificar()
+           Comprueba si la respuesta del usuario para el reto actual es correcta.
+        */
+        function verificar() {
+            const reto = retoActual;
+            if (!reto) return;
+
+            btnEnviar.disabled = true; // Desactivar el botón Enviar
+            divRespuestaCorrecta.style.display = "none";
+            divRespuestaCorrecta.textContent = "";
+            retoDiv.classList.remove("correct", "incorrect");
+            fuegosDiv.innerHTML = "";
+            fuegosDiv.style.display = "none";
+
+            let esCorrecto = false;
+
+            // Ejecutar validación personalizada primero
+            let respuestaUsuario = null;
+            try {
+                // Obtener la respuesta del usuario según el tipo de reto
+                if (reto.tipo === "opcion") {
+                    const seleccion = document.querySelector('input[name="op"]:checked');
+                    respuestaUsuario = seleccion ? seleccion.value : null;
+                } else if (reto.tipo === "opcion-multiple") {
+                    respuestaUsuario = Array.from(document.querySelectorAll('input[name="op"]:checked')).map(i => i.value);
+                } else if (reto.tipo === "texto") {
+                    // Para retos de texto, la respuesta se obtiene del input correspondiente
+                    const inputTexto = document.querySelector('input[type="text"], textarea');
+                    respuestaUsuario = inputTexto ? inputTexto.value : null;
+                }
+
+                // Llamar a la validación personalizada
+                const validacionPersonalizada = window.ejecutarValidacion(reto, respuestaUsuario);
+                if (validacionPersonalizada === false) {
+                    console.warn(`[hijo4] Validación personalizada falló para reto ${reto?.id || 'desconocido'}`);
+                    throw new Error("Validación personalizada falló");
+                }
+            } catch (error) {
+                console.error(`[hijo4] Error en window.ejecutarValidacion para reto ${reto?.id || 'desconocido'}:`, error.message);
+                // Si la validación personalizada falla, mostrar error y permitir reintentar
+                alert("Error en la validación: " + error.message);
+                btnEnviar.disabled = false;
+                return;
+            }
+
+            if (reto.tipo === "opcion") {
+                const seleccion = document.querySelector('input[name="op"]:checked');
+                if (!seleccion) {
+                    alert("Por favor, seleccione una opción.");
+                    btnEnviar.disabled = false;
+                    return;
+                }
+                esCorrecto = reto.correctas.includes(seleccion.value);
+            } else if (reto.tipo === "opcion-multiple") {
+                const checks = Array.from(document.querySelectorAll('input[name="op"]:checked')).map(i => i.value);
+                if (checks.length === 0) {
+                    alert("Por favor, seleccione al menos una opción.");
+                    btnEnviar.disabled = false;
+                    return;
+                }
+                esCorrecto = reto.correctas.every(c => checks.includes(c)) && checks.every(s => reto.correctas.includes(s));
+            } else if (reto.tipo === "texto") {
+                // Se establece como correcto por defecto para retos de texto libre.
+                esCorrecto = true;
+            }
+
+            if (esCorrecto) {
+                retoDiv.classList.add("correct");
+                fuegosArtificiales(); // Llama a la animación
+
+                // Habilitar btnNext después de una respuesta correcta
+                if (btnNext) btnNext.disabled = false;
+
+                ocultarControles(); // Ocultar todos los controles (incluye btnEnviar)
+
+                // Enviar mensaje al padre indicando que el reto se completó
+                // Actualizar estado de progreso
+                estadoRetos.retosCompletados.add(reto.id);
+                estadoRetos.progreso.completados = estadoRetos.retosCompletados.size;
+                estadoRetos.ultimoReto = reto.id;
+                estadoRetos.estadisticas.aciertosConsecutivos++;
+                
+                logger.info(`[hijo4] Reto completado: ${reto.id}. Progreso: ${estadoRetos.progreso.completados}/${estadoRetos.progreso.total}`);
+
+                enviarMensaje({
+                    tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: getPadreId(),
+                    datos: {
+                        retoId: reto.id,
+                        correcto: true,
+                        progreso: estadoRetos.progreso
+                    }
+                });
+            } else {
+                retoDiv.classList.add("incorrect");
+                vibrar();
+                btnEnviar.disabled = false; // Permitir reintentar
+            }
+        }
+
+        /* Event Listener: btnMostrarRespuesta
+           Muestra la respuesta correcta del reto actual.
+        */
+        btnMostrarRespuesta.addEventListener("click", () => {
+            const reto = retoActual;
+            if (!reto) return; // Verificar que retoActual existe
+            if (reto.tipo === "opcion" || reto.tipo === "opcion-multiple" || reto.tipo === "texto") {
+                divRespuestaCorrecta.textContent = "Respuesta correcta: " + ((reto.correctas || []).join(", "));
+            } else {
+                divRespuestaCorrecta.textContent = "No hay respuesta correcta disponible para este tipo de reto.";
+            }
+            divRespuestaCorrecta.style.display = "block";
+        });
+
+        /* Event Listener: btnNext
+           Envía mensaje al padre para cerrar la ventana del reto.
+        */
+        if (btnNext) {
+            btnNext.addEventListener("click", () => {
+            // Enviar mensaje al padre para cerrar la ventana
+            enviarMensaje({
+                tipo: TIPOS_MENSAJE.RETO.OCULTAR,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                destino: getPadreId(),
+                datos: {
+                    retoId: retoActual ? retoActual.id : null
+                }
+            });
+            });
+        }
+
+        /* Event Listener: btnEnviar
+           Activa la verificación de la respuesta del usuario.
+        */
+        if (btnEnviar) {
+            btnEnviar.addEventListener("click", verificar);
+        }
+
+        /* Event Listener: window.message
+           Escucha mensajes provenientes del iframe del puzzle para coordinar el avance.
+        */
+        window.addEventListener("message", (event) => {
+            // En un entorno de producción, es MUY RECOMENDABLE verificar event.origin para seguridad
+            // if (event.origin !== "https://valenciavguides.github.io") return; // Reemplaza con tu dominio
+
+            // Asegúrate de que el mensaje provenga del iframe del puzzle
+            if (event.source !== window.frames[0]) {
+                return;
+            }
+
+            if (event.data === "puzzle-state-completed") {
+                retoDiv.classList.add("correct");
+                retoDiv.classList.remove("incorrect");
+                fuegosArtificiales();
+                // Enviar mensaje de completado para puzzles
+                enviarMensaje({
+                    tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    destino: getPadreId(),
+                    datos: {
+                        retoId: retoActual.id,
+                        completado: true
+                    }
+                });
+                if (btnNext) btnNext.disabled = false;
+            }
+            else if (event.data === "puzzle-state-timeout") {
+                retoDiv.classList.add("incorrect");
+                retoDiv.classList.remove("correct");
+                vibrar();
+                // El puzzle gestiona su propio comportamiento de timeout, no se activan aquí.
+            }
+            else if (event.data === "advance-to-next") {
+                divRespuestaCorrecta.style.display = "none";
+                indiceReto++;
+                const retosArray = obtenerRetos();
+                if (indiceReto >= retosArray.length) {
+                    alert("¡Has terminado todos los retos de la Aventura 1!");
+                    indiceReto = 0; // Opcional: Reiniciar o redirigir
+                }
+                const siguiente = retosArray[indiceReto];
+                if (siguiente) {
+                    mostrarReto(siguiente.id);
+                } else {
+                    logger.warn('[hijo4] No hay siguiente reto para índice', indiceReto);
+                }
+            }
+        });
+
+        /* Función: normalizarModo(modo)
+           Acepta string u objeto y devuelve una cadena segura para usos en clases/dataset
+        */
+        function normalizarModo(modo) {
+            try {
+                if (typeof modo === 'string') {
+                    modo = modo.trim();
+                } else if (modo && typeof modo === 'object') {
+                    modo = modo.actual || modo.modo || modo.nombre || Object.values(modo).find(v => typeof v === 'string') || '';
+                } else if (modo === null || typeof modo === 'undefined') {
+                    modo = '';
+                } else {
+                    modo = String(modo);
+                }
+                modo = String(modo || '').trim().toLowerCase();
+                modo = modo.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+                return modo;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /* Función: actualizarInterfazModo(modo)
+           Actualiza la interfaz según el modo (aventura/casa)
+        */
+        function actualizarInterfazModo(modo) {
+            const modoSeguro = normalizarModo(modo);
+            console.log(`[RETOS] Actualizando interfaz para modo:`, { original: modo, normalizado: modoSeguro });
+            const body = document.body;
+
+            // Actualizar estado local
+            estado.modoActual = modoSeguro || modo;
+
+            // Actualizar clases CSS
+            body.classList.remove('modo-casa', 'modo-aventura');
+            if (modoSeguro) body.classList.add(`modo-${modoSeguro}`);
+
+            // Ajustes específicos según el modo
+            const retoContainer = document.getElementById('reto-container');
+            if (retoContainer) {
+                if (modoSeguro) retoContainer.dataset.modo = modoSeguro;
+
+                // Ajustar estilos según el modo
+                if (modoSeguro === 'casa') {
+                    retoContainer.style.borderColor = '#3498db'; // Azul para modo casa
+                } else if (modoSeguro) {
+                    retoContainer.style.borderColor = '#e67e22'; // Naranja para modo aventura u otros
+                }
+            }
+
+            // Si hay un reto abierto, actualizar su visualización
+            if (estado.retoActualId) {
+                console.log(`[RETOS] Se está mostrando el reto ${estado.retoActualId} en modo ${modoSeguro || modo}`);
+            }
+        }
+
+        // Inicializar mensajería y controladores
+        try {
+            // Ocultar la UI hasta que el padre confirme que los controladores están listos
+            let _uiConfirmado = false;
+            const _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+            try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+            function mostrarUI() { if (!_uiConfirmado) { console.warn('[hijo4] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; } try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo4] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {} }
+
+            // Inicializar mensajería con estructura correcta para hijo4
+            await inicializarMensajeria({
+                iframeId: window.frameElement.id,
+                debug: CONFIG_HIJO.DEBUG
+            });
+
+            // Aplazar envío de HIJO_LISTO hasta registrar controladores críticos
+            logger.debug('[hijo4] HIJO_LISTO aplazado hasta post-inicialización de controladores');
+
+            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
+            // Controlador para inicialización del padre
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+                logger.info(`[hijo4] PADRE_LISTO recibido desde ${mensaje.origen}`);
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_LISTO`);
+
+                // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                if (mensaje.datos) {
+                    const { modo, paradas, paradaActual } = mensaje.datos;
+
+                    if (modo) {
+                        logger.info(`[hijo4] Procesando modo inicial del padre: ${modo}`);
+                        actualizarInterfazModo(modo);
+                    }
+
+                    if (paradas) {
+                        logger.debug(`[hijo4] Paradas recibidas: ${paradas.length}`);
+                    }
+
+                    if (paradaActual) {
+                        logger.debug(`[hijo4] Parada actual: ${paradaActual}`);
+                    }
+                }
+
+                // Enviar HIJO_LISTO directamente
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['retos', 'preguntas', 'validacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`[hijo4] HIJO_LISTO enviado al padre`);
+            });
+
+            // Controlador para confirmación del padre
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+                console.log('[hijo4] PADRE_CONFIRMA_HIJO_LISTO recibido:', mensaje);
+                logger.info(`[hijo4] PADRE_CONFIRMA_HIJO_LISTO recibido desde ${mensaje.origen}`);
+
+                // Aplicar modo pendiente si estaba encolado
+                try {
+                    if (estado.pendingCambioModo && estado.pendingCambioModo.modo) {
+                        const modoPendiente = estado.pendingCambioModo.modo;
+                        logger.info(`[hijo4] Aplicando modo pendiente: ${modoPendiente}`);
+                        actualizarInterfazModo(modoPendiente);
+                        await enviarMensaje({
+                            destino: mensaje.origen,
+                            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { tipo: 'inicializacion', modo: modoPendiente }
+                        });
+                        delete estado.pendingCambioModo;
+                    }
+                } catch (err) {
+                    logger.error('[hijo4] Error aplicando modo pendiente:', err);
+                }
+
+                // 🔥 NUEVO: Procesar modo inicial si viene en datos
+                const { modoInicial } = mensaje.datos || {};
+                if (modoInicial) {
+                    logger.info(`[hijo4] Modo inicial recibido: ${modoInicial}`);
+                    actualizarInterfazModo(modoInicial);
+                    logger.debug(`[hijo4] Interfaz actualizada según modo inicial`);
+                }
+
+                // Mostrar UI ahora que el padre confirmó
+                try { _uiConfirmado = true; mostrarUI(); } catch (e) { /* ignore */ }
+                try { await enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }); } catch (e) { /* ignore */ }
+            });
+
+            // Controlador para mostrar reto específico
+            registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRAR, (mensaje) => {
+                const { retoId } = mensaje.datos;
+                logger.info(`[hijo4] RETO.MOSTRAR recibido para reto: ${retoId}`);
+                console.log(`[hijo4] Mensaje RETO.MOSTRAR completo:`, mensaje);
+                mostrarReto(retoId);
+                estado.retoActualId = retoId;
+            });
+
+            // Controlador para cambio de modo - Protocolo bidireccional
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+                const logPrefix = `[hijo4][CAMBIO_MODO]`;
+
+                try {
+                    // Validar carga secuencial
+                    if (!mensaje.datos?.secuenciaCompleta) {
+                        logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                        estado.pendingCambioModo = mensaje.datos || { modo: null };
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: {
+                                error: 'Secuencia no completa',
+                                esperarPermiso: true,
+                                tipoOriginal: mensaje.tipo,
+                                modoSolicitado: mensaje.datos?.modo
+                            }
+                        });
+                        return;
+                    }
+
+                    // Extraer y validar datos
+                    const { modo } = mensaje.datos || {};
+                    if (!modo || !['casa', 'aventura'].includes(modo)) {
+                        logger.error(`${logPrefix} Modo inválido: ${modo}`);
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: { error: 'Modo inválido', modoRecibido: modo }
+                        });
+                        return;
+                    }
+
+                    // Enviar ENTENDIDO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido`);
+                    
+                    // Validación explícita antes de enviar
+                    const destinoEntendido = mensaje.origen;
+                    const tipoEntendido = 'SISTEMA.CAMBIO_MODO_ENTENDIDO'; // String literal para evitar problemas de timing
+                    const origenEntendido = CONFIG_HIJO?.IFRAME_ID;
+                    
+                    // DEBUG: Console.log directo para diagnóstico (bypass suppress-warnings)
+                    if (!destinoEntendido || !tipoEntendido || !origenEntendido) {
+                        const debugInfo = {
+                            destino: destinoEntendido,
+                            tipo: tipoEntendido,
+                            origen: origenEntendido,
+                            TIPOS_MENSAJE_exists: typeof TIPOS_MENSAJE !== 'undefined',
+                            TIPOS_MENSAJE_SISTEMA_exists: typeof TIPOS_MENSAJE?.SISTEMA !== 'undefined',
+                            CONFIG_HIJO_exists: typeof CONFIG_HIJO !== 'undefined',
+                            mensaje_origen: mensaje?.origen
+                        };
+                        console.error('[hijo4][CAMBIO_MODO] 🔴 DEBUG CAMPOS UNDEFINED:', JSON.stringify(debugInfo, null, 2));
+                        logger.error(`${logPrefix} ❌ Campos undefined antes de enviar ENTENDIDO:`, debugInfo);
+                        throw new Error('Campos undefined en CAMBIO_MODO_ENTENDIDO');
+                    }
+                    
+                    await enviarMensaje({
+                        destino: destinoEntendido,
+                        tipo: tipoEntendido,
+                        origen: origenEntendido,
+                        datos: { 
+                            modo, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+
+                    // Procesar cambio
+                    logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+                    estado.retoActualId = null;
+                    retoActual = null;
+                    if (retoDiv) {
+                        retoDiv.innerHTML = "";
+                        retoDiv.classList.remove("correct", "incorrect");
+                    }
+                    ocultarControles();
+                    logger.debug(`${logPrefix} Estado de retos reseteado`);
+                    actualizarInterfazModo(modo);
+
+                    // Enviar EFECTUADO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado`);
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                        origen: 'hijo4', // String literal
+                        datos: { 
+                            modo, 
+                            exito: true, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
+                    try {
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen || 'padre',
+                            datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                        });
+                    } catch (e) {
+                        logger.error(`${logPrefix} Error notificando fallo:`, e);
+                    }
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: mensaje.origen,
+                        datos: { error: error.message }
+                    });
+                }
+            });
+
+            // Controlador: SISTEMA.CAMBIO_MODO_APLICADO
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+                const logPrefix = `[hijo4][CAMBIO_MODO_APLICADO]`;
+                try {
+                    const { modo } = mensaje.datos || {};
+                    logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: DATOS.CARGAR_RETOS
+            // Recibe retos centralizados del padre al iniciar aventura
+            // ============================================================
+            
+            /**
+             * Controlador: DATOS.CARGAR_RETOS
+             * Descripción: Recibe y almacena los retos de la aventura seleccionada
+             * Origen: padre (codigo-padre.html)
+             * Datos recibidos: { aventura, idioma, retos: Array, total, timestamp }
+             */
+            registrarControladorSeguro(TIPOS_MENSAJE.DATOS.CARGAR_RETOS, async (mensaje) => {
+                const logPrefix = `[hijo4][CARGAR_RETOS]`;
+                
+                try {
+                    const { aventura, idioma, retos, total, timestamp } = mensaje.datos || {};
+                    
+                    logger.info(`${logPrefix} 📥 Recibiendo retos de ${aventura} (${idioma}): ${total} retos`);
+                    
+                    if (!retos || !Array.isArray(retos)) {
+                        throw new Error('Datos de retos inválidos o no son un array');
+                    }
+                    
+                    // Almacenar en estado global para uso en funciones de retos
+                    window.__vv_retosAventura = retos;
+                    window.__vv_aventuraActual = aventura;
+                    window.__vv_idiomaActual = idioma;
+                    
+                    // Actualizar el progreso
+                    estadoRetos.progreso.total = retos.length;
+                    
+                    logger.info(`${logPrefix} ✅ ${retos.length} retos almacenados en window.__vv_retosAventura`);
+                    
+                    // Enviar confirmación al padre
+                    await enviarMensaje({
+                        tipo: TIPOS_MENSAJE.DATOS.RETOS_CARGADOS,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        destino: getPadreId(),
+                        datos: {
+                            exito: true,
+                            aventura: aventura,
+                            idioma: idioma,
+                            totalCargados: retos.length,
+                            timestamp: Date.now()
+                        }
+                    });
+                    
+                    logger.success(`${logPrefix} ✅ Confirmación RETOS_CARGADOS enviada al padre`);
+                    
+                } catch (error) {
+                    logger.error(`${logPrefix} Error cargando retos:`, error);
+                    
+                    // Enviar error al padre
+                    try {
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.DATOS.RETOS_CARGADOS,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: getPadreId(),
+                            datos: {
+                                exito: false,
+                                error: error.message,
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (sendError) {
+                        logger.error(`${logPrefix} Error enviando confirmación de error:`, sendError);
+                    }
+                }
+            });
+
+            // Controlador para solicitar datos de un reto específico
+            registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_RETO, async (mensaje) => {
+                const { retoId } = mensaje.datos;
+                logger.info(`[hijo4] DATOS.SOLICITAR_RETO recibido para reto: ${retoId}`);
+
+                // Buscar usando función centralizada
+                const retosArray = obtenerRetos();
+                const reto = retosArray.find(r => r.id === retoId);
+                if (!reto) {
+                    logger.warn(`[hijo4] Reto no encontrado: ${retoId}`);
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            mensajeOriginal: mensaje.datos.mensajeId,
+                            error: 'Reto no encontrado',
+                            retoId
+                        }
+                    });
+                    return;
+                }
+
+                // Enviar datos del reto
+                await enviarMensaje({
+                    destino: mensaje.origen,
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        mensajeOriginal: mensaje.datos.mensajeId,
+                        retoId,
+                        reto: {
+                            id: reto.id,
+                            tipo: reto.tipo,
+                            pregunta: reto.pregunta,
+                            opciones: reto.opciones,
+                            multiple: reto.multiple,
+                            correctas: reto.correctas,
+                            puzzleSrc: reto.src
+                        }
+                    }
+                });
+
+                logger.info(`[hijo4] Datos del reto enviados: ${retoId}`);
+            });
+
+            // Controlador para ocultar el reto
+            registrarControladorSeguro(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
+                logger.info(`[hijo4] RETO.OCULTAR recibido - ocultando reto`);
+                
+                // Limpiar estado local del reto
+                estado.retoActualId = null;
+                retoActual = null;
+                
+                // Limpiar interfaz de reto
+                if (retoDiv) {
+                    retoDiv.innerHTML = "";
+                    retoDiv.classList.remove("correct", "incorrect");
+                }
+                
+                // Ocultar todos los botones
+                ocultarControles();
+                
+                // Limpiar fuegos artificiales
+                if (fuegosDiv) {
+                    fuegosDiv.innerHTML = "";
+                    fuegosDiv.style.display = "none";
+                }
+                
+                logger.info(`[hijo4] Estado y interfaz limpiados tras RETO.OCULTAR`);
+            });
+
+            // Controlador para habilitar controles
+            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+                logger.debug(`[hijo4] CONTROL.HABILITAR recibido`);
+                // Implementar lógica para habilitar controles si es necesario
+            });
+
+            // Controlador para deshabilitar controles
+            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+                logger.debug(`[hijo4] CONTROL.DESHABILITAR recibido`);
+                // Implementar lógica para deshabilitar controles si es necesario
+            });
+
+            // Controlador para heartbeat
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+                logger.debug(`[hijo4] HEARTBEAT recibido`);
+                // Responder al heartbeat si es necesario
+            });
+
+            // Controlador: SISTEMA.HEARTBEAT.START
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+                try {
+                    window.__HEARTBEAT_ACTIVO = true;
+                    logger.info(`[hijo4][HEARTBEAT_START] Activado heartbeat local`);
+                    return { started: true };
+                } catch (error) {
+                    logger.error(`[hijo4][HEARTBEAT_START] Error:`, error);
+                    return { started: false, error: error && error.message };
+                }
+            });
+
+            // Controlador: NAVEGACION.CAMBIO_PARADA
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+                try {
+                    const resolved = resolverIdsParada(mensaje.datos || {});
+                        const padreId = resolved.padreId;
+                        const paradaId = resolved.paradaId;
+                        logger.info(`[hijo4][NAVEGACION.CAMBIO_PARADA] recibido: ${padreId || paradaId}`);
+                    // update local state such as current challenge if necessary
+                    if (paradaId && typeof parseInt === 'function') {
+                        // No-op: placeholder for actual reto prefetch logic
+                        estado.retoActualId = mensaje.datos?.retoId || null;
+                        estado.padreIdActual = padreId || null;
+                        estado.paradaIdActual = paradaId || null;
+                    }
+                    // Send confirmation back to parent
+                    await enviarMensaje({
+                        destino: mensaje.origen || getPadreId(),
+                        tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: { paradaId: paradaId || null, parada_id: paradaId || null, padreId: padreId || null, padreid: padreId || null, timestamp: Date.now() }
+                    });
+                } catch (e) {
+                    logger.warn('[hijo4] Error manejando CAMBIO_PARADA', e);
+                }
+            });
+
+            // Controlador: SISTEMA.HEARTBEAT.PAUSE
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+                try {
+                    window.__HEARTBEAT_ACTIVO = false;
+                    logger.info(`[hijo4][HEARTBEAT_PAUSE] Pausado heartbeat local`);
+                    return { paused: true };
+                } catch (error) {
+                    logger.error(`[hijo4][HEARTBEAT_PAUSE] Error:`, error);
+                    return { paused: false, error: error && error.message };
+                }
+            });
+
+            // Controlador para ACK
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+                logger.debug(`[hijo4] ACK recibido:`, mensaje.datos);
+                // Procesar confirmaciones del padre
+            });
+
+            // CONTROLADOR: SISTEMA.NOTIFICACION - manejar PENDING_CANCELADO
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.NOTIFICACION, async (mensaje) => {
+                const logPrefix = `[hijo4][NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
+                try {
+                    const evento = mensaje.datos?.evento;
+                    if (!evento) return;
+                    if (evento === 'PENDING_CANCELADO') {
+                        const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                        const motivo = mensaje.datos?.motivo || 'sin_motivo';
+                        logger.info(`${logPrefix} PENDING_CANCELADO recibido para ${padreId}: ${motivo}`);
+                        if (padreId && padreId === estado.padreIdActual) {
+                            // Hide or reset reto UI
+                            try {
+                                estado.retoActualId = null;
+                                estado.paradaPendiente = false;
+                                // Hide controls
+                                ocultarControles();
+                                // Notify parent that the child processed the notification
+                                await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_CANCELADO procesado', padreId, motivo } });
+                            } catch (errPR) { logger.warn(`${logPrefix} Error limpiando UI reto por pending cancelado:`, errPR); }
+                        }
+                    }
+                    if (evento === 'PENDING_INICIADO') {
+                        const padreId = mensaje.datos?.padreId || mensaje.datos?.padreid || null;
+                        const motivo = mensaje.datos?.motivo || 'iniciado';
+                        logger.info(`${logPrefix} PENDING_INICIADO para ${padreId}: ${motivo}`);
+                        if (padreId && padreId === estado.padreIdActual) {
+                            // Hide any active reto UI and prevent further interaction until pending resolves
+                            try {
+                                estado.retoActualId = null;
+                                estado.paradaPendiente = true;
+                                ocultarControles();
+                                await enviarMensaje({ tipo: TIPOS_MENSAJE.SISTEMA.ACK, origen: CONFIG_HIJO.IFRAME_ID, destino: mensaje.origen, datos: { mensaje: 'PENDING_INICIADO recibid' } });
+                            } catch (err) { logger.warn(`${logPrefix} Error procesando PENDING_INICIADO:`, err); }
+                        }
+                    }
+                } catch (err) {
+                    logger.warn(`${logPrefix} Error procesando NOTIFICACION:`, err);
+                }
+            });
+
+            // Enviar HIJO_PREPARADO ahora que todos los controladores críticos han sido registrados
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['retos', 'preguntas', 'validacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.debug('[hijo4] HIJO_PREPARADO enviado; esperando PADRE_LISTO');
+            } catch (e) {
+                logger.warn('[hijo4] Error enviando HIJO_PREPARADO:', e);
+            }
+
+            // ============================================================
+            // HANDLERS GPS
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.UBICACION_ACTUALIZADA] Ubicación recibida (no-op)`);
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.UBICACION_ACTUALIZADA] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+                try {
+                    console.debug(`[hijo4][GPS.ESTADO_ACTUALIZADO] Estado GPS recibido (no-op):`, mensaje?.datos || {});
+                    return { exito: true };
+                } catch (e) {
+                    console.error('[hijo4][GPS.ESTADO_ACTUALIZADO] Error en handler no-op:', e);
+                    return { exito: false, error: e.message };
+                }
+            });
+
+            registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+                try {
+                    const datos = mensaje?.datos || {};
+                    const { codigo } = datos;
+                    const errorMensaje = datos.mensaje || datos.message || null;
+                    const contexto = datos.contexto || datos.context || 'desconocido';
+                    const codeMap = { 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' };
+                    const codeDesc = codeMap[codigo] || 'UNKNOWN_CODE';
+                    let details;
+                    try { details = JSON.stringify({ codigo, codeDesc, mensaje: errorMensaje, contexto }, null, 2); } catch (e) { details = `codigo=${codigo} mensaje=${String(errorMensaje)} contexto=${String(contexto)}`; }
+                    logger.error(`[hijo4][GPS.ERROR] Error GPS recibido: ${details}`);
+                    // Telemetría: incrementar contador por código de error GPS en hijo4
+                    try { if (codigo !== undefined) { typeof window.incrementarContador === 'function' && window.incrementarContador(`gps_error_code_${codigo}`); } } catch (err) { /* ignore */ }
+                    // Enviar métrica a monitoreo
+                    try { if (typeof enviarMensaje === 'function') { enviarMensaje({ tipo: TIPOS_MENSAJE.MONITOREO.METRICA, origen: CONFIG_HIJO.IFRAME_ID || 'hijo4', destino: 'sistema-monitoreo', datos: { nombre: 'gps_error_code', valor: 1, metadatos: { codigo } } }).catch(() => {}); } } catch (ignore) { /* ignore */ }
+                return { exito: true };
+            } catch (e) {
+                logger.error('[hijo4][GPS.ERROR] Error en handler no-op:', e);
+                return { exito: false, error: e.message };
+            }
+        });
+            logger.info(`[hijo4] HIJO_LISTO enviado exitosamente tras registrar controladores`);
+
+            estado.inicializado = true;
+            logger.info(`[hijo4] Inicialización completada exitosamente`);
+        } catch (error) {
+            logger.error(`[hijo4] Error en inicialización:`, error);
+        }
+    }); // Cierre del DOMContentLoaded listener
+
+    </script>
+
+</head>
+<body>
+
+<h2>Reto Valencia be Guides</h2>
+<div id="reto" tabindex="0"></div>
+
+<div id="button-container">
+    <button id="btnMostrarRespuesta">¿Respuesta Correcta?</button>
+    <button id="btnNextAfterReto">Continuar su Aventura</button>
+</div>
+<div id="respuestaCorrectaTexto"></div>
+
+<div id="fuegos"></div>
+</body>
+</html>
