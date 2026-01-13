@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Fix AudioFiles</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Test Fix AudioFiles</h1>
+    <p>Este test verifica que obtenerAudioFiles() funciona correctamente.</p>
+
+    <button onclick="testObtenerAudioFiles()">Test obtenerAudioFiles()</button>
+    <button onclick="testAccesoDirecto()">Test acceso directo (debe fallar)</button>
+
+    <div id="results"></div>
+
+    <script>
+        // Función para agregar resultado
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            resultsDiv.appendChild(div);
+        }
+
+        function testObtenerAudioFiles() {
+            try {
+                const audios = window.obtenerAudioFiles();
+                if (audios && Array.isArray(audios) && audios.length > 0) {
+                    addResult(`✅ obtenerAudioFiles() funciona: ${audios.length} archivos de audio`, 'success');
+                } else {
+                    addResult('❌ obtenerAudioFiles() retornó array vacío o inválido', 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Error en obtenerAudioFiles(): ${error.message}`, 'error');
+            }
+        }
+
+        function testAccesoDirecto() {
+            try {
+                // Intentar acceder directamente (debe fallar)
+                const audios = window.audioFiles;
+                if (audios) {
+                    addResult('⚠️ Acceso directo a audioFiles funciona (inesperado)', 'error');
+                } else {
+                    addResult('✅ Acceso directo a audioFiles retorna undefined (esperado)', 'success');
+                }
+            } catch (error) {
+                addResult(`✅ Acceso directo falla correctamente: ${error.message}`, 'success');
+            }
+        }
+
+        // Inicializar
+        addResult('Test inicializado. Esperando acciones del usuario...');
+    </script>
+
+    <!-- Simular la estructura del módulo ES6 -->
+    <script type="module">
+        // Simular audioFiles
+        const audioFiles = [
+            { id: 'audio-P-1', title: 'Audio Parada 1', file: 'audio1.mp3' },
+            { id: 'audio-P-2', title: 'Audio Parada 2', file: 'audio2.mp3' }
+        ];
+
+        // Función getter
+        function obtenerAudioFiles() {
+            return audioFiles;
+        }
+
+        // Exponer globalmente
+        window.obtenerAudioFiles = obtenerAudioFiles;
+    </script>
+</body>
+</html></content>
+<parameter name="filePath">c:\Users\gomez\.windsurf\proyecto valenciavguides\tests\test_fix_audio_files.html

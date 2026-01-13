@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test GPS Activation Restriction</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif}#log{white-space:pre-wrap;background:#f7f7f7;padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <h3>Test: GPS.ACTIVAR should be rejected when not in AVENTURA</h3>
+  <div id="status">RUNNING</div>
+  <div id="log"></div>
+  <iframe id="sut" src="../codigo-padre.html" style="width:100%;height:300px;border:1px solid #ccc"></iframe>
+  <script>
+  (async function(){
+    const logEl = document.getElementById('log');
+    function append(...args){ logEl.textContent += args.join(' ') + '\n'; }
+    const iframe = document.getElementById('sut');
+    await new Promise(r=>{ iframe.onload = r; });
+    append('[test] iframe cargado');
+
+    const win = iframe.contentWindow;
+    const tipos = win.TIPOS_MENSAJE;
+    if (!tipos) { append('[ERROR] TIPOS_MENSAJE no disponible'); document.getElementById('status').textContent='ERROR'; return; }
+
+    // Send an activation request as if from hijo2
+    const req = {
+      id: 'act-1',
+      tipo: tipos.NAVEGACION.GPS.ACTIVAR,
+      origen: 'hijo2',
+      destino: 'padre',
+      datos: { motivo: 'test' }
+    };
+
+    append('[test] Enviando GPS.ACTIVAR desde hijo2');
+    win.postMessage(req, window.location.origin);
+
+    // Listen for error response via message handler in this test window
+    let receivedError = false;
+    function handler(e){ try { const m = e.data; if (m && m.tipo === tipos.SISTEMA.ERROR && m.datos && m.datos.contexto === 'gps_activar_restringido') { receivedError = true; append('[PASS] Recibido error de restricción de activación'); document.getElementById('status').textContent='PASS'; window.removeEventListener('message', handler); } } catch (err) {} }
+    window.addEventListener('message', handler);
+
+    // Timeout
+    await new Promise(r => setTimeout(r, 1500));
+    if (!receivedError) { append('[FAIL] No se recibió error de restricción de activación'); document.getElementById('status').textContent='FAIL'; window.removeEventListener('message', handler); }
+  })();
+  </script>
+</body>
+</html>

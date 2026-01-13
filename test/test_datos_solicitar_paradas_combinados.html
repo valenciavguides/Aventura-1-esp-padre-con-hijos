@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test DATOS.SOLICITAR_PARADAS con datos combinados</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background-color: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Test: DATOS.SOLICITAR_PARADAS con datos combinados</h1>
+    <p>Este test verifica que el controlador SOLICITAR_PARADAS del padre responda con datos completos incluyendo coordenadas, audio y retos.</p>
+
+    <div id="results"></div>
+
+    <script type="module">
+        // Simular el entorno del padre
+        window.aventuraSeleccionada = 'Av1';
+        window.idiomaSeleccionado = 'esp';
+
+        // Simular datos de aventuras (simplificados para el test)
+        window.__vv_DATOS_AVENTURAS = {
+            'Av1': {
+                'coordenadas-hijo2': {
+                    coordenadas: [
+                        { id: 'P-1', coordenadas: { lat: 39.4699, lng: -0.3763 }, nombre: 'Parada 1' },
+                        { id: 'P-2', coordenadas: { lat: 39.4700, lng: -0.3764 }, nombre: 'Parada 2' }
+                    ]
+                }
+            }
+        };
+
+        window.__vv_AUDIOS_AVENTURAS = {
+            'Av1': {
+                'esp': [
+                    { id: 'audio-P-1', titulo: 'Audio Parada 1', url: 'audio1.mp3' },
+                    { id: 'audio-P-2', titulo: 'Audio Parada 2', url: 'audio2.mp3' }
+                ]
+            }
+        };
+
+        window.__vv_RETOS_AVENTURAS = {
+            'Av1': {
+                'esp': [
+                    { id: 'R-3', titulo: 'Reto Parada 1', descripcion: 'Descripción del reto 1' },
+                    { id: 'R-4', titulo: 'Reto Parada 2', descripcion: 'Descripción del reto 2' }
+                ]
+            }
+        };
+
+        // Simular AVENTURA_PARADAS
+        window.AVENTURA_PARADAS = [
+            { padreid: "padre-P-1", tipo: "parada", parada_id: 'P-1', audio_id: "audio-P-1", reto_id: "R-3" },
+            { padreid: "padre-P-2", tipo: "parada", parada_id: 'P-2', audio_id: "audio-P-2", reto_id: "R-4" }
+        ];
+
+        // Importar constantes y utils necesarios
+        import { TIPOS_MENSAJE } from './js/constants.js';
+        import { registrarControlador } from './js/mensajeria.js';
+        import { getPadreId } from './js/utils.js';
+
+        const resultsDiv = document.getElementById('results');
+
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${type.toUpperCase()}:</strong> ${message}`;
+            resultsDiv.appendChild(div);
+        }
+
+        function addCodeBlock(code) {
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(code, null, 2);
+            resultsDiv.appendChild(pre);
+        }
+
+        // Simular el controlador SOLICITAR_PARADAS (copia del código modificado)
+        async function testSolicitarParadas() {
+            addResult('Iniciando test de SOLICITAR_PARADAS...', 'info');
+
+            try {
+                // Función para combinar datos dinámicos con AVENTURA_PARADAS
+                function combinarDatosParada(item) {
+                    const paradaCompleta = { ...item };
+
+                    // Buscar coordenadas en DATOS_AVENTURAS si están disponibles
+                    if (window.__vv_DATOS_AVENTURAS && window.aventuraSeleccionada) {
+                        const datosAventura = window.__vv_DATOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (datosAventura && datosAventura['coordenadas-hijo2'] && datosAventura['coordenadas-hijo2'].coordenadas) {
+                            const coordEncontrada = datosAventura['coordenadas-hijo2'].coordenadas.find(c =>
+                                c.id === item.parada_id || c.id === item.tramo_id || c.padreid === item.padreid
+                            );
+                            if (coordEncontrada) {
+                                paradaCompleta.ubicacion = coordEncontrada.coordenadas || coordEncontrada.ubicacion;
+                                paradaCompleta.waypoints = coordEncontrada.waypoints;
+                                paradaCompleta.nombre = coordEncontrada.nombre || paradaCompleta.nombre;
+                                paradaCompleta.imagen = coordEncontrada.imagen;
+                                paradaCompleta.video = coordEncontrada.video;
+                            }
+                        }
+                    }
+
+                    // Buscar audio en AUDIOS_AVENTURAS si están disponibles
+                    if (window.__vv_AUDIOS_AVENTURAS && window.aventuraSeleccionada && window.idiomaSeleccionado) {
+                        const audiosAventura = window.__vv_AUDIOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (audiosAventura && audiosAventura[window.idiomaSeleccionado]) {
+                            const audioEncontrado = audiosAventura[window.idiomaSeleccionado].find(a =>
+                                a.id === item.audio_id || a.id === `audio-${item.parada_id}` || a.id === `audio-${item.tramo_id}`
+                            );
+                            if (audioEncontrado) {
+                                paradaCompleta.audio = audioEncontrado;
+                            }
+                        }
+                    }
+
+                    // Buscar reto en RETOS_AVENTURAS si están disponibles
+                    if (window.__vv_RETOS_AVENTURAS && window.aventuraSeleccionada && window.idiomaSeleccionado) {
+                        const retosAventura = window.__vv_RETOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (retosAventura && retosAventura[window.idiomaSeleccionado]) {
+                            const retoEncontrado = retosAventura[window.idiomaSeleccionado].find(r =>
+                                r.id === item.reto_id
+                            );
+                            if (retoEncontrado) {
+                                paradaCompleta.reto = retoEncontrado;
+                            }
+                        }
+                    }
+
+                    return paradaCompleta;
+                }
+
+                // Preparar respuesta con datos combinados
+                const { normalizarParadas } = await import('./js/utils.js');
+                const paradasNormalizadas = normalizarParadas(window.AVENTURA_PARADAS);
+                const paradasParaEnviar = [];
+
+                for (const p of paradasNormalizadas) {
+                    // Combinar con datos dinámicos
+                    const paradaCompleta = combinarDatosParada(p);
+
+                    paradasParaEnviar.push({
+                        // include both padreid and paradaId for children's convenience
+                        padreid: p.padreid || `padre-${p.id}`,
+                        paradaId: p.paradaId || p.parada_id || p.id,
+                        id: p.id,
+                        tipo: p.tipo,
+                        nombre: p.nombre || p.nombreCompleto || p.id,
+                        ubicacion: p.ubicacion || ((p.lat !== undefined && p.lng !== undefined) ? { lat: p.lat, lng: p.lng } : undefined),
+                        waypoints: Array.isArray(p.waypoints) ? p.waypoints.map(w => ({ lat: w.lat, lng: w.lng })) : undefined,
+                        rutas: p.rutas || [],
+                        metadatos: p.metadatos || {},
+                        estado: p.estado || 'activa',
+                        // IDs originales del array AVENTURA_PARADAS
+                        audio_id: p.audio_id,
+                        reto_id: p.reto_id,
+                        // Datos adicionales combinados
+                        coordenadas: paradaCompleta.ubicacion,
+                        waypointsCompletos: paradaCompleta.waypoints,
+                        imagen: paradaCompleta.imagen,
+                        video: paradaCompleta.video,
+                        audio: paradaCompleta.audio,
+                        reto: paradaCompleta.reto
+                    });
+                }
+
+                const respuesta = {
+                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
+                    origen: getPadreId(),
+                    destino: 'test-hijo',
+                    datos: {
+                        paradas: paradasParaEnviar,
+                        total: window.AVENTURA_PARADAS.length,
+                        estadisticas: {
+                            paradas: window.AVENTURA_PARADAS.filter(p => p.tipo === 'parada').length,
+                            tramos: window.AVENTURA_PARADAS.filter(p => p.tipo === 'tramo').length
+                        },
+                        metadatos: {
+                            timestamp: Date.now(),
+                            version: 'combinada_v1',
+                            aventura: window.aventuraSeleccionada,
+                            idioma: window.idiomaSeleccionado
+                        }
+                    }
+                };
+
+                addResult(`Respuesta generada exitosamente con ${paradasParaEnviar.length} paradas`, 'success');
+
+                // Verificar que cada parada tenga los datos requeridos
+                paradasParaEnviar.forEach((parada, index) => {
+                    addResult(`Verificando parada ${index + 1} (${parada.id}):`, 'info');
+
+                    // Verificar IDs
+                    if (parada.audio_id) {
+                        addResult(`  ✓ Tiene audio_id: ${parada.audio_id}`, 'success');
+                    } else {
+                        addResult(`  ✗ Falta audio_id`, 'error');
+                    }
+
+                    if (parada.reto_id) {
+                        addResult(`  ✓ Tiene reto_id: ${parada.reto_id}`, 'success');
+                    } else {
+                        addResult(`  ✗ Falta reto_id`, 'error');
+                    }
+
+                    // Verificar coordenadas
+                    if (parada.coordenadas && parada.coordenadas.lat !== undefined && parada.coordenadas.lng !== undefined) {
+                        addResult(`  ✓ Tiene coordenadas: ${parada.coordenadas.lat}, ${parada.coordenadas.lng}`, 'success');
+                    } else {
+                        addResult(`  ✗ Falta coordenadas`, 'error');
+                    }
+
+                    // Verificar objetos completos
+                    if (parada.audio) {
+                        addResult(`  ✓ Tiene objeto audio completo: ${parada.audio.titulo}`, 'success');
+                    } else {
+                        addResult(`  ✗ Falta objeto audio`, 'error');
+                    }
+
+                    if (parada.reto) {
+                        addResult(`  ✓ Tiene objeto reto completo: ${parada.reto.titulo}`, 'success');
+                    } else {
+                        addResult(`  ✗ Falta objeto reto`, 'error');
+                    }
+                });
+
+                addResult('Test completado. Verifica los resultados arriba.', 'info');
+                addCodeBlock(respuesta.datos);
+
+            } catch (error) {
+                addResult(`Error en el test: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Ejecutar el test cuando la página cargue
+        window.addEventListener('load', () => {
+            testSolicitarParadas();
+        });
+    </script>
+</body>
+</html>

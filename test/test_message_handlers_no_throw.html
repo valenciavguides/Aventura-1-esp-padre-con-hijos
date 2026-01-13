@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test Message Handlers No Throw</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif}#log{white-space:pre-wrap;background:#f7f7f7;padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <h3>Test: Parent message handlers should not throw on malformed messages</h3>
+  <div id="status">RUNNING</div>
+  <div id="log"></div>
+  <iframe id="sut" src="../codigo-padre.html" style="width:100%;height:300px;border:1px solid #ccc"></iframe>
+  <script>
+  (async function(){
+    const logEl = document.getElementById('log');
+    function append(...args){ logEl.textContent += args.join(' ') + '\n'; }
+    const iframe = document.getElementById('sut');
+    await new Promise(r=>{ iframe.onload = r; });
+    append('[test] iframe cargado');
+
+    const win = iframe.contentWindow;
+    if (!win) { document.getElementById('status').textContent = 'ERROR: no iframe access'; return; }
+
+    // Install error handlers inside the iframe to forward uncaught errors to this test window
+    try {
+      win.onerror = function(msg, url, line, col, error) {
+        window.postMessage({ test: 'iframe-error', message: String(msg), stack: error && error.stack }, window.location.origin);
+        return false;
+      };
+      win.onunhandledrejection = function(ev) {
+        window.postMessage({ test: 'iframe-unhandledrejection', reason: String(ev && ev.reason) }, window.location.origin);
+      };
+      append('[test] Handlers instalados en iframe');
+    } catch (e) {
+      append('[WARN] No se pudieron instalar handlers en iframe:', e && e.message);
+    }
+
+    let errorReported = false;
+    function onMessage(e){ try { const m = e.data; if (m && (m.test === 'iframe-error' || m.test === 'iframe-unhandledrejection')) { errorReported = true; append('[FAIL] Se reportó error en iframe:', m.message || m.reason || JSON.stringify(m)); document.getElementById('status').textContent='FAIL'; window.removeEventListener('message', onMessage); } } catch (err) {} }
+    window.addEventListener('message', onMessage);
+
+    // Build a list of malformed messages to send
+    const tipos = win.TIPOS_MENSAJE || {};
+    const malformed = [
+      null,
+      {},
+      { tipo: null },
+      { tipo: 'UNKNOWN.TYPE', origen: 'hijo2' },
+      { tipo: (tipos && tipos.NAVEGACION && tipos.NAVEGACION.GPS && tipos.NAVEGACION.GPS.UBICACION_ACTUALIZADA) || 'NAVEGACION.GPS.UBICACION_ACTUALIZADA', origen: 'hijo2', datos: null },
+      { tipo: (tipos && tipos.DATOS && tipos.DATOS.COORDENADAS_PARADAS_REQUEST) || 'DATOS.COORDENADAS_PARADAS_REQUEST', origen: 'hijo2', datos: 'not-an-object' },
+      { tipo: (tipos && tipos.DATOS && tipos.DATOS.COORDENADAS_PARADAS_REQUEST) || 'DATOS.COORDENADAS_PARADAS_REQUEST', datos: { some: 'value' } },
+      { tipo: (tipos && tipos.SISTEMA && tipos.SISTEMA.HEARTBEAT) || 'SISTEMA.HEARTBEAT', origen: 'hijo2', datos: { malformed: true } }
+    ];
+
+    append('[test] Enviando mensajes malformados...');
+    for (const m of malformed) {
+      try {
+        win.postMessage(m, window.location.origin);
+      } catch (e) {
+        append('[WARN] postMessage lanzó excepción localmente:', e && e.message);
+      }
+      await new Promise(r=>setTimeout(r, 150));
+      if (errorReported) break;
+    }
+
+    if (!errorReported) {
+      append('[PASS] No se reportaron errores en iframe tras mensajes malformados');
+      document.getElementById('status').textContent='PASS';
+      window.removeEventListener('message', onMessage);
+    }
+
+  })();
+  </script>
+</body>
+</html>

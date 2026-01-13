@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Fix Retos</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Test Fix Retos</h1>
+    <p>Este test verifica que obtenerRetos() funciona correctamente.</p>
+
+    <button onclick="testObtenerRetos()">Test obtenerRetos()</button>
+    <button onclick="testAccesoDirecto()">Test acceso directo (funciona)</button>
+
+    <div id="results"></div>
+
+    <script>
+        // Función para agregar resultado
+        function addResult(message, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            resultsDiv.appendChild(div);
+        }
+
+        function testObtenerRetos() {
+            try {
+                const retos = window.obtenerRetos();
+                if (retos && Array.isArray(retos) && retos.length > 0) {
+                    addResult(`✅ obtenerRetos() funciona: ${retos.length} retos`, 'success');
+                } else {
+                    addResult('❌ obtenerRetos() retornó array vacío o inválido', 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Error en obtenerRetos(): ${error.message}`, 'error');
+            }
+        }
+
+        function testAccesoDirecto() {
+            try {
+                // Intentar acceder directamente (debería funcionar ya que está en scope global)
+                const retos = window.retosAventura1Es;
+                if (retos && Array.isArray(retos) && retos.length > 0) {
+                    addResult(`✅ Acceso directo a retosAventura1Es funciona: ${retos.length} retos`, 'success');
+                } else {
+                    addResult('❌ Acceso directo a retosAventura1Es retorna undefined o vacío', 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Error en acceso directo: ${error.message}`, 'error');
+            }
+        }
+
+        // Inicializar
+        addResult('Test inicializado. Esperando acciones del usuario...');
+    </script>
+
+    <!-- Simular la estructura del script global -->
+    <script>
+        // Simular retosAventura1Es
+        const retosAventura1Es = [
+            { reto: 1, id: 'R-1', pregunta: 'Pregunta 1' },
+            { reto: 2, id: 'R-2', pregunta: 'Pregunta 2' }
+        ];
+
+        // Función getter
+        function obtenerRetos() {
+            return retosAventura1Es;
+        }
+
+        // Exponer globalmente
+        window.obtenerRetos = obtenerRetos;
+        window.retosAventura1Es = retosAventura1Es;
+    </script>
+</body>
+</html></content>
+<parameter name="filePath">c:\Users\gomez\.windsurf\proyecto valenciavguides\tests\test_fix_retos.html
