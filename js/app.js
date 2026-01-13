@@ -1338,7 +1338,7 @@ export async function enviarEstadoGlobal(estado) {
     }
 }
 
-// Controladores AUDIO implementados en Av1_audio_esp.html (hijo3)
+// Controladores AUDIO implementados en audio-hijo3.html (hijo3)
 // Controladores NAVEGACIóN en funciones-mapa.js
 
 /**
