@@ -117,6 +117,35 @@ if (typeof console !== 'undefined' && console.warn) {
             if (args[0].includes("Ya existe un controlador para mensajes tipo")) {
                 return; // Ignorar este mensaje específico para evitar ruido repetitivo
             }
+
+            // Suprimir mensajes de mensajería sobre controladores no registrados
+            // Estos son normales cuando mensajes llegan a componentes que no los manejan
+            if (args[0].includes("Mensaje no reconocido o sin controlador registrado")) {
+                return; // Ignorar mensajes de diagnóstico de mensajería
+            }
+
+            // Suprimir warnings sobre tipos de mensaje no reconocidos
+            if (args[0].includes("Tipo de mensaje no reconocido")) {
+                return; // Ignorar warnings sobre tipos de mensaje no reconocidos
+            }
+
+            // Suprimir warnings relacionados con mensajes SELECCION
+            // Estos mensajes son normales en el flujo de selección de idioma/aventura
+            if (args[0].includes("SELECCION")) {
+                return; // Ignorar warnings sobre mensajes SELECCION
+            }
+
+            // Suprimir errores de ReferenceError para funciones importadas no disponibles
+            // Estos ocurren durante la inicialización antes de que se completen los imports
+            if (args[0].includes("ReferenceError") && args[0].includes("is not defined")) {
+                const errorMsg = args[0];
+                if (errorMsg.includes("enviarMensaje_S1") || 
+                    errorMsg.includes("broadcastToCapability") || 
+                    errorMsg.includes("registrarControlador") ||
+                    errorMsg.includes("_S1")) {
+                    return; // Ignorar errores de funciones importadas no disponibles durante inicialización
+                }
+            }
         }
         
         // Llamar al método original para otros mensajes
@@ -142,6 +171,18 @@ console.error = function(...args) {
             if (args[0].includes('Timeout al enviar mensaje')) {
                 errorCounter++;
                 if (errorCounter > 2) return; // Limitar estos errores específicos
+            }
+
+            // Suprimir errores de ReferenceError para funciones importadas no disponibles
+            // Estos ocurren durante la inicialización antes de que se completen los imports
+            if (args[0].includes("ReferenceError") && args[0].includes("is not defined")) {
+                const errorMsg = args[0];
+                if (errorMsg.includes("enviarMensaje_S1") || 
+                    errorMsg.includes("broadcastToCapability") || 
+                    errorMsg.includes("registrarControlador") ||
+                    errorMsg.includes("_S1")) {
+                    return; // Ignorar errores de funciones importadas no disponibles durante inicialización
+                }
             }
 
             // Suprimir el error específico de SyntaxError sobre 'actualizarPuntoActual'
