@@ -3566,8 +3566,13 @@ export function registrarManejadoresMensajes() {
                 logger.debug(`${logPrefix} DEBUG: Origen del mensaje: ${mensaje.origen}`);
                 logger.debug(`${logPrefix} DEBUG: Contexto completo del mensaje:`, mensaje.datos);
                 
-                if (!exito || !coordenadas || !Array.isArray(coordenadas)) {
-                    logger.warn(`${logPrefix} Respuesta inválida de coordenadas completas`);
+                if (!exito) {
+                    logger.warn(`${logPrefix} Respuesta de error de coordenadas:`, mensaje.datos?.error || 'Error desconocido');
+                    return;
+                }
+                
+                if (!coordenadas || !Array.isArray(coordenadas)) {
+                    logger.warn(`${logPrefix} Respuesta inválida de coordenadas completas - coordenadas no es array`);
                     return;
                 }
                 
