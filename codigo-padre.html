@@ -1780,6 +1780,14 @@
     <div id="info-parada"></div>
 
     <!-- IFrames de los Hijos con posicionamiento preciso - SIN SRC INICIAL -->
+    
+    <!-- Página de selección de idioma y aventura - Se muestra primero -->
+    <iframe id="seleccion" src=""
+        title="Selección de idioma y aventura"
+        aria-label="Página de selección de idioma y aventura"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:2000; border:none; display:none; visibility:hidden; background:#fff;"
+        onload="handleIframeLoad('seleccion')" onerror="handleIframeError('seleccion', event)"></iframe>
+    
     <iframe id="hijo1-hamburguesa" src=""
         title="Menú Hamburguesa"
         aria-label="Menú de navegación hamburguesa"
@@ -2000,6 +2008,70 @@
 
         ]);
 
+        // =====================================================================
+        // DATOS CENTRALIZADOS DE AVENTURAS (coordenadas, audios, retos, índice)
+        // =====================================================================
+        let DATOS_AVENTURAS = null;
+        let AUDIOS_AVENTURAS = null;
+        let RETOS_AVENTURAS = null;
+        let INDICE_AVENTURAS = null;
+        let MAPEO_IDIOMAS = null;
+
+        try {
+            const [coordenadasModule, audiosModule, retosModule, indiceModule] = await Promise.all([
+                import('./js/coordenadas-aventuras.js'),
+                import('./js/audios-aventuras.js'),
+                import('./js/retos-aventuras.js'),
+                import('./js/indice-aventuras.js')
+            ]);
+            DATOS_AVENTURAS = coordenadasModule.DATOS_AVENTURAS;
+            AUDIOS_AVENTURAS = audiosModule.AUDIOS_AVENTURAS;
+            RETOS_AVENTURAS = retosModule.RETOS_AVENTURAS;
+            INDICE_AVENTURAS = indiceModule.INDICE_AVENTURAS;
+            MAPEO_IDIOMAS = indiceModule.MAPEO_IDIOMAS;
+            console.info('[PADRE] ✅ Datos centralizados de aventuras cargados:', {
+                aventurasCoord: Object.keys(DATOS_AVENTURAS || {}),
+                aventurasAudio: Object.keys(AUDIOS_AVENTURAS || {}),
+                aventurasRetos: Object.keys(RETOS_AVENTURAS || {}),
+                indiceAventuras: Object.keys(INDICE_AVENTURAS || {}),
+                idiomasDisponibles: Object.keys(MAPEO_IDIOMAS || {})
+            });
+        } catch (datosError) {
+            console.error('[PADRE] ⚠️ Error cargando datos centralizados de aventuras:', datosError);
+        }
+
+        // Exponer globalmente para funciones no-módulo
+        window.__vv_DATOS_AVENTURAS = DATOS_AVENTURAS;
+        window.__vv_AUDIOS_AVENTURAS = AUDIOS_AVENTURAS;
+        window.__vv_RETOS_AVENTURAS = RETOS_AVENTURAS;
+        window.__vv_INDICE_AVENTURAS = INDICE_AVENTURAS;
+        window.__vv_MAPEO_IDIOMAS = MAPEO_IDIOMAS;
+
+        // 🔥 AUTO-DISTRIBUCIÓN: Si ya hay una aventura seleccionada, distribuir datos automáticamente
+        if (window.aventuraSeleccionada && window.idiomaSeleccionado) {
+            try {
+                console.info('[PADRE] 🔄 Detectada aventura ya seleccionada, distribuyendo datos automáticamente...');
+                distribuirDatosAventura(window.aventuraSeleccionada, window.idiomaSeleccionado)
+                    .then(resultados => {
+                        if (resultados.pospuesto) {
+                            console.warn('[PADRE] ⚠️ Auto-distribución pospuesta:', resultados.mensaje);
+                            // Marcar como pendiente para cuando enviarMensaje_S1 esté disponible
+                            window.__pendingDistribucion = { 
+                                aventura: window.aventuraSeleccionada, 
+                                idioma: window.idiomaSeleccionado 
+                            };
+                        } else {
+                            console.success('[PADRE] ✅ Auto-distribución completada:', resultados);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('[PADRE] ❌ Error en auto-distribución:', error);
+                    });
+            } catch (autoError) {
+                console.error('[PADRE] ❌ Error en auto-distribución de datos:', autoError);
+            }
+        }
+
         const logger_S1 = loggerModule.default;
 
         // Safe alias for logger in Script 1: prefer imported logger, fall back to global or console
@@ -2059,6 +2131,40 @@
                         return ms;
                     } catch (e) { return ms; }
                 };
+            }
+        }
+
+        // 🔥 PROCESAR DISTRIBUCIONES PENDIENTES
+        // Si hay distribuciones pendientes esperando a que enviarMensaje_S1 esté disponible
+        if (window.__pendingDistribucion && typeof enviarMensaje_S1 === 'function') {
+            const { aventura, idioma } = window.__pendingDistribucion;
+            console.info('[PADRE] 🔄 Procesando distribución pendiente de aventura:', aventura, idioma);
+            try {
+                const resultados = await distribuirDatosAventura(aventura, idioma);
+                if (resultados.pospuesto) {
+                    console.warn('[PADRE] ⚠️ Distribución pendiente aún pospuesta:', resultados.mensaje);
+                } else {
+                    console.success('[PADRE] ✅ Distribución pendiente completada:', resultados);
+                    delete window.__pendingDistribucion;
+                }
+            } catch (error) {
+                console.error('[PADRE] ❌ Error en distribución pendiente:', error);
+            }
+        }
+
+        // 🔥 PROCESAR BROADCASTS PENDIENTES
+        // Si hay broadcasts pendientes esperando a que enviarMensaje_S1 esté disponible
+        if (window.__pendingBroadcast && Array.isArray(window.__pendingBroadcast) && typeof enviarMensaje_S1 === 'function') {
+            console.info('[PADRE] 🔄 Procesando broadcasts pendientes:', window.__pendingBroadcast.length);
+            try {
+                for (const mensaje of window.__pendingBroadcast) {
+                    await enviarMensaje_S1(mensaje);
+                    console.debug('[PADRE] ✅ Broadcast pendiente enviado:', mensaje.tipo);
+                }
+                delete window.__pendingBroadcast;
+                console.success('[PADRE] ✅ Todos los broadcasts pendientes procesados');
+            } catch (error) {
+                console.error('[PADRE] ❌ Error procesando broadcasts pendientes:', error);
             }
         }
 
@@ -2420,20 +2526,22 @@
                             const padreIdRest = estado.elementoActual?.padreid || (estado.paradaActual ? `padre-${estado.paradaActual}` : null);
                             // Debug: store last Cambio Parada payload for diagnostics
                             window._lastCambioParada = { paradaId: estado.paradaActual || null, parada_id: estado.paradaActual || null, padreId: padreIdRest, padreid: padreIdRest, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), restaurado: true };
-                            enviarMensaje_S1({
-                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
-                                origen: CONFIG_PADRE.ID,
-                                destino: h,
-                                datos: { 
-                                    paradaId: estado.paradaActual || null, 
-                                    parada_id: estado.paradaActual || null,
-                                    padreId: padreIdRest, 
-                                    padreid: padreIdRest,
-                                    indiceProgreso: estado.indiceProgreso, 
-                                    timestamp: Date.now(), 
-                                    restaurado: true 
-                                }
-                            });
+                            if (typeof enviarMensaje_S1 === 'function') {
+                                enviarMensaje_S1({
+                                    tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                                    origen: CONFIG_PADRE.ID,
+                                    destino: h,
+                                    datos: { 
+                                        paradaId: estado.paradaActual || null, 
+                                        parada_id: estado.paradaActual || null,
+                                        padreId: padreIdRest, 
+                                        padreid: padreIdRest,
+                                        indiceProgreso: estado.indiceProgreso, 
+                                        timestamp: Date.now(), 
+                                        restaurado: true 
+                                    }
+                                });
+                            }
                         } catch (err) { /* ignore */ }
                     }
                 } catch (e) {}
@@ -2490,12 +2598,14 @@
                             try {
                                 // Debug: store last Cambio Parada payload for diagnostics
                                 window._lastCambioParada = { paradaId: estado.paradaActual, parada_id: estado.paradaActual, padreId: padreIdDefault, padreid: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' };
-                            await enviarMensaje_S1({
-                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
-                                origen: CONFIG_PADRE.ID,
-                                destino: h,
-                                datos: { paradaId: estado.paradaActual, padreId: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' }
-                            });
+                                if (typeof enviarMensaje_S1 === 'function') {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: h,
+                                        datos: { paradaId: estado.paradaActual, padreId: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' }
+                                    });
+                                }
                         } catch (err) { logger.debug(`${logPrefix} no se pudo notificar a ${h}`); }
                     }
                 } catch (e) { logger.warn(`${logPrefix} Error notificando a hijos`); }
@@ -2825,14 +2935,15 @@
                                     });
                                 });
 
-                                if (coordenadasResponse && coordenadasResponse.length > 0 && coordenadasResponse[0].coordenadas) {
-                                    const c = coordenadasResponse[0].coordenadas;
+                                if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0 && coordenadasResponse.coordenadas[0].coordenadas) {
+                                    const c = coordenadasResponse.coordenadas[0].coordenadas;
                                     est.gps.posicionUsuario = { lat: c.lat || c[0], lng: c.lng || c[1], accuracy: 1000, timestamp: Date.now() };
                                     est.gps.ultimaUbicacion = est.gps.posicionUsuario;
                                     est.gps.precision = 1000;
                                     try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_hijo2_ok'); } catch (e) { /* ignore */ }
                                     logger.info(`${logPrefix} Coordenadas de fallback obtenidas de hijo2 y aplicadas: [${est.gps.posicionUsuario.lat}, ${est.gps.posicionUsuario.lng}]`);
                                 } else {
+                                    logger.warn(`${logPrefix} Respuesta inválida de coordenadas de fallback:`, coordenadasResponse);
                                     // Fallback a coordenadas por defecto P-0 si hijo2 no responde correctamente
                                     est.gps.posicionUsuario = { lat: 39.47876, lng: -0.37626, accuracy: 1000, timestamp: Date.now() };
                                     est.gps.ultimaUbicacion = est.gps.posicionUsuario;
@@ -3024,7 +3135,7 @@
                                 if (typeof broadcastToCapability === 'function') {
                                     const r = broadcastToCapability('gps', payload);
                                     logger.debug(`${logPrefix} BroadcastToCapability result:`, r);
-                                } else {
+                                } else if (typeof enviarMensaje_S1 === 'function') {
                                     const r = enviarMensaje_S1(Object.assign({ destino: 'todos' }, payload));
                                     if (r && typeof r.then === 'function') r.catch(error => logger.error(`${logPrefix} Error notificando ubicación:`, error));
                                 }
@@ -3114,7 +3225,7 @@
                                 logger.debug(`${logPrefix} Preparando broadcast GPS.ERROR payload:`, payload);
                                 const r = broadcastToCapability('gps', payload);
                                 logger.debug(`${logPrefix} BroadcastToCapability(error) enviados:`, r);
-                            } else {
+                            } else if (typeof enviarMensaje_S1 === 'function') {
                                 const payload2 = Object.assign({}, payload, { destino: 'todos' });
                                 logger.debug(`${logPrefix} Preparando enviarMensaje_S1 GPS.ERROR payload:`, payload2);
                                 const r = enviarMensaje_S1(payload2);
@@ -3175,7 +3286,7 @@
                             }
                         });
                         logger.debug(`${logPrefix} BroadcastToCapability(estado) enviados:`, r);
-                    } else {
+                    } else if (typeof enviarMensaje_S1 === 'function') {
                         const r = enviarMensaje_S1({
                             tipo: TIPOS_MENSAJE_S1.NAVEGACION.GPS.ESTADO_ACTUALIZADO,
                             origen: getPadreId(),
@@ -3980,16 +4091,18 @@
 
                 // Enviar PADRE_DATOS para completar el handshake
                 try {
-                    await enviarMensaje_S1({
-                        destino: hijoId,
-                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_DATOS,
-                        origen: getPadreId(),
-                        datos: {
-                            modo: window.estadoPadre?.modoActual || 'casa',
-                            timestamp: Date.now()
-                        }
-                    });
-                    logger.info(`${logPrefix} PADRE_DATOS enviado a ${hijoId}`);
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            destino: hijoId,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_DATOS,
+                            origen: getPadreId(),
+                            datos: {
+                                modo: window.estadoPadre?.modoActual || 'casa',
+                                timestamp: Date.now()
+                            }
+                        });
+                        logger.info(`${logPrefix} PADRE_DATOS enviado a ${hijoId}`);
+                    }
                 } catch (error) {
                     logger.error(`${logPrefix} Error enviando PADRE_DATOS a ${hijoId}:`, error);
                 }
@@ -4046,16 +4159,18 @@
 
                 // Confirmar al hijo que está listo
                 try {
-                    await enviarMensaje_S1({
-                        destino: hijoId,
-                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                        origen: getPadreId(),
-                        datos: {
-                            timestamp: Date.now(),
-                            mensaje: 'Hijo confirmado como listo'
-                        }
-                    });
-                    logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${hijoId}`);
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            destino: hijoId,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                            origen: getPadreId(),
+                            datos: {
+                                timestamp: Date.now(),
+                                mensaje: 'Hijo confirmado como listo'
+                            }
+                        });
+                        logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${hijoId}`);
+                    }
                 } catch (error) {
                     logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${hijoId}:`, error);
                 }
@@ -4064,16 +4179,18 @@
                 if (hijoId === 'hijo2') {
                     try {
                         const paradasNormalizadas = normalizarParadas_S1(window.AVENTURA_PARADAS || []);
-                        await enviarMensaje_S1({
-                            destino: 'hijo2',
-                            tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
-                            origen: getPadreId(),
-                            datos: {
-                                paradas: paradasNormalizadas,
-                                timestamp: Date.now()
-                            }
-                        });
-                        logger.info(`${logPrefix} Datos de paradas enviados a hijo2 para inicialización (normalizados)`);
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({
+                                destino: 'hijo2',
+                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
+                                origen: getPadreId(),
+                                datos: {
+                                    paradas: paradasNormalizadas,
+                                    timestamp: Date.now()
+                                }
+                            });
+                            logger.info(`${logPrefix} Datos de paradas enviados a hijo2 para inicialización (normalizados)`);
+                        }
                     } catch (error) {
                         logger.error(`${logPrefix} Error enviando datos de paradas a hijo2:`, error);
                     }
@@ -4099,18 +4216,22 @@
                         
                         for (const criticoId of hijosCriticos) {
                             try {
-                                await enviarMensaje_S1({
-                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
-                                    origen: CONFIG_PADRE.ID,
-                                    destino: criticoId,
-                                    datos: {
-                                        modo: modoActual,
-                                        timestamp: Date.now(),
-                                        razon: 'sincronizacion_inicial',
-                                        secuenciaCompleta: true
-                                    }
-                                });
-                                logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${criticoId}`);
+                                if (typeof enviarMensaje_S1 === 'function') {
+                                    await enviarMensaje_S1({
+                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
+                                        origen: CONFIG_PADRE.ID,
+                                        destino: criticoId,
+                                        datos: {
+                                            modo: modoActual,
+                                            timestamp: Date.now(),
+                                            razon: 'sincronizacion_inicial',
+                                            secuenciaCompleta: true
+                                        }
+                                    });
+                                    logger.debug(`${logPrefix} CAMBIO_MODO inicial enviado a ${criticoId}`);
+                                } else {
+                                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para sincronización inicial`);
+                                }
                             } catch (error) {
                                 logger.error(`${logPrefix} Error enviando CAMBIO_MODO inicial a ${criticoId}:`, error);
                             }
@@ -4175,19 +4296,23 @@
                     // Enviar SISTEMA.CAMBIO_MODO a cada hijo crítico
                     for (const hijoId of hijosCriticos) {
                         try {
-                            await enviarMensaje_S1({
-                                tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
-                                origen: CONFIG_PADRE.ID,
-                                destino: hijoId,
-                                datos: {
-                                    modo: modo,
-                                    timestamp: Date.now(),
-                                    propagadoDesde: mensaje.origen,
-                                    razon: 'cambio_modo_global',
-                                    secuenciaCompleta: true
-                                }
-                            });
-                            logger.debug(`${logPrefix} SISTEMA.CAMBIO_MODO enviado a ${hijoId}`);
+                            if (typeof enviarMensaje_S1 === 'function') {
+                                await enviarMensaje_S1({
+                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
+                                    origen: CONFIG_PADRE.ID,
+                                    destino: hijoId,
+                                    datos: {
+                                        modo: modo,
+                                        timestamp: Date.now(),
+                                        propagadoDesde: mensaje.origen,
+                                        razon: 'cambio_modo_global',
+                                        secuenciaCompleta: true
+                                    }
+                                });
+                                logger.debug(`${logPrefix} SISTEMA.CAMBIO_MODO enviado a ${hijoId}`);
+                            } else {
+                                logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para propagación de modo`);
+                            }
                         } catch (error) {
                             logger.error(`${logPrefix} Error enviando SISTEMA.CAMBIO_MODO a ${hijoId}:`, error);
                         }
@@ -4212,12 +4337,16 @@
                             } catch (e) { logger.error(`${logPrefix} Error iniciando heartbeat local via messaging:`, e); }
                             for (const h of hijosCriticos) {
                                 try {
-                                    await enviarMensaje_S1({
-                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
-                                        origen: CONFIG_PADRE.ID,
-                                        destino: h,
-                                        datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
-                                    });
+                                    if (typeof enviarMensaje_S1 === 'function') {
+                                        await enviarMensaje_S1({
+                                            tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
+                                            origen: CONFIG_PADRE.ID,
+                                            destino: h,
+                                            datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
+                                        });
+                                    } else {
+                                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para HEARTBEAT_START`);
+                                    }
                                 } catch (error) {
                                     logger.warn(`${logPrefix} Error enviando HEARTBEAT_START a ${h}:`, error);
                                 }
@@ -4241,12 +4370,16 @@
 
                             for (const h of hijosCriticos) {
                                 try {
-                                    await enviarMensaje_S1({
-                                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_PAUSE,
-                                        origen: CONFIG_PADRE.ID,
-                                        destino: h,
-                                        datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
-                                    });
+                                    if (typeof enviarMensaje_S1 === 'function') {
+                                        await enviarMensaje_S1({
+                                            tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_PAUSE,
+                                            origen: CONFIG_PADRE.ID,
+                                            destino: h,
+                                            datos: { timestamp: Date.now(), propagadoDesde: mensaje.origen }
+                                        });
+                                    } else {
+                                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para HEARTBEAT_PAUSE`);
+                                    }
                                 } catch (error) {
                                     logger.warn(`${logPrefix} Error enviando HEARTBEAT_PAUSE a ${h}:`, error);
                                 }
@@ -4325,18 +4458,22 @@
                 // Silenciado: Solo loguear en modo debug explícito
                 // logger.debug(`${logPrefix} Heartbeat recibido de ${mensaje.origen}`);
 
-                await enviarMensaje_S1({
-                    tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_RESPONSE,
-                    origen: CONFIG_PADRE.ID,
-                    destino: mensaje.origen,
-                    datos: {
-                        timestamp: Date.now(),
-                        mensajeOriginalId: mensaje.mensajeId,
-                        estado: 'activo',
-                        modo: estado.modo?.actual,
-                        hijosActivos: estado.estadoHijos.size
-                    }
-                });
+                if (typeof enviarMensaje_S1 === 'function') {
+                    await enviarMensaje_S1({
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_RESPONSE,
+                        origen: CONFIG_PADRE.ID,
+                        destino: mensaje.origen,
+                        datos: {
+                            timestamp: Date.now(),
+                            mensajeOriginalId: mensaje.mensajeId,
+                            estado: 'activo',
+                            modo: estado.modo?.actual,
+                            hijosActivos: estado.estadoHijos.size
+                        }
+                    });
+                } else {
+                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para HEARTBEAT_RESPONSE`);
+                }
 
                 if (estado.estadoHijos.has(mensaje.origen)) {
                     const hijoEstado = estado.estadoHijos.get(mensaje.origen);
@@ -4402,16 +4539,20 @@
                 logger.info(`${logPrefix} ${mensaje.origen} entendió CAMBIO_MODO a "${modo}"`);
                 
                 // ACK inmediato
-                await enviarMensaje_S1({
-                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
-                    origen: CONFIG_PADRE.ID,
-                    destino: mensaje.origen,
-                    datos: { 
-                        mensajeRecibido: 'CAMBIO_MODO_ENTENDIDO',
-                        modo,
-                        timestamp: Date.now()
-                    }
-                });
+                if (typeof enviarMensaje_S1 === 'function') {
+                    await enviarMensaje_S1({
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                        origen: CONFIG_PADRE.ID,
+                        destino: mensaje.origen,
+                        datos: { 
+                            mensajeRecibido: 'CAMBIO_MODO_ENTENDIDO',
+                            modo,
+                            timestamp: Date.now()
+                        }
+                    });
+                } else {
+                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para ACK`);
+                }
             } catch (error) {
                 logger.error(`${logPrefix} Error:`, error);
             }
@@ -4431,16 +4572,20 @@
                 }
                 
                 // ACK
-                await enviarMensaje_S1({
-                    tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
-                    origen: CONFIG_PADRE.ID,
-                    destino: mensaje.origen,
-                    datos: { 
-                        mensajeRecibido: 'CAMBIO_MODO_EFECTUADO',
-                        modo,
-                        timestamp: Date.now()
-                    }
-                });
+                if (typeof enviarMensaje_S1 === 'function') {
+                    await enviarMensaje_S1({
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                        origen: CONFIG_PADRE.ID,
+                        destino: mensaje.origen,
+                        datos: { 
+                            mensajeRecibido: 'CAMBIO_MODO_EFECTUADO',
+                            modo,
+                            timestamp: Date.now()
+                        }
+                    });
+                } else {
+                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para ACK`);
+                }
             } catch (error) {
                 logger.error(`${logPrefix} Error:`, error);
             }
@@ -4506,17 +4651,21 @@
 
                 for (const hijoId of estado.hijosInicializados) {
                     try {
-                        await enviarMensaje_S1({
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.NOTIFICACION,
-                            origen: window.CONFIG_PADRE && window.CONFIG_PADRE.ID ? window.CONFIG_PADRE.ID : 'padre',
-                            destino: hijoId,
-                            datos: {
-                                evento: 'aplicacion_lista',
-                                timestamp,
-                                totalComponentes,
-                                estado: 'operativo'
-                            }
-                        });
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({
+                                tipo: TIPOS_MENSAJE_S1.SISTEMA.NOTIFICACION,
+                                origen: window.CONFIG_PADRE && window.CONFIG_PADRE.ID ? window.CONFIG_PADRE.ID : 'padre',
+                                destino: hijoId,
+                                datos: {
+                                    evento: 'aplicacion_lista',
+                                    timestamp,
+                                    totalComponentes,
+                                    estado: 'operativo'
+                                }
+                            });
+                        } else {
+                            logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para notificación`);
+                        }
                     } catch (error) {
                         logger.warn(`${logPrefix} Error notificando a ${hijoId}:`, error);
                     }
@@ -4585,11 +4734,13 @@
             }
 
             const iframes = [
+                // Página de selección - se carga primero y visible
+                { id: 'seleccion', src: 'En-busca-del-tesoro.html', mostrarInicial: true },
                 { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
                 { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
-                { id: 'hijo2', src: 'Av1-botones-coordenadas.html' },
-                { id: 'hijo3', src: 'Av1_audio_esp.html' },
-                { id: 'hijo4', src: 'Av1-esp-retos-preguntas.html' },
+                { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                { id: 'hijo3', src: 'audio-hijo3.html' },
+                { id: 'hijo4', src: 'retos-hijo4.html' },
                 { id: 'hijo5-casa', src: 'Av1-boton-casa.html' }
             ];
 
@@ -4606,8 +4757,14 @@
                         throw new Error(`Iframe ${iframe.id} no encontrado en DOM`);
                     }
 
-                    iframeEl.style.display = 'none';
-                    iframeEl.style.visibility = 'hidden';
+                    // Si tiene mostrarInicial, mostrarlo directamente; si no, ocultarlo
+                    if (iframe.mostrarInicial) {
+                        iframeEl.style.display = 'block';
+                        iframeEl.style.visibility = 'visible';
+                    } else {
+                        iframeEl.style.display = 'none';
+                        iframeEl.style.visibility = 'hidden';
+                    }
 
                     // Esperar a que el iframe cargue usando eventos onload/onerror
                     await new Promise((resolve, reject) => {
@@ -4641,16 +4798,20 @@
 
                     // Enviar PADRE_LISTO
                     logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
-                    await enviarMensaje_S1({
-                        destino: iframe.id,
-                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                        origen: CONFIG_PADRE.ID,
-                        datos: {
-                            version: CONFIG_PADRE.VERSION,
-                            timestamp: new Date().toISOString(),
-                            modo: window.estadoPadre.modo?.actual || MODOS.CASA
-                        }
-                    });
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            destino: iframe.id,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
+                            origen: CONFIG_PADRE.ID,
+                            datos: {
+                                version: CONFIG_PADRE.VERSION,
+                                timestamp: new Date().toISOString(),
+                                modo: window.estadoPadre.modo?.actual || MODOS.CASA
+                            }
+                        });
+                    } else {
+                        logger.warn(`enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframe.id}`);
+                    }
 
                     // Esperar a que el hijo esté listo
                     await new Promise((resolve, reject) => {
@@ -4705,6 +4866,24 @@
             }
 
             logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Carga secuencial completada`);
+            
+            // 🔥 PROCESAR DISTRIBUCIONES PENDIENTES DESPUÉS DE CARGA DE IFRAMES
+            // Una vez que todos los iframes están cargados y conectados, procesar distribuciones pendientes
+            if (window.__pendingDistribucion && typeof enviarMensaje_S1 === 'function') {
+                const { aventura, idioma } = window.__pendingDistribucion;
+                logger.info(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Procesando distribución pendiente de aventura ${aventura} (${idioma}) después de carga de iframes...`);
+                try {
+                    const resultados = await distribuirDatosAventura(aventura, idioma);
+                    if (resultados.pospuesto) {
+                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Distribución pendiente aún pospuesta: ${resultados.mensaje}`);
+                    } else {
+                        logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Distribución pendiente completada:`, resultados);
+                        delete window.__pendingDistribucion;
+                    }
+                } catch (error) {
+                    logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error en distribución pendiente después de carga de iframes:`, error);
+                }
+            }
             
             // RECONEXIÓN: Intentar reconectar hijos fallidos después de cargar todos los exitosos
             if (hijosFallidos.length > 0) {
@@ -4776,18 +4955,22 @@
                         });
                         
                         // Enviar PADRE_LISTO con flag de reconexión
-                        await enviarMensaje_S1({
-                            destino: id,
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                            origen: CONFIG_PADRE.ID,
-                            datos: {
-                                version: CONFIG_PADRE.VERSION,
-                                timestamp: new Date().toISOString(),
-                                modo: window.estadoPadre.modo?.actual || MODOS.CASA,
-                                reconexion: true,
-                                intento: intento
-                            }
-                        });
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({
+                                destino: id,
+                                tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
+                                origen: CONFIG_PADRE.ID,
+                                datos: {
+                                    version: CONFIG_PADRE.VERSION,
+                                    timestamp: new Date().toISOString(),
+                                    modo: window.estadoPadre.modo?.actual || MODOS.CASA,
+                                    reconexion: true,
+                                    intento: intento
+                                }
+                            });
+                        } else {
+                            logger.warn(`enviarMensaje_S1 no disponible para PADRE_LISTO reconexión a ${id}`);
+                        }
                         
                         // Esperar HIJO_LISTO con timeout
                         await new Promise((resolve, reject) => {
@@ -4915,18 +5098,22 @@
                 // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
                 logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
                 try {
-                    await enviarMensaje_S1({
-                        tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
-                        origen: CONFIG_PADRE.ID,
-                        destino: 'todos',
-                        datos: {
-                            paradaId: 'P-0',
-                            padreid: 'padre-P-0',
-                            timestamp: Date.now(),
-                            origen: 'inicializacion_sistema'
-                        }
-                    });
-                    logger.success(`${logPrefix} ✅ Parada inicial configurada`);
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE_S1.NAVEGACION.CAMBIO_PARADA,
+                            origen: CONFIG_PADRE.ID,
+                            destino: 'todos',
+                            datos: {
+                                paradaId: 'P-0',
+                                padreid: 'padre-P-0',
+                                timestamp: Date.now(),
+                                origen: 'inicializacion_sistema'
+                            }
+                        });
+                        logger.success(`${logPrefix} ✅ Parada inicial configurada`);
+                    } else {
+                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para cambio de parada inicial`);
+                    }
                 } catch (paradaError) {
                     logger.error(`${logPrefix} ❌ Error configurando parada inicial:`, paradaError);
                 }
@@ -4998,7 +5185,7 @@
             // 3. Cargar manualmente si no tiene src
             if (!hijo4Element.src || hijo4Element.src === '' || hijo4Element.src.includes('about:blank')) {
                 console.log('3. Cargando hijo4 manualmente...');
-                hijo4Element.src = 'Av1-esp-retos-preguntas.html';
+                hijo4Element.src = 'retos-hijo4.html';
                 
                 // Event listeners para debugging
                 const onLoad = () => {
@@ -5068,7 +5255,7 @@
                     }
                 } catch (e) {
                     console.error('❌ Error accediendo al iframe:', e);
-                    console.log('   Esto puede deberse a políticas CORS o errores en Av1-esp-retos-preguntas.html');
+                    console.log('   Esto puede deberse a políticas CORS o errores en retos-hijo4.html');
                 }
             }
         };
@@ -5880,22 +6067,77 @@
 
         // ============================================================
         // CONTROLADOR 9: DATOS.SOLICITAR_PARADAS (DIRECTO)
-        // Responde directamente con datos de AVENTURA_PARADAS
+        // Responde directamente con datos de AVENTURA_PARADAS + datos dinámicos
         // ============================================================
         registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.SOLICITAR_PARADAS][DIRECTO]`;
 
             try {
-                logger.info(`${logPrefix} Solicitud de paradas recibida de ${mensaje.origen} - respondiendo directamente`);
+                logger.info(`${logPrefix} Solicitud de paradas recibida de ${mensaje.origen} - respondiendo con datos combinados`);
 
-                // Preparar respuesta con datos de AVENTURA_PARADAS; normalizar y distribuir ambos ids
+                // Función para combinar datos dinámicos con AVENTURA_PARADAS
+                function combinarDatosParada(item) {
+                    const paradaCompleta = { ...item };
+
+                    // Buscar coordenadas en DATOS_AVENTURAS si están disponibles
+                    if (window.__vv_DATOS_AVENTURAS && window.aventuraSeleccionada) {
+                        const datosAventura = window.__vv_DATOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (datosAventura && datosAventura['coordenadas-hijo2'] && datosAventura['coordenadas-hijo2'].coordenadas) {
+                            const coordEncontrada = datosAventura['coordenadas-hijo2'].coordenadas.find(c =>
+                                c.id === item.parada_id || c.id === item.tramo_id || c.padreid === item.padreid
+                            );
+                            if (coordEncontrada) {
+                                paradaCompleta.ubicacion = coordEncontrada.coordenadas || coordEncontrada.ubicacion;
+                                paradaCompleta.waypoints = coordEncontrada.waypoints;
+                                paradaCompleta.nombre = coordEncontrada.nombre || paradaCompleta.nombre;
+                                paradaCompleta.imagen = coordEncontrada.imagen;
+                                paradaCompleta.video = coordEncontrada.video;
+                            }
+                        }
+                    }
+
+                    // Buscar audio en AUDIOS_AVENTURAS si están disponibles
+                    if (window.__vv_AUDIOS_AVENTURAS && window.aventuraSeleccionada && window.idiomaSeleccionado) {
+                        const audiosAventura = window.__vv_AUDIOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (audiosAventura && audiosAventura[window.idiomaSeleccionado]) {
+                            const audioEncontrado = audiosAventura[window.idiomaSeleccionado].find(a =>
+                                a.id === item.audio_id || a.id === `audio-${item.parada_id}` || a.id === `audio-${item.tramo_id}`
+                            );
+                            if (audioEncontrado) {
+                                paradaCompleta.audio = audioEncontrado;
+                            }
+                        }
+                    }
+
+                    // Buscar reto en RETOS_AVENTURAS si están disponibles
+                    if (window.__vv_RETOS_AVENTURAS && window.aventuraSeleccionada && window.idiomaSeleccionado) {
+                        const retosAventura = window.__vv_RETOS_AVENTURAS[window.aventuraSeleccionada];
+                        if (retosAventura && retosAventura[window.idiomaSeleccionado]) {
+                            const retoEncontrado = retosAventura[window.idiomaSeleccionado].find(r =>
+                                r.id === item.reto_id
+                            );
+                            if (retoEncontrado) {
+                                paradaCompleta.reto = retoEncontrado;
+                            }
+                        }
+                    }
+
+                    return paradaCompleta;
+                }
+
+                // Preparar respuesta con datos combinados
                 const { normalizarParadas } = await import('./js/utils.js');
                 const paradasNormalizadas = normalizarParadas(AVENTURA_PARADAS);
                 const paradasParaEnviar = [];
+
                 for (const p of paradasNormalizadas) {
                     if (!p.ubicacion && (!p.waypoints || p.waypoints.length === 0)) {
                         logger.warn(`[PADRE][SOLICITAR_PARADAS] Parada sin ubicación ni waypoints: ${p.id}`);
                     }
+
+                    // Combinar con datos dinámicos
+                    const paradaCompleta = combinarDatosParada(p);
+
                     paradasParaEnviar.push({
                         // include both padreid and paradaId for children's convenience
                         padreid: p.padreid || `padre-${p.id}`,
@@ -5907,9 +6149,20 @@
                         waypoints: Array.isArray(p.waypoints) ? p.waypoints.map(w => ({ lat: w.lat, lng: w.lng })) : undefined,
                         rutas: p.rutas || [],
                         metadatos: p.metadatos || {},
-                        estado: p.estado || 'activa'
+                        estado: p.estado || 'activa',
+                        // IDs originales del array AVENTURA_PARADAS
+                        audio_id: p.audio_id,
+                        reto_id: p.reto_id,
+                        // Datos adicionales combinados
+                        coordenadas: paradaCompleta.ubicacion,
+                        waypointsCompletos: paradaCompleta.waypoints,
+                        imagen: paradaCompleta.imagen,
+                        video: paradaCompleta.video,
+                        audio: paradaCompleta.audio,
+                        reto: paradaCompleta.reto
                     });
                 }
+
                 const respuesta = {
                     tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
                     origen: getPadreId(),
@@ -5923,8 +6176,10 @@
                         },
                         metadatos: {
                             timestamp: Date.now(),
-                            version: 'directa_v1',
-                            fuente: 'AVENTURA_PARADAS'
+                            version: 'combinada_v1',
+                            fuente: 'AVENTURA_PARADAS + datos dinámicos',
+                            aventura: window.aventuraSeleccionada,
+                            idioma: window.idiomaSeleccionado
                         }
                     }
                 };
@@ -5932,7 +6187,7 @@
                 // Enviar respuesta directamente
                 await enviarMensajePadre(respuesta);
 
-                logger.success(`${logPrefix} Respuesta enviada directamente con ${AVENTURA_PARADAS.length} paradas`);
+                logger.success(`${logPrefix} Respuesta combinada enviada con ${AVENTURA_PARADAS.length} paradas (con datos dinámicos)`);
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando solicitud de paradas:`, error);
@@ -5945,7 +6200,7 @@
                         destino: mensaje.origen,
                         datos: {
                             error: error.message,
-                            contexto: 'directo_solicitar_paradas',
+                            contexto: 'directo_solicitar_paradas_combinadas',
                             mensajeOriginal: mensaje.id
                         }
                     });
@@ -6396,11 +6651,12 @@
                                 });
                             });
 
-                            if (coordenadasResponse && coordenadasResponse.length > 0 && coordenadasResponse[0].coordenadas) {
-                                const c = coordenadasResponse[0].coordenadas;
+                            if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0 && coordenadasResponse.coordenadas[0].coordenadas) {
+                                const c = coordenadasResponse.coordenadas[0].coordenadas;
                                 coordenadasObjetivo = { lat: c.lat || c[0], lng: c.lng || c[1] };
                                 logger.info(`${logPrefix} Coordenadas obtenidas de hijo2 para ${paradaActual}: [${coordenadasObjetivo.lat}, ${coordenadasObjetivo.lng}]`);
                             } else {
+                                logger.warn(`${logPrefix} Respuesta inválida de coordenadas para ${paradaActual}:`, coordenadasResponse);
                                 // Fallback a P-0 cuando no hay respuesta útil
                                 coordenadasObjetivo = { lat: 39.47876, lng: -0.37626 };
                                 logger.info(`${logPrefix} No se obtuvieron coordenadas de hijo2; fallback a inicio (P-0): [${coordenadasObjetivo.lat}, ${coordenadasObjetivo.lng}]`);
@@ -6532,8 +6788,8 @@
                                         });
                                     });
                                     
-                                    if (coordenadasResponse && coordenadasResponse.length > 0) {
-                                        const destinoCoords = coordenadasResponse[0].coordenadas;
+                                    if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0) {
+                                        const destinoCoords = coordenadasResponse.coordenadas[0].coordenadas;
                                         
                                         await dibujarPolylineNavegacion({
                                             origen: coordenadasObjetivo,
@@ -6548,7 +6804,7 @@
                                         
                                         logger.info(`${logPrefix} Polyline dibujada desde ubicación actual hasta ${siguienteParada.padreid}`);
                                     } else {
-                                        logger.warn(`${logPrefix} No se pudieron obtener coordenadas para ${siguienteParada.padreid}`);
+                                        logger.warn(`${logPrefix} Respuesta inválida de coordenadas para ${siguienteParada.padreid}:`, coordenadasResponse);
                                     }
                                 } catch (error) {
                                     logger.error(`${logPrefix} Error obteniendo coordenadas para polyline: ${error.message}`);
@@ -6705,9 +6961,11 @@
                                 });
                             });
 
-                            if (coordenadasResponse && coordenadasResponse.length > 0) {
-                                coordenadasDestino = coordenadasResponse[0].coordenadas;
+                            if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0) {
+                                coordenadasDestino = coordenadasResponse.coordenadas[0].coordenadas;
                                 logger.debug(`${logPrefix} Coordenadas obtenidas de hijo2: [${coordenadasDestino.lat}, ${coordenadasDestino.lng}]`);
+                            } else {
+                                logger.warn(`${logPrefix} Respuesta inválida de coordenadas para ${elementoId}:`, coordenadasResponse);
                             }
                         } catch (error) {
                             logger.warn(`${logPrefix} Error solicitando coordenadas a hijo2: ${error.message}`);
@@ -7909,7 +8167,512 @@
             }
         });
 
+        // ============================================================
+        // CONTROLADORES DE CONFIRMACIÓN DE DATOS CENTRALIZADOS
+        // Reciben confirmaciones de los hijos tras cargar sus datos
+        // ============================================================
+
+        /**
+         * Controlador: DATOS.COORDENADAS_CARGADAS
+         * Descripción: Confirmación de hijo2 de que recibió las coordenadas
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_CARGADAS, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[COORDENADAS_CARGADAS]`;
+            
+            try {
+                const { exito, aventura, idioma, totalCargadas, error: errorMsg } = mensaje.datos || {};
+                
+                if (exito) {
+                    logger.success(`${logPrefix} ✅ hijo2 confirmó: ${totalCargadas} coordenadas cargadas (${aventura}/${idioma})`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.coordenadasCargadas = true;
+                } else {
+                    logger.error(`${logPrefix} ⚠️ hijo2 reportó error: ${errorMsg}`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.coordenadasCargadas = false;
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación:`, error);
+            }
+        });
+
+        /**
+         * Controlador: DATOS.AUDIOS_CARGADOS
+         * Descripción: Confirmación de hijo3 de que recibió los audios
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.AUDIOS_CARGADOS, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIOS_CARGADOS]`;
+            
+            try {
+                const { exito, aventura, idioma, totalCargados, error: errorMsg } = mensaje.datos || {};
+                
+                if (exito) {
+                    logger.success(`${logPrefix} ✅ hijo3 confirmó: ${totalCargados} audios cargados (${aventura}/${idioma})`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.audiosCargados = true;
+                } else {
+                    logger.error(`${logPrefix} ⚠️ hijo3 reportó error: ${errorMsg}`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.audiosCargados = false;
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación:`, error);
+            }
+        });
+
+        /**
+         * Controlador: DATOS.RETOS_CARGADOS
+         * Descripción: Confirmación de hijo4 de que recibió los retos
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RETOS_CARGADOS, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETOS_CARGADOS]`;
+            
+            try {
+                const { exito, aventura, idioma, totalCargados, error: errorMsg } = mensaje.datos || {};
+                
+                if (exito) {
+                    logger.success(`${logPrefix} ✅ hijo4 confirmó: ${totalCargados} retos cargados (${aventura}/${idioma})`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.retosCargados = true;
+                } else {
+                    logger.error(`${logPrefix} ⚠️ hijo4 reportó error: ${errorMsg}`);
+                    if (!estado.seleccion) estado.seleccion = {};
+                    estado.seleccion.retosCargados = false;
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando confirmación:`, error);
+            }
+        });
+
+        // ============================================================
+        // CONTROLADORES DE SELECCIÓN (En-busca-del-tesoro.html)
+        // Manejan la selección de idioma y aventura del usuario
+        // ============================================================
+
+        /**
+         * Controlador: SELECCION.IDIOMA_SELECCIONADO
+         * Descripción: Recibe el idioma seleccionado por el usuario
+         * Origen: seleccion (En-busca-del-tesoro.html)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.IDIOMA_SELECCIONADO, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.IDIOMA]`;
+            
+            try {
+                const { idioma, timestamp } = mensaje.datos || {};
+                
+                logger.info(`${logPrefix} Idioma seleccionado: ${idioma} desde ${mensaje.origen}`);
+                
+                // Almacenar idioma en estado global
+                if (!estado.seleccion) estado.seleccion = {};
+                estado.seleccion.idioma = idioma;
+                estado.seleccion.timestampIdioma = timestamp;
+                
+                // Exponer globalmente para otros componentes
+                window.idiomaSeleccionado = idioma;
+                
+                logger.debug(`${logPrefix} Idioma almacenado en estado global: ${idioma}`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando selección de idioma:`, error);
+            }
+        });
+
+        /**
+         * Controlador: SELECCION.AVENTURA_SELECCIONADA
+         * Descripción: Recibe la aventura seleccionada por el usuario
+         * Origen: seleccion (En-busca-del-tesoro.html)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.AVENTURA_SELECCIONADA, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.AVENTURA]`;
+            
+            try {
+                const { aventura, idioma, timestamp } = mensaje.datos || {};
+                
+                logger.info(`${logPrefix} Aventura seleccionada: ${aventura} (idioma: ${idioma}) desde ${mensaje.origen}`);
+                
+                // Almacenar en estado global
+                if (!estado.seleccion) estado.seleccion = {};
+                estado.seleccion.aventura = aventura;
+                estado.seleccion.idioma = idioma || estado.seleccion.idioma;
+                estado.seleccion.timestampAventura = timestamp;
+                
+                // Exponer globalmente
+                window.aventuraSeleccionada = aventura;
+                window.idiomaSeleccionado = idioma || window.idiomaSeleccionado;
+                
+                logger.debug(`${logPrefix} Aventura almacenada en estado global: ${aventura}`);
+                
+                // 🔥 DISTRIBUIR DATOS A LOS HIJOS
+                // Enviar coordenadas, audios y retos a los hijos correspondientes
+                try {
+                    logger.info(`${logPrefix} Distribuyendo datos de aventura ${aventura} (${idioma}) a los hijos...`);
+                    
+                    // Esperar a que enviarMensaje esté disponible
+                    const esperarEnviarMensaje = () => new Promise((resolve) => {
+                        const check = () => {
+                            if (typeof window.enviarMensaje === 'function') {
+                                resolve();
+                            } else {
+                                setTimeout(check, 50);
+                            }
+                        };
+                        check();
+                    });
+                    
+                    await esperarEnviarMensaje();
+                    logger.debug(`${logPrefix} enviarMensaje disponible, procediendo con distribución`);
+                    
+                    const resultados = await distribuirDatosAventura(aventura, idioma);
+                    
+                    if (resultados.pospuesto) {
+                        logger.warn(`${logPrefix} ⚠️ ${resultados.mensaje}, marcando como pendiente`);
+                        // Marcar que se necesita distribución pendiente
+                        window.__pendingDistribucion = { aventura, idioma };
+                    } else {
+                        logger.success(`${logPrefix} ✅ Distribución completada:`, resultados);
+                    }
+                } catch (distribucionError) {
+                    if (distribucionError.message.includes('Datos centralizados no disponibles')) {
+                        logger.warn(`${logPrefix} ⚠️ Datos aún no disponibles, se distribuirán cuando se complete la carga inicial`);
+                        // Los datos se distribuirán automáticamente cuando se complete la carga inicial
+                        // mediante el mecanismo de sincronización existente
+                    } else {
+                        logger.error(`${logPrefix} ❌ Error distribuyendo datos:`, distribucionError);
+                    }
+                }
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando selección de aventura:`, error);
+            }
+        });
+
+        // ============================================================
+        // FUNCIÓN: DISTRIBUIR DATOS DE AVENTURA A LOS HIJOS
+        // Envía coordenadas, audios y retos según aventura e idioma
+        // ============================================================
+
+        /**
+         * Mapea código de idioma corto a nombre completo (para audios)
+         * @param {string} idiomaCorto - 'es', 'en', 'fr', etc.
+         * @returns {string} nombre completo del idioma
+         */
+
+
+        /**
+         * Distribuye los datos centralizados a los hijos según aventura e idioma
+         * @param {string} aventura - Nombre de la aventura (ej: 'Aventura1')
+         * @param {string} idioma - Código de idioma (ej: 'es')
+         * @returns {Promise<{coordenadas: boolean, audios: boolean, retos: boolean}>}
+         */
+        async function distribuirDatosAventura(aventura, idioma) {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DISTRIBUIR_DATOS]`;
+            const resultados = { coordenadas: false, audios: false, retos: false };
+            
+            // Verificar que los datos centralizados estén disponibles
+            if (!window.__vv_DATOS_AVENTURAS || !window.__vv_AUDIOS_AVENTURAS || !window.__vv_RETOS_AVENTURAS) {
+                logger.warn(`${logPrefix} Datos centralizados no disponibles aún. Esperando carga...`);
+                throw new Error('Datos centralizados no disponibles - los módulos aún se están cargando');
+            }
+            
+            // Verificar que enviarMensaje_S1 esté disponible
+            if (typeof window.enviarMensaje !== 'function') {
+                logger.warn(`${logPrefix} window.enviarMensaje no disponible aún. Esperando inicialización de mensajería...`);
+                // En lugar de lanzar error, devolver resultado indicando que se pospuso
+                return { 
+                    coordenadas: false, 
+                    audios: false, 
+                    retos: false, 
+                    pospuesto: true,
+                    mensaje: 'Distribución pospuesta - mensajería no disponible'
+                };
+            }
+            
+            // Obtener datos centralizados
+            const datosAventuras = window.__vv_DATOS_AVENTURAS;
+            const audiosAventuras = window.__vv_AUDIOS_AVENTURAS;
+            const retosAventuras = window.__vv_RETOS_AVENTURAS;
+
+            // 1. COORDENADAS → hijo2
+            try {
+                if (datosAventuras && datosAventuras[aventura]) {
+                    const datosCoord = datosAventuras[aventura];
+                    // El formato es datosAventuras.Aventura1['coordenadas-hijo2.html'].coordenadas
+                    const coordenadas = datosCoord['coordenadas-hijo2.html']?.coordenadas || [];
+                    
+                    if (coordenadas.length > 0) {
+                        if (typeof window.enviarMensaje === 'function') {
+                            await window.enviarMensaje({
+                                tipo: TIPOS_MENSAJE.DATOS.CARGAR_COORDENADAS,
+                                origen: getPadreId(),
+                                destino: 'hijo2',
+                                datos: {
+                                    aventura: aventura,
+                                    idioma: idioma,
+                                    coordenadas: coordenadas,
+                                    total: coordenadas.length,
+                                    timestamp: Date.now()
+                                }
+                            });
+                            logger.info(`${logPrefix} ✅ Coordenadas enviadas a hijo2: ${coordenadas.length} paradas/tramos`);
+                            resultados.coordenadas = true;
+                        } else {
+                            logger.warn(`${logPrefix} window.enviarMensaje no disponible para cargar coordenadas`);
+                        }
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ No hay coordenadas para ${aventura}`);
+                    }
+                } else {
+                    logger.warn(`${logPrefix} ⚠️ Datos de aventura no encontrados: ${aventura}`);
+                }
+            } catch (coordError) {
+                logger.error(`${logPrefix} Error enviando coordenadas a hijo2:`, coordError);
+            }
+
+            // 2. AUDIOS → hijo3
+            try {
+                if (audiosAventuras && audiosAventuras[aventura]) {
+                    const audios = audiosAventuras[aventura][idioma] || [];
+                    
+                    if (audios.length > 0) {
+                        if (typeof window.enviarMensaje === 'function') {
+                            await window.enviarMensaje({
+                                tipo: TIPOS_MENSAJE.DATOS.CARGAR_AUDIOS,
+                                origen: getPadreId(),
+                                destino: 'hijo3',
+                                datos: {
+                                    aventura: aventura,
+                                    idioma: idioma,
+                                    audios: audios,
+                                    total: audios.length,
+                                    timestamp: Date.now()
+                                }
+                            });
+                            logger.info(`${logPrefix} ✅ Audios enviados a hijo3: ${audios.length} pistas`);
+                            resultados.audios = true;
+                        } else {
+                            logger.warn(`${logPrefix} window.enviarMensaje no disponible para cargar audios`);
+                        }
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ No hay audios para ${aventura}/${idioma}`);
+                    }
+                } else {
+                    logger.warn(`${logPrefix} ⚠️ Audios de aventura no encontrados: ${aventura}`);
+                }
+            } catch (audioError) {
+                logger.error(`${logPrefix} Error enviando audios a hijo3:`, audioError);
+            }
+
+            // 3. RETOS → hijo4
+            try {
+                if (retosAventuras && retosAventuras[aventura]) {
+                    const retos = retosAventuras[aventura][idioma] || [];
+                    
+                    if (retos.length > 0) {
+                        if (typeof window.enviarMensaje === 'function') {
+                            await window.enviarMensaje({
+                                tipo: TIPOS_MENSAJE.DATOS.CARGAR_RETOS,
+                                origen: getPadreId(),
+                                destino: 'hijo4',
+                                datos: {
+                                    aventura: aventura,
+                                    idioma: idioma,
+                                    retos: retos,
+                                    total: retos.length,
+                                    timestamp: Date.now()
+                                }
+                            });
+                            logger.info(`${logPrefix} ✅ Retos enviados a hijo4: ${retos.length} retos`);
+                            resultados.retos = true;
+                        } else {
+                            logger.warn(`${logPrefix} window.enviarMensaje no disponible para cargar retos`);
+                        }
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ No hay retos para ${aventura}/${idioma}`);
+                    }
+                } else {
+                    logger.warn(`${logPrefix} ⚠️ Retos de aventura no encontrados: ${aventura}`);
+                }
+            } catch (retoError) {
+                logger.error(`${logPrefix} Error enviando retos a hijo4:`, retoError);
+            }
+
+            logger.info(`${logPrefix} Distribución completada: coordenadas=${resultados.coordenadas}, audios=${resultados.audios}, retos=${resultados.retos}`);
+            return resultados;
+        }
+
+        // Exponer función para uso desde otros scripts
+        window.distribuirDatosAventura = distribuirDatosAventura;
+
+        /**
+         * Controlador: SELECCION.INICIAR_AVENTURA
+         * Descripción: El usuario está listo para iniciar la aventura
+         * Origen: seleccion (En-busca-del-tesoro.html)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.INICIAR_AVENTURA, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.INICIAR]`;
+            
+            console.log('🎯 [PADRE] INICIAR_AVENTURA RECIBIDO:', mensaje);
+            
+            try {
+                const { aventura, idioma, terminosAceptados, timestamp } = mensaje.datos || {};
+                
+                logger.info(`${logPrefix} 🚀 Iniciando aventura: ${aventura} (idioma: ${idioma})`);
+                
+                // Validar que tengamos todos los datos necesarios
+                if (!aventura) {
+                    logger.error(`${logPrefix} No se especificó aventura`);
+                    return;
+                }
+                
+                // Almacenar configuración final
+                if (!estado.seleccion) estado.seleccion = {};
+                estado.seleccion.aventura = aventura;
+                estado.seleccion.idioma = idioma || 'es';
+                estado.seleccion.terminosAceptados = terminosAceptados;
+                estado.seleccion.iniciada = true;
+                estado.seleccion.timestampInicio = timestamp;
+                
+                // =====================================================
+                // ESPERAR CONFIRMACIONES DE CARGA DE LOS HIJOS
+                // =====================================================
+                logger.info(`${logPrefix} Esperando confirmaciones de carga de datos...`);
+                
+                // Resetear flags de confirmación
+                estado.seleccion.coordenadasCargadas = false;
+                estado.seleccion.audiosCargados = false;
+                estado.seleccion.retosCargados = false;
+                
+                // Función para esperar confirmaciones con timeout
+                const esperarConfirmaciones = async (timeoutMs = 10000) => {
+                    const startTime = Date.now();
+                    
+                    while (Date.now() - startTime < timeoutMs) {
+                        const coordenadasOk = estado.seleccion.coordenadasCargadas !== false; // true o undefined = ok
+                        const audiosOk = estado.seleccion.audiosCargados !== false;
+                        const retosOk = estado.seleccion.retosCargados !== false;
+                        
+                        if (coordenadasOk && audiosOk && retosOk) {
+                            logger.success(`${logPrefix} ✅ Todas las confirmaciones recibidas`);
+                            return true;
+                        }
+                        
+                        // Esperar un poco antes de verificar nuevamente
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    logger.warn(`${logPrefix} ⚠️ Timeout esperando confirmaciones (${timeoutMs}ms)`);
+                    return false;
+                };
+                
+                // Esperar confirmaciones (con timeout de 10 segundos)
+                const confirmacionesCompletas = await esperarConfirmaciones(10000);
+                
+                if (!confirmacionesCompletas) {
+                    logger.warn(`${logPrefix} Continuando sin todas las confirmaciones...`);
+                }
+                
+                // Ocultar página de selección si está como iframe
+                const iframeSeleccion = document.getElementById('seleccion');
+                if (iframeSeleccion) {
+                    iframeSeleccion.style.display = 'none';
+                }
+                
+                // Mostrar componentes de la aventura (mapa, hijos, controles)
+                logger.info(`${logPrefix} Mostrando componentes de la aventura...`);
+                
+                // Mostrar los iframes de los hijos
+                const iframesToShow = ['hijo2', 'hijo3', 'hijo1-hamburguesa', 'hijo1-opciones', 'hijo5-casa'];
+                for (const iframeId of iframesToShow) {
+                    const iframe = document.getElementById(iframeId);
+                    if (iframe) {
+                        iframe.style.display = 'block';
+                        iframe.style.visibility = 'visible';
+                    }
+                }
+                
+                // Notificar a los hijos que la aventura ha iniciado
+                const datosInicio = {
+                    aventura: aventura,
+                    idioma: idioma || 'es',
+                    timestamp: Date.now()
+                };
+                
+                // Broadcast a todos los hijos
+                try {
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
+                            origen: getPadreId(),
+                            destino: 'broadcast',
+                            datos: {
+                                evento: 'AVENTURA_INICIADA',
+                                ...datosInicio
+                            }
+                        });
+                        logger.debug(`${logPrefix} Notificación de inicio enviada a todos los hijos`);
+                    } else {
+                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible aún. Esperando inicialización de mensajería...`);
+                        // Marcar como pendiente para cuando enviarMensaje_S1 esté disponible
+                        if (!window.__pendingBroadcast) window.__pendingBroadcast = [];
+                        window.__pendingBroadcast.push({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
+                            origen: getPadreId(),
+                            destino: 'broadcast',
+                            datos: {
+                                evento: 'AVENTURA_INICIADA',
+                                ...datosInicio
+                            }
+                        });
+                    }
+                } catch (broadcastError) {
+                    logger.warn(`${logPrefix} Error en broadcast de inicio:`, broadcastError);
+                }
+                
+                logger.success(`${logPrefix} ✅ Aventura ${aventura} iniciada correctamente`);
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error iniciando aventura:`, error);
+            }
+        });
+
+        /**
+         * Controlador: SELECCION.TERMINOS_ACEPTADOS
+         * Descripción: El usuario aceptó los términos y condiciones
+         * Origen: seleccion (En-busca-del-tesoro.html)
+         */
+        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.TERMINOS_ACEPTADOS, async (mensaje) => {
+            const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.TERMINOS]`;
+            
+            try {
+                const { aceptados, timestamp } = mensaje.datos || {};
+                
+                logger.info(`${logPrefix} Términos aceptados: ${aceptados}`);
+                
+                // Almacenar en estado
+                if (!estado.seleccion) estado.seleccion = {};
+                estado.seleccion.terminosAceptados = aceptados;
+                estado.seleccion.timestampTerminos = timestamp;
+                
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando aceptación de términos:`, error);
+            }
+        });
+
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores Script 2 registrados`);
+
+        // ============================================================
+        // ⚡ MARCAR SCRIPT 2 LISTO INMEDIATAMENTE DESPUÉS DE REGISTRAR CONTROLADORES
+        // Esto evita el timeout de 15s en mensajeria.js
+        // ============================================================
+        (async () => {
+            try {
+                const { marcarScript2Listo } = await import('./js/mensajeria.js');
+                const resultado = marcarScript2Listo();
+                logger.info(`[SCRIPT2] ✅ Script 2 marcado como LISTO (inmediato)`, resultado);
+            } catch (error) {
+                logger.error('[SCRIPT2] Error marcando Script 2 como listo:', error);
+            }
+        })();
 
         // ============================================================
         // INICIALIZACIÓN DEL MAPA
@@ -7956,7 +8719,7 @@
         estado.tiempoInicio = Date.now();
         
         // ===================================================================
-        // SINCRONIZACIÓN SCRIPT 2 - MARCAR COMO LISTO Y PROCESAR COLA
+        // TIMEOUT DE SEGURIDAD PARA OVERLAY
         // ===================================================================
         
         // ⏰ TIMEOUT DE SEGURIDAD: Forzar cierre del overlay si tarda más de 25 segundos
@@ -7972,19 +8735,11 @@
             if (body) body.classList.remove('loading');
         }, 25000); // 25 segundos como timeout de emergencia
         
+        // ℹ️ NOTA: marcarScript2Listo() ya se llamó arriba inmediatamente después de registrar controladores
+        // Aquí solo cancelamos el timeout cuando la UI esté lista
+        
         (async () => {
             try {
-                const logPrefix = '[SCRIPT2][SINCRONIZACIÓN]';
-                logger.info(`${logPrefix} Iniciando marcado como listo...`);
-                
-                // Importar función de marcado desde mensajeria.js
-                const { marcarScript2Listo } = await import('./js/mensajeria.js');
-                
-                // Marcar Script 2 como listo y procesar mensajes pendientes
-                const resultado = marcarScript2Listo();
-                
-                logger.info(`${logPrefix} Script 2 marcado como LISTO`, resultado);
-                
                 // ✅ CANCELAR TIMEOUT DE SEGURIDAD (inicialización está progresando correctamente)
                 clearTimeout(timeoutSeguridad);
                 
@@ -7992,7 +8747,7 @@
                 // (ver waitForLeafletAndInitialize() donde se llama a cargarIframeSecuencial())
                 
             } catch (error) {
-                logger.error('[SCRIPT2][SINCRONIZACIÓN] Error marcando Script 2 como listo:', error);
+                logger.error('[SCRIPT2][SINCRONIZACIÓN] Error en finalización:', error);
                 
                 // ✅ CANCELAR TIMEOUT DE SEGURIDAD en caso de error
                 clearTimeout(timeoutSeguridad);
@@ -8032,7 +8787,7 @@
                 // Asegurarse de que el iframe esté cargado
                 if (!hijo4.src || hijo4.src === '' || hijo4.src === 'about:blank') {
                     logger.info('Cargando hijo4 por primera vez...');
-                    hijo4.src = 'Av1-esp-retos-preguntas.html';
+                    hijo4.src = 'retos-hijo4.html';
                     
                     // Esperar a que se cargue
                     await new Promise((resolve) => {
@@ -8411,17 +9166,8 @@
         
         console.log('🔧 Función de diagnóstico GPS disponible: window.diagnosticarGPS()');
 
-        // ============================================================
-        // MARCAR SCRIPT 2 COMO LISTO
-        // ============================================================
-        // ✅ CRÍTICO: Procesar mensajes que esperaban controladores de Script 2
-        try {
-            const { marcarScript2Listo } = await import('./js/mensajeria.js');
-            const resultado = marcarScript2Listo();
-            logger.info('[PADRE][SCRIPT2] ✅ Script 2 marcado como listo', resultado);
-        } catch (error) {
-            logger.error('[PADRE][SCRIPT2] ❌ Error marcando Script 2 como listo:', error);
-        }
+        // ℹ️ NOTA: marcarScript2Listo() se llama inmediatamente después de registrar 
+        // controladores (línea ~8345) para evitar el timeout de 15s en mensajeria.js
     </script>
 
     <!-- ============================================================ -->
