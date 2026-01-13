@@ -160,7 +160,14 @@ export const TIPOS_MENSAJE = {
         SOLICITAR_RETO: 'DATOS.SOLICITAR_RETO',
         RESPUESTA_RETO: 'DATOS.RESPUESTA_RETO',
         SOLICITAR_RETOS: 'DATOS.SOLICITAR_RETOS',
-        RESPUESTA_RETOS: 'DATOS.RESPUESTA_RETOS'
+        RESPUESTA_RETOS: 'DATOS.RESPUESTA_RETOS',
+        // Datos de aventura - enviados por padre a hijos al iniciar
+        CARGAR_COORDENADAS: 'DATOS.CARGAR_COORDENADAS',       // Padre → hijo2
+        COORDENADAS_CARGADAS: 'DATOS.COORDENADAS_CARGADAS',   // hijo2 → Padre (confirmación)
+        CARGAR_AUDIOS: 'DATOS.CARGAR_AUDIOS',                 // Padre → hijo3
+        AUDIOS_CARGADOS: 'DATOS.AUDIOS_CARGADOS',             // hijo3 → Padre (confirmación)
+        CARGAR_RETOS: 'DATOS.CARGAR_RETOS',                   // Padre → hijo4
+        RETOS_CARGADOS: 'DATOS.RETOS_CARGADOS'                // hijo4 → Padre (confirmación)
     },
     AUDIO: {
         REPRODUCIR_REQUEST: 'AUDIO.REPRODUCIR_REQUEST',
@@ -219,6 +226,15 @@ export const TIPOS_MENSAJE = {
         ADD_MARKER: 'MAPA.ADD_MARKER',
         REMOVE_MARKER: 'MAPA.REMOVE_MARKER',
         CLEAR_LAYERS: 'MAPA.CLEAR_LAYERS'
+    },
+    // Tipos de mensaje para la página de selección (En-busca-del-tesoro)
+    SELECCION: {
+        IDIOMA_SELECCIONADO: 'SELECCION.IDIOMA_SELECCIONADO',
+        AVENTURA_SELECCIONADA: 'SELECCION.AVENTURA_SELECCIONADA',
+        INICIAR_AVENTURA: 'SELECCION.INICIAR_AVENTURA',
+        TERMINOS_ACEPTADOS: 'SELECCION.TERMINOS_ACEPTADOS',
+        SOLICITAR_ESTADO: 'SELECCION.SOLICITAR_ESTADO',
+        RESPUESTA_ESTADO: 'SELECCION.RESPUESTA_ESTADO'
     }
 };
 
