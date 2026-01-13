@@ -4727,8 +4727,8 @@
                 { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
                 { id: 'hijo2', src: 'coordenadas-hijo2.html' },
                 { id: 'hijo3', src: 'audio-hijo3.html' },
-                { id: 'hijo4', src: 'retos-hijo4.html' },
-                { id: 'hijo5-casa', src: 'Av1-boton-casa.html' }
+                { id: 'hijo4', src: 'retos-hijo4.html' }
+                // hijo5-casa se carga después de seleccionar aventura
             ];
 
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
@@ -5162,8 +5162,105 @@
             }
         })();
 
+        /**
+         * Carga el iframe hijo5-casa después de seleccionar aventura
+         * Se ejecuta solo cuando el usuario ha completado la selección
+         */
+        async function cargarHijoCasa() {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CARGAR_HIJO_CASA]`;
+
+            try {
+                logger.info(`${logPrefix} 🚀 Iniciando carga de hijo5-casa después de selección de aventura...`);
+
+                const iframeCasa = {
+                    id: 'hijo5-casa',
+                    src: 'Av1-boton-casa.html'
+                };
+
+                const iframeEl = document.getElementById(iframeCasa.id);
+                if (!iframeEl) {
+                    throw new Error(`Iframe ${iframeCasa.id} no encontrado en DOM`);
+                }
+
+                // Mostrar el iframe (inicialmente oculto)
+                iframeEl.style.display = 'block';
+                iframeEl.style.visibility = 'visible';
+
+                // Esperar a que el iframe cargue
+                await new Promise((resolve, reject) => {
+                    const timeoutFallback = setTimeout(() => {
+                        logger.warn(`${logPrefix} ⚠️ Timeout de carga para ${iframeCasa.id}, continuando...`);
+                        resolve();
+                    }, ajustarTimeoutPorConexion_S1(10000));
+
+                    const onLoad = () => {
+                        clearTimeout(timeoutFallback);
+                        iframeEl.removeEventListener('load', onLoad);
+                        iframeEl.removeEventListener('error', onError);
+                        logger.info(`${logPrefix} ✅ ${iframeCasa.id} cargado (evento onload)`);
+                        resolve();
+                    };
+
+                    const onError = (err) => {
+                        clearTimeout(timeoutFallback);
+                        iframeEl.removeEventListener('load', onLoad);
+                        iframeEl.removeEventListener('error', onError);
+                        logger.warn(`${logPrefix} ⚠️ Error cargando ${iframeCasa.id}, continuando...`);
+                        resolve();
+                    };
+
+                    iframeEl.addEventListener('load', onLoad, { once: true });
+                    iframeEl.addEventListener('error', onError, { once: true });
+
+                    // Iniciar la carga
+                    iframeEl.src = iframeCasa.src;
+                });
+
+                // Enviar PADRE_LISTO a hijo5-casa
+                logger.info(`${logPrefix} Enviando PADRE_LISTO a hijo5-casa`);
+                if (typeof enviarMensaje_S1 === 'function') {
+                    await enviarMensaje_S1({
+                        destino: iframeCasa.id,
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
+                        origen: CONFIG_PADRE.ID,
+                        datos: {
+                            version: CONFIG_PADRE.VERSION,
+                            timestamp: new Date().toISOString(),
+                            modo: window.estadoPadre.modo?.actual || MODOS.CASA
+                        }
+                    });
+                } else {
+                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframeCasa.id}`);
+                }
+
+                // Esperar a que hijo5-casa esté listo
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error(`Timeout esperando HIJO_LISTO de ${iframeCasa.id}`));
+                    }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
+
+                    const check = () => {
+                        if (window.estadoPadre.hijosInicializados.has(iframeCasa.id)) {
+                            clearTimeout(timeout);
+                            resolve();
+                        } else {
+                            setTimeout(check, 100);
+                        }
+                    };
+                    check();
+                });
+
+                logger.success(`${logPrefix} ✅ hijo5-casa listo y confirmado después de selección de aventura`);
+
+            } catch (error) {
+                logger.error(`${logPrefix} ❌ Error cargando hijo5-casa:`, error);
+                // No es crítico, continuar sin hijo5-casa
+            }
+        }
+
         // Exponer funciones a window para debugging
         window.cargarIframeSecuencial = cargarIframeSecuencial;
+        window.cargarHijoCasa = cargarHijoCasa;
         window.waitForLeafletAndInitialize = waitForLeafletAndInitialize;
         
         // FUNCIÓN DE DIAGNÓSTICO PARA HIJO4
@@ -8344,6 +8441,10 @@
                         logger.error(`${logPrefix} ❌ Error distribuyendo datos:`, distribucionError);
                     }
                 }
+                
+                // 🔥 CARGAR HIJO5-CASA después de selección de aventura
+                logger.info(`${logPrefix} 🚀 Cargando hijo5-casa después de selección de aventura...`);
+                await cargarHijoCasa();
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando selección de aventura:`, error);
