@@ -2047,29 +2047,16 @@
         window.__vv_INDICE_AVENTURAS = INDICE_AVENTURAS;
         window.__vv_MAPEO_IDIOMAS = MAPEO_IDIOMAS;
 
-        // 🔥 AUTO-DISTRIBUCIÓN: Si ya hay una aventura seleccionada, distribuir datos automáticamente
+        // 🔥 AUTO-DISTRIBUCIÓN: Si ya hay una aventura seleccionada, marcar como pendiente hasta que el sistema esté listo
         if (window.aventuraSeleccionada && window.idiomaSeleccionado) {
-            try {
-                console.info('[PADRE] 🔄 Detectada aventura ya seleccionada, distribuyendo datos automáticamente...');
-                distribuirDatosAventura(window.aventuraSeleccionada, window.idiomaSeleccionado)
-                    .then(resultados => {
-                        if (resultados.pospuesto) {
-                            console.warn('[PADRE] ⚠️ Auto-distribución pospuesta:', resultados.mensaje);
-                            // Marcar como pendiente para cuando enviarMensaje_S1 esté disponible
-                            window.__pendingDistribucion = { 
-                                aventura: window.aventuraSeleccionada, 
-                                idioma: window.idiomaSeleccionado 
-                            };
-                        } else {
-                            console.success('[PADRE] ✅ Auto-distribución completada:', resultados);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('[PADRE] ❌ Error en auto-distribución:', error);
-                    });
-            } catch (autoError) {
-                console.error('[PADRE] ❌ Error en auto-distribución de datos:', autoError);
-            }
+            console.info('[PADRE] 🔄 Detectada aventura ya seleccionada, marcando distribución como pendiente hasta inicialización completa...');
+            // Marcar como pendiente - se procesará después de cargar iframes en ejecutarInicializacionAutomatica
+            window.__pendingDistribucion = {
+                aventura: window.aventuraSeleccionada,
+                idioma: window.idiomaSeleccionado,
+                razon: 'aventura_preseleccionada'
+            };
+            console.info('[PADRE] 📋 Distribución pendiente registrada para cuando el sistema esté listo');
         }
 
         const logger_S1 = loggerModule.default;
@@ -5122,6 +5109,23 @@
                 window.estadoPadre.sistemaInicializado = true;
                 window.sistemaInicializado = true;
                 logger.success(`${logPrefix} ✅ Sistema completo inicializado correctamente`);
+                
+                // 🔥 PROCESAR DISTRIBUCIONES PENDIENTES DESPUÉS DE INICIALIZACIÓN COMPLETA
+                if (window.__pendingDistribucion) {
+                    const { aventura, idioma, razon } = window.__pendingDistribucion;
+                    logger.info(`${logPrefix} 🔄 Procesando distribución pendiente (${razon}): ${aventura}/${idioma}`);
+                    try {
+                        const resultados = await distribuirDatosAventura(aventura, idioma);
+                        if (resultados.pospuesto) {
+                            logger.warn(`${logPrefix} ⚠️ Distribución pendiente aún pospuesta:`, resultados.mensaje);
+                        } else {
+                            logger.success(`${logPrefix} ✅ Distribución pendiente completada:`, resultados);
+                            delete window.__pendingDistribucion;
+                        }
+                    } catch (error) {
+                        logger.error(`${logPrefix} ❌ Error procesando distribución pendiente:`, error);
+                    }
+                }
                 
                 // 6. ✅ REMOVER OVERLAY DE CARGA - TODO LISTO
                 updateLoadingStatus('Sistema listo', '¡Iniciando aplicación!');
@@ -8367,6 +8371,18 @@
         async function distribuirDatosAventura(aventura, idioma) {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DISTRIBUIR_DATOS]`;
             const resultados = { coordenadas: false, audios: false, retos: false };
+            
+            // Verificar que el sistema esté completamente inicializado (iframes cargados)
+            if (!window.sistemaInicializado) {
+                logger.warn(`${logPrefix} Sistema no inicializado aún. Esperando carga de iframes...`);
+                return { 
+                    coordenadas: false, 
+                    audios: false, 
+                    retos: false, 
+                    pospuesto: true,
+                    mensaje: 'Sistema no inicializado - iframes aún cargándose'
+                };
+            }
             
             // Verificar que los datos centralizados estén disponibles
             if (!window.__vv_DATOS_AVENTURAS || !window.__vv_AUDIOS_AVENTURAS || !window.__vv_RETOS_AVENTURAS) {
