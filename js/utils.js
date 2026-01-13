@@ -2338,7 +2338,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
     }
 });
 
-// Controlador DATOS.SOLICITAR_PARADAS en hijo2 (Av1-botones-coordenadas.html)
+// Controlador DATOS.SOLICITAR_PARADAS en hijo2 (coordenadas-hijo2.html)
 
 /**
  * Calcula un multiplicador de timeout basado en el tipo de conexión de red.
