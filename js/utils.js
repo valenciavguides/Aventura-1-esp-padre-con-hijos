@@ -7,7 +7,22 @@
 import logger from './logger.js';
 import { CSS_CLASES, MODOS, ERRORES, TIPOS_MENSAJE } from './constants.js';
 import { promesasPendientes } from './monitoreo.js';
-import { enviarMensaje } from './mensajeria.js';
+import { generarIdUnico, getPadreId, ajustarTimeoutPorConexion } from './basic-utils.js';
+// import { enviarMensaje } from './mensajeria.js'; // Removed to break circular dependency
+
+/**
+ * Lazy getter for enviarMensaje to avoid circular dependency
+ * @returns {Promise<Function>} The enviarMensaje function
+ */
+async function getEnviarMensaje() {
+    try {
+        const { enviarMensaje } = await import('./mensajeria.js');
+        return enviarMensaje;
+    } catch (error) {
+        logger.error('[UTILS] Error importing enviarMensaje:', error);
+        throw error;
+    }
+}
 
 /**
  * Resolves the best UI destination for notifications/modals/alerts.
@@ -34,7 +49,7 @@ export function resolverUIDestino() {
         if (document.getElementById('hijo1-opciones')) return 'hijo1-opciones';
         if (document.getElementById('hijo1-hamburguesa')) return 'hijo1-hamburguesa';
         // Prefer casa button
-        if (document.getElementById('hijo5-casa')) return 'hijo5-casa';
+        if (document.getElementById('hijo5')) return 'hijo5';
 
     } catch (err) {
         // Nothing we can do — fall back to broadcast
@@ -398,14 +413,6 @@ export function sanitizarEntrada(entrada) {
 }
 
 /**
- * Genera un ID único basado en la fecha y un valor aleatorio.
- * @returns {string} ID único.
- */
-export function generarIdUnico() {
-    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
  * Normaliza un objeto de parada/tramo a la forma canónica usada por la app.
  * - No muta el objeto original; devuelve una copia o `null` si es inválido.
  * - Deriva `id` a partir de `id || parada_id || tramo_id || padreid`.
@@ -575,19 +582,6 @@ export function normalizarParadas(arr) {
      * - Fallback: 'padre'
      * @returns {string}
      */
-    export function getPadreId() {
-        try {
-            if (typeof window !== 'undefined') {
-                if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
-                // Do not rely on CONFIG_PADRE_LOCAL alias; prefer canonical CONFIG_PADRE
-                if (window.Config && window.Config.ID_PADRE) return window.Config.ID_PADRE;
-            }
-        } catch (e) {
-            // ignore
-        }
-        return 'padre';
-    }
-
     /**
      * Devuelve un ID local de hijo si está disponible (runtime-seguro)
      * @returns {string|null}
@@ -655,7 +649,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             const errorMsg = 'Falta el contenido del mensaje de notificación';
             logger.warn(`${logPrefix} ${errorMsg}`);
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -681,7 +675,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             const errorMsg = `Tipo de notificación no válido: ${tipo}`;
             logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -759,7 +753,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
                 try { typeof window.incrementarContador === 'function' && window.incrementarContador('notificacion.fallback_broadcast'); } catch (e) { /* ignore */ }
             }
             if (reemplazar) {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     destino: destinoUsableNoti,
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     origen: 'sistema',
@@ -773,7 +767,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
                     }
                 });
             } else {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     destino: destinoUsableNoti,
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     origen: 'sistema',
@@ -788,7 +782,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             }
 
             // 7.2. Confirmación al emisor original — incluir siempre 'origen' para evitar errores
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
@@ -817,7 +811,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
             logger.error(`${logPrefix} ${errorProcesamiento}`, error);
             
             // Notificar el error al emisor original
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -841,7 +835,7 @@ registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
         try {
             // Notificar el error al emisor original si es posible
             if (mensaje?.origen) {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     origen: 'sistema',
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -906,7 +900,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             const errorMsg = 'El modal debe tener contenido o al menos una acción';
             logger.warn(`${logPrefix} ${errorMsg}`);
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -932,7 +926,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             const errorMsg = `Tipo de modal no válido: ${tipo}`;
             logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -1019,7 +1013,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
         try {
             const destinoUiModal = resolverUIDestino();
             const destinoUsableModal = esDestinoValido(destinoUiModal) ? destinoUiModal : 'broadcast';
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: destinoUsableModal,
                 tipo: TIPOS_MENSAJE.UI.MODAL,
                 origen: 'sistema',
@@ -1033,7 +1027,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             });
 
             // 9. Confirmación al emisor original
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
@@ -1064,7 +1058,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
             logger.error(`${logPrefix} ${errorProcesamiento}`, error);
             
             // Notificar el error al emisor original
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 origen: 'sistema',
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
@@ -1089,7 +1083,7 @@ registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
         try {
             // Notificar el error al emisor original si es posible
             if (mensaje?.origen) {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     mensajeId: generarIdUnico(),
@@ -1135,7 +1129,7 @@ async function manejarInteraccionModal(interaccion) {
 
         // Si hay un origen, notificar la interacción
         if (datos.origen) {
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: datos.origen,
                 tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
                 mensajeId: generarIdUnico(),
@@ -1210,7 +1204,7 @@ async function manejarInteraccionAlerta(interaccion) {
 
         // Si hay un origen, notificar la interacción
         if (datos.origen) {
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: datos.origen,
                 tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
                 mensajeId: generarIdUnico(),
@@ -1255,7 +1249,7 @@ async function manejarInteraccionNotificacion(interaccion) {
 
         // Si hay una acción específica, notificar al origen original
         if (accion === 'accion' && datos.origen) {
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: datos.origen,
                 tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
                 mensajeId: generarIdUnico(),
@@ -1318,7 +1312,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                         
                         // Fallback: notificar al usuario
                         try {
-                            await enviarMensaje({
+                            await (await getEnviarMensaje())({
                                 tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                                 destino: 'broadcast',
                                 datos: {
@@ -1351,7 +1345,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                             
                             // Fallback: notificar al usuario
                             try {
-                                await enviarMensaje({
+                                await (await getEnviarMensaje())({
                                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                                     destino: 'broadcast',
                                     datos: {
@@ -1377,7 +1371,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
                             
                             // Fallback: notificar al usuario
                             try {
-                                await enviarMensaje({
+                                await (await getEnviarMensaje())({
                                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                                     destino: 'broadcast',
                                     datos: {
@@ -1441,7 +1435,7 @@ async function manejarMostrarImagen(datos) {
             
             // Fallback: Notificar al usuario que la funcionalidad no está disponible
             try {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     destino: 'broadcast',
                     datos: {
@@ -1487,7 +1481,7 @@ async function manejarReproducirVideo(datos) {
             
             // Fallback: notificar al usuario
             try {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
                     destino: 'broadcast',
                     datos: {
@@ -1554,7 +1548,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             const errorMsg = 'Falta el contenido del mensaje de alerta';
             logger.warn(`${logPrefix} ${errorMsg}`);
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -1579,7 +1573,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             const errorMsg = `Tipo de alerta no válido: ${tipo}`;
             logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
             
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -1667,7 +1661,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
         try {
             const destinoUiAlerta = resolverUIDestino();
             const destinoUsableAlerta = esDestinoValido(destinoUiAlerta) ? destinoUiAlerta : 'broadcast';
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: destinoUsableAlerta,
                 tipo: TIPOS_MENSAJE.UI.ALERTA,
                 origen: 'sistema',
@@ -1684,7 +1678,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             if (alerta.timeout > 0) {
                 setTimeout(async () => {
                     try {
-                        await enviarMensaje({
+                        await (await getEnviarMensaje())({
                             destino: destinoUsableAlerta,
                             tipo: TIPOS_MENSAJE.UI.ALERTA,
                             origen: 'sistema',
@@ -1700,7 +1694,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
 
                         // Notificar al origen que la alerta se cerró por timeout
                         if (mensaje?.origen) {
-                            await enviarMensaje({
+                            await (await getEnviarMensaje())({
                                 destino: mensaje.origen,
                                 tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
                                 mensajeId: generarIdUnico(),
@@ -1725,7 +1719,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             }
 
             // 9. Confirmación al emisor original
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
                 mensajeId: generarIdUnico(),
@@ -1757,7 +1751,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
             logger.error(`${logPrefix} ${errorProcesamiento}`, error);
             
             // Notificar el error al emisor original
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 mensajeId: generarIdUnico(),
@@ -1781,7 +1775,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
         try {
             // Notificar el error al emisor original si es posible
             if (mensaje?.origen) {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     mensajeId: generarIdUnico(),
@@ -2071,7 +2065,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACTUALIZACION, async (mensaje) => {
         }
 
         // 7. Enviar confirmación al solicitante
-        await enviarMensaje({
+        await (await getEnviarMensaje())({
             destino: mensaje.origen,
             tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
             origen: 'manejador_ui',
@@ -2101,7 +2095,7 @@ registrarControlador(TIPOS_MENSAJE.UI.ACTUALIZACION, async (mensaje) => {
         try {
             // Notificar error al origen si es posible
             if (mensaje?.origen) {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                     origen: 'manejador_ui',
@@ -2161,7 +2155,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         if (!Array.isArray(paradas)) {
             const errorMsg = 'El campo paradas debe ser un array';
             logger.warn(`${logPrefix} ${errorMsg}`);
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 datos: {
@@ -2266,7 +2260,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         // 6. Notificar a otros componentes si es necesario
         if (notificarSistema && paradasProcesadas.length > 0) {
             try {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     origen: 'sistema',
                     tipo: TIPOS_MENSAJE.DATOS.ACTUALIZACION_PARADAS,
                     datos: {
@@ -2290,7 +2284,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         // 7. Responder con confirmación si se solicitó
         if (requiereConfirmacion && mensajeOriginalId) {
             try {
-                await enviarMensaje({
+                await (await getEnviarMensaje())({
                     origen: 'sistema',
                     destino: mensaje.origen,
                     tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
@@ -2319,7 +2313,7 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
         
         try {
             // Notificar el error de manera segura
-            await enviarMensaje({
+            await (await getEnviarMensaje())({
                 destino: mensaje?.origen,
                 tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
                 datos: {
@@ -2339,56 +2333,6 @@ registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
 });
 
 // Controlador DATOS.SOLICITAR_PARADAS en hijo2 (coordenadas-hijo2.html)
-
-/**
- * Calcula un multiplicador de timeout basado en el tipo de conexión de red.
- * Ajusta los timeouts para conexiones lentas para mejorar la experiencia del usuario.
- *
- * @returns {number} Multiplicador de timeout (1.0 = normal, >1.0 = más tiempo)
- */
-export function calcularMultiplicadorTimeoutConexion() {
-    try {
-        // Verificar si navigator.connection está disponible
-        if (!navigator.connection) {
-            logger.debug('[TIMEOUT] navigator.connection no disponible, usando multiplicador por defecto: 1.0');
-            return 1.0;
-        }
-
-        const connection = navigator.connection;
-        const effectiveType = connection.effectiveType || 'unknown';
-
-        // Multiplicadores basados en el tipo de conexión
-        const multiplicadores = {
-            '4g': 1.0,      // Conexión rápida - timeout normal
-            '3g': 1.5,      // Conexión media - 50% más tiempo
-            '2g': 2.0,      // Conexión lenta - doble tiempo
-            'slow-2g': 3.0, // Conexión muy lenta - triple tiempo
-            'unknown': 1.5  // Desconocido - tiempo moderado
-        };
-
-        const multiplicador = multiplicadores[effectiveType] || multiplicadores.unknown;
-
-        logger.debug(`[TIMEOUT] Tipo de conexión: ${effectiveType}, multiplicador: ${multiplicador}x`);
-        return multiplicador;
-
-    } catch (error) {
-        logger.warn('[TIMEOUT] Error al calcular multiplicador de conexión:', error);
-        return 1.5; // Multiplicador conservador por defecto
-    }
-}
-
-/**
- * Ajusta un timeout base según la conexión de red actual.
- * @param {number} timeoutBase - Timeout base en milisegundos
- * @returns {number} Timeout ajustado
- */
-export function ajustarTimeoutPorConexion(timeoutBase) {
-    const multiplicador = calcularMultiplicadorTimeoutConexion();
-    const timeoutAjustado = Math.round(timeoutBase * multiplicador);
-
-    logger.debug(`[TIMEOUT] Timeout ajustado: ${timeoutBase}ms -> ${timeoutAjustado}ms (${multiplicador}x)`);
-    return timeoutAjustado;
-}
 
 /**
  * Función para migrar controladores tempranos (fallback) hacia la mensajería
