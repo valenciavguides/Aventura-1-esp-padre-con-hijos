@@ -3,11 +3,15 @@
  * @module BasicUtils
  */
 
+// Convert to global module to avoid ES6 import issues
+(function() {
+    'use strict';
+
 /**
  * Generates a unique ID
  * @returns {string} Unique ID
  */
-export function generarIdUnico() {
+function generarIdUnico() {
     return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
@@ -15,7 +19,7 @@ export function generarIdUnico() {
  * Gets the parent ID
  * @returns {string} Parent ID
  */
-export function getPadreId() {
+function getPadreId() {
     try {
         if (typeof window !== 'undefined') {
             if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
@@ -33,7 +37,7 @@ export function getPadreId() {
  * @param {number} timeoutBase - Base timeout
  * @returns {number} Adjusted timeout
  */
-export function ajustarTimeoutPorConexion(timeoutBase) {
+function ajustarTimeoutPorConexion(timeoutBase) {
     const multiplicador = calcularMultiplicadorTimeoutConexion();
     const timeoutAjustado = Math.round(timeoutBase * multiplicador);
     return timeoutAjustado;
@@ -58,3 +62,12 @@ function calcularMultiplicadorTimeoutConexion() {
     }
     return 1.0;
 }
+
+// ================== EXPORTACIONES GLOBALES ==================
+window.basicUtils = {
+    generarIdUnico,
+    getPadreId,
+    ajustarTimeoutPorConexion
+};
+
+})(); // End of IIFE
