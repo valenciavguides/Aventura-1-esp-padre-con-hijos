@@ -9285,6 +9285,15 @@
 
         // ℹ️ NOTA: marcarScript2Listo() se llama inmediatamente después de registrar 
         // controladores (línea ~8345) para evitar el timeout de 15s en mensajeria.js
+        
+        // Marcar Script 2 como listo para procesar mensajes pendientes
+        try {
+            const { marcarScript2Listo } = await import('./js/mensajeria.js');
+            await marcarScript2Listo();
+            console.info('[PADRE] Script 2 marcado como listo - timeout de mensajería evitado');
+        } catch (error) {
+            console.warn('[PADRE] Error marcando Script 2 como listo:', error && error.message ? error.message : error);
+        }
     </script>
 
     <!-- ============================================================ -->
