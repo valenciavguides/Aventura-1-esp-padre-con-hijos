@@ -1844,7 +1844,9 @@
         onload="handleIframeLoad('hijo4-retos')" onerror="handleIframeError('hijo4-retos', event)"></iframe>
 
     <!-- Load map functions module -->
-    <script type="module" src="./js/funciones-mapa.js"></script>
+    <script src="./js/constants.js"></script>
+    <script src="./js/basic-utils.js"></script>
+    <script src="./js/mensajeria.js"></script>
 
     <!-- Error handling and map initialization -->
     <script type="module">
@@ -2000,7 +2002,7 @@
 
           import('./js/config.js'),
 
-          import('./js/mensajeria.js'),
+          // import('./js/mensajeria.js'), // Now loaded as global script
 
           import('./js/app.js'),
 
@@ -2074,9 +2076,18 @@
 
         // Asegurar que la mensajería se inicialice en el padre antes de usar funciones
         try {
-            const { inicializarMensajeria } = await import('./js/mensajeria.js');
-            await inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
-            console.info('[PADRE] Mensajería inicializada como padre');
+            if (window.mensajeria && window.mensajeria.inicializarMensajeria) {
+                await window.mensajeria.inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
+                console.info('[PADRE] Mensajería inicializada como padre');
+            } else {
+                console.warn('[PADRE] mensajeria no disponible aún, esperando...');
+                // Retry after a short delay
+                setTimeout(() => {
+                    if (window.mensajeria && window.mensajeria.inicializarMensajeria) {
+                        window.mensajeria.inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
+                    }
+                }, 100);
+            }
         } catch (e) {
             console.warn('[PADRE] No se pudo inicializar mensajería automáticamente:', e && e.message ? e.message : e);
         }
@@ -5036,10 +5047,27 @@
 
         // Wait for Leaflet to load and initialize map
         function waitForLeafletAndInitialize() {
-            return new Promise((resolve) => {
-                const checkLeaflet = () => {
+            return new Promise(async (resolve) => {
+                const checkLeaflet = async () => {
                     if (typeof L !== 'undefined' && L.map) {
-                        initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
+                        // Wait for mensajeria to be initialized
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            // Import funciones-mapa dynamically to avoid circular dependencies
+                            try {
+                                if (!window.funcionesMapa) {
+                                    const funcionesMapaModule = await import('./js/funciones-mapa.js');
+                                    window.funcionesMapa = funcionesMapaModule;
+                                    logger.info('[INIT] funciones-mapa.js loaded dynamically');
+                                }
+                            } catch (error) {
+                                logger.error('[INIT] Error loading funciones-mapa.js:', error);
+                            }
+                            
+                            initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
+                        } else {
+                            // Wait for mensajeria
+                            setTimeout(checkLeaflet, 100);
+                        }
                     } else {
                         setTimeout(checkLeaflet, 100);
                     }
@@ -5455,7 +5483,9 @@
         const { inicializarMonitoreo: inicializarMonitoreo_S2 } = await import('./js/monitoreo.js');
         const { CONFIG: CONFIG_S2 } = await import('./js/config.js');
         
-        const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = await import('./js/mensajeria.js');
+        // const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = await import('./js/mensajeria.js');
+        const registrarControlador_S2 = window.mensajeria?.registrarControlador;
+        const enviarMensaje_S2 = window.mensajeria?.enviarMensaje;
         const { manejarCambioModo: manejarCambioModo_S2, actualizarInterfazModo: actualizarInterfazModo_S2, enviarCambioModo: enviarCambioModo_S2, notificarError: notificarError_S2 } = await import('./js/app.js');
         const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, actualizarMarcadorUsuario, limpiarMarcadorUsuario, limpiarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
 
@@ -8791,9 +8821,14 @@
         // ============================================================
         (async () => {
             try {
-                const { marcarScript2Listo } = await import('./js/mensajeria.js');
-                const resultado = marcarScript2Listo();
-                logger.info(`[SCRIPT2] ✅ Script 2 marcado como LISTO (inmediato)`, resultado);
+                // const { marcarScript2Listo } = await import('./js/mensajeria.js');
+                const marcarScript2Listo = window.mensajeria?.marcarScript2Listo;
+                if (marcarScript2Listo) {
+                    const resultado = marcarScript2Listo();
+                    logger.info(`[SCRIPT2] ✅ Script 2 marcado como LISTO (inmediato)`, resultado);
+                } else {
+                    logger.warn(`[SCRIPT2] marcarScript2Listo no disponible aún`);
+                }
             } catch (error) {
                 logger.error('[SCRIPT2] Error marcando Script 2 como listo:', error);
             }
@@ -8901,7 +8936,9 @@
         const { CONFIG: CONFIG_IFRAME } = await import('./js/config.js');
         const loggerIframe = (await import('./js/logger.js')).default;
         const { coordinarAccion } = await import('./js/app.js');
-        const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = await import('./js/mensajeria.js');
+        // const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = await import('./js/mensajeria.js');
+        const registrarControladorIframe = window.mensajeria?.registrarControlador;
+        const enviarMensajeIframe = window.mensajeria?.enviarMensaje;
         
         // Functions to manage hijo4 visibility through the centralized messaging system
         window.mostrarHijo4 = async function() {
@@ -9126,7 +9163,8 @@
         // NOTA: inicializarMensajeria ya fue llamada en Script 1
         // ============================================================
         
-        const { enviarMensaje: enviarMensaje_S4 } = await import('./js/mensajeria.js');
+        // const { enviarMensaje: enviarMensaje_S4 } = await import('./js/mensajeria.js');
+        const enviarMensaje_S4 = window.mensajeria?.enviarMensaje;
         const { ajustarTimeoutPorConexion } = await import('./js/utils.js');
         const { TIPOS_MENSAJE: TIPOS_MENSAJE_S4, MODOS: MODOS_S4 } = await import('./js/constants.js');
         const { CONFIG: CONFIG_PADRE } = await import('./js/config.js');
@@ -9296,7 +9334,8 @@
         
         // Marcar Script 2 como listo para procesar mensajes pendientes
         try {
-            const { marcarScript2Listo } = await import('./js/mensajeria.js');
+            // const { marcarScript2Listo } = await import('./js/mensajeria.js');
+            const marcarScript2Listo = window.mensajeria?.marcarScript2Listo;
             await marcarScript2Listo();
             console.info('[PADRE] Script 2 marcado como listo - timeout de mensajería evitado');
         } catch (error) {
