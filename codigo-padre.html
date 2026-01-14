@@ -5174,7 +5174,7 @@
 
                 const iframeCasa = {
                     id: 'hijo5',
-                    src: 'Av1-boton-casa.html'
+                    src: 'boton-casa-hijo5.html'
                 };
 
                 const iframeEl = document.getElementById(iframeCasa.id);
@@ -8696,6 +8696,14 @@
                 
                 // Mostrar componentes de la aventura (mapa, hijos, controles)
                 logger.info(`${logPrefix} Mostrando componentes de la aventura...`);
+                
+                // 🔥 CARGAR hijo5 si no está cargado aún
+                if (!window.estadoPadre.hijosInicializados.has('hijo5')) {
+                    logger.info(`${logPrefix} 🚀 Cargando hijo5 después de iniciar aventura...`);
+                    await cargarHijoCasa();
+                } else {
+                    logger.info(`${logPrefix} ✅ hijo5 ya estaba cargado`);
+                }
                 
                 // Mostrar los iframes de los hijos
                 const iframesToShow = ['hijo2', 'hijo3', 'hijo1-hamburguesa', 'hijo1-opciones', 'hijo5'];
