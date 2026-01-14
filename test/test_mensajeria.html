@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Mensajeria Loading</title>
+</head>
+<body>
+    <h1>Testing Mensajeria Loading</h1>
+    <div id="status">Loading...</div>
+
+    <script src="./js/constants.js"></script>
+    <script src="./js/basic-utils.js"></script>
+    <script src="./js/mensajeria.js"></script>
+    <script>
+        setTimeout(() => {
+            const status = document.getElementById('status');
+            let message = '';
+
+            if (window.constants) {
+                message += '✅ SUCCESS: window.constants is available!<br>';
+                message += 'Available constants: ' + Object.keys(window.constants).join(', ') + '<br><br>';
+            } else {
+                message += '❌ FAILED: window.constants is not available<br><br>';
+            }
+
+            if (window.basicUtils) {
+                message += '✅ SUCCESS: window.basicUtils is available!<br>';
+                message += 'Available functions: ' + Object.keys(window.basicUtils).join(', ') + '<br><br>';
+            } else {
+                message += '❌ FAILED: window.basicUtils is not available<br><br>';
+            }
+
+            if (window.mensajeria) {
+                message += '✅ SUCCESS: window.mensajeria is available!<br>';
+                message += 'Available functions: ' + Object.keys(window.mensajeria).join(', ');
+            } else {
+                message += '❌ FAILED: window.mensajeria is not available';
+            }
+
+            status.innerHTML = message;
+        }, 1000);
+    </script>
+</body>
+</html>
