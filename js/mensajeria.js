@@ -8,7 +8,7 @@
  */
 
 import { TIPOS_MENSAJE, TIPOS_MENSAJE_VALIDOS } from './constants.js';
-import { ajustarTimeoutPorConexion, generarIdUnico, getPadreId } from './utils.js';
+import { ajustarTimeoutPorConexion, generarIdUnico, getPadreId } from './basic-utils.js';
 import logger from './logger.js';
 
 // ================== UTILIDADES INTERNAS =====================
@@ -113,7 +113,7 @@ const estadoMensajeria = {
     // Hijos críticos: estos deben estar listos antes de considerar la aplicación completamente inicializada.
     // Nota: `hijo1-hamburguesa` y `hijo1-opciones` se excluyen a propósito (son UI helpers) y se cargan secuencialmente
     // por el padre, pero no se consideran críticos para bloquear la readiness del sistema.
-    hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'], // Hijos críticos que deben estar listos
+    hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5'], // Hijos críticos que deben estar listos
     hijosListos: new Set(), // Hijos críticos que ya enviaron HIJO_LISTO
     
     // ✅ Sistema de sincronización Script 1 ↔ Script 2
