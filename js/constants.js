@@ -3,10 +3,14 @@
  * @module Constants
  */
 
+// Convert to global module to avoid ES6 import issues
+(function() {
+    'use strict';
+
 /**
  * Niveles de log disponibles
  */
-export const LOG_LEVELS = {
+const LOG_LEVELS = {
     DEBUG: 0,
     INFO: 1,
     WARN: 2,
@@ -17,7 +21,7 @@ export const LOG_LEVELS = {
 /**
  * Modos de la aplicación
  */
-export const MODOS = {
+const MODOS = {
     CASA: 'casa',
     AVENTURA: 'aventura'
 };
@@ -27,7 +31,7 @@ export const MODOS = {
  * Optimizado por tipo de dispositivo para mejorar rendimiento
  * ✅ PROBLEMA 26: Centralización de TTLs para evitar duplicación
  */
-export const TTL_LIMPIEZA = {
+const TTL_LIMPIEZA = {
     /* Configuración de TTL (Time To Live) para limpieza automática de memoria
      * Optimizado por tipo de dispositivo para mejorar rendimiento y consumo de recursos.
      *
@@ -67,7 +71,7 @@ if (typeof window !== 'undefined') {
  * Tipos de mensajes para la comunicación entre iframes
  * Organizados por categorías para mejor mantenimiento
  */
-export const TIPOS_MENSAJE = {
+const TIPOS_MENSAJE = {
     SISTEMA: {
         INICIALIZACION: 'SISTEMA.INICIALIZACION',
         INICIALIZACION_COMPLETADA: 'SISTEMA.INICIALIZACION_COMPLETADA',
@@ -242,7 +246,7 @@ export const TIPOS_MENSAJE = {
  * Códigos de error estandarizados
  * Organizados por categorías con rangos numéricos específicos
  */
-export const ERRORES = {
+const ERRORES = {
     // Errores de validación (1000-1099)
     VALIDACION: {
         DATOS_INVALIDOS: {
@@ -355,7 +359,7 @@ export const ERRORES = {
 /**
  * Estados de la aplicación
  */
-export const ESTADOS = {
+const ESTADOS = {
     INICIALIZANDO: 'inicializando',
     LISTO: 'listo',
     ERROR: 'error'
@@ -364,7 +368,7 @@ export const ESTADOS = {
 /**
  * Códigos de error
  */
-export const CODIGOS_ERROR = {
+const CODIGOS_ERROR = {
     // Errores existentes
     INICIALIZACION: 'ERROR_INICIALIZACION',
     MENSAJERIA: 'ERROR_MENSAJERIA',
@@ -389,7 +393,7 @@ export const CODIGOS_ERROR = {
 /**
  * Destinos para mensajería
  */
-export const DESTINOS = {
+const DESTINOS = {
     PADRE: 'padre',
     TODOS: 'todos'
 };
@@ -397,7 +401,7 @@ export const DESTINOS = {
 /**
  * Clases CSS para los diferentes modos
  */
-export const CSS_CLASES = {
+const CSS_CLASES = {
     MODO_CASA: 'modo-casa',
     MODO_AVENTURA: 'modo-aventura',
     HIJO3_CONTAINER: 'hijo3-container'
@@ -428,14 +432,19 @@ function _flattenTipos(obj) {
     return out;
 }
 
-export const TIPOS_MENSAJE_VALIDOS = _flattenTipos(TIPOS_MENSAJE);
+const TIPOS_MENSAJE_VALIDOS = _flattenTipos(TIPOS_MENSAJE);
 
-export default {
+// ================== EXPORTACIONES GLOBALES ==================
+window.constants = {
     LOG_LEVELS,
     MODOS,
     TIPOS_MENSAJE,
+    TIPOS_MENSAJE_VALIDOS,
+    ERRORES,
     ESTADOS,
     CODIGOS_ERROR,
     DESTINOS,
     CSS_CLASES
 };
+
+})(); // End of IIFE
