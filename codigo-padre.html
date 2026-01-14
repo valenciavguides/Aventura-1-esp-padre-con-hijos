@@ -101,7 +101,7 @@
                 const data = ev && ev.data;
                 if (!data || !data.tipo) return;
                 if (data.tipo === 'VV:PARADAS:READY' || data.tipo === 'VV:PARADAS:SHOWN') {
-                    const iframe = document.getElementById('hijo5-casa');
+                    const iframe = document.getElementById('hijo5');
                     if (!iframe) return;
                     try {
                         // Prefer calling a helper inside the iframe if available
@@ -134,12 +134,12 @@
                 window.logger.debug(msg);
             }
             try {
-                // Special handling for hijo5-casa: make iframe background transparent
+                // Special handling for hijo5: make iframe background transparent
                 // while ensuring the internal "paradas" / horizontal scroll container
                 // remains opaque and interactive. We inject a small CSS/script into
                 // the iframe document (same-origin) to achieve this safely.
-                if (iframeId === 'hijo5-casa') {
-                    const iframe = document.getElementById('hijo5-casa');
+                if (iframeId === 'hijo5') {
+                    const iframe = document.getElementById('hijo5');
                     if (iframe && iframe.contentDocument) {
                         const doc = iframe.contentDocument;
                         // Make the iframe document background transparent
@@ -200,7 +200,7 @@
                             doc.head && doc.head.appendChild(script);
                         } catch (e) { console.warn('[PADRE] Error injecting hijo5 script', e); }
                     } // cierra if (iframe && iframe.contentDocument)
-                    } // cierra if (iframeId === 'hijo5-casa')
+                    } // cierra if (iframeId === 'hijo5')
                     // Script inyectado correctamente; no se envían confirmaciones automáticas desde este hook.
             } catch (e) {
                 (window.logger || console).warn('[PADRE] handleIframeLoad error:', e && e.message);
@@ -762,7 +762,7 @@
             left: 0;
             width: 100vw;
             height: 100vh;
-            z-index: 1000010 !important; /* Por encima de hijo5-casa (1000000) */
+            z-index: 1000010 !important; /* Por encima de hijo5 (1000000) */
             background: rgba(0, 0, 0, 0.95);
             display: none;
             justify-content: center;
@@ -1800,11 +1800,11 @@
         style="position:fixed; right:1.2vw; bottom:10px; height: 320px; width:67px; z-index:1502; pointer-events:auto; display:none; visibility:hidden;"
         onload="handleIframeLoad('hijo1-opciones')" onerror="handleIframeError('hijo1-opciones', event)"></iframe>
     
-    <iframe id="hijo5-casa" src=""
+    <iframe id="hijo5" src="boton-casa-hijo5.html"
         title="Botón Casa"
         aria-label="Botón para cambiar entre modo Casa y Aventura"
         style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:none; visibility:hidden; background: transparent;"
-        onload="handleIframeLoad('hijo5-casa')" onerror="handleIframeError('hijo5-casa', event)"></iframe>
+        onload="handleIframeLoad('hijo5')" onerror="handleIframeError('hijo5', event)"></iframe>
     
         <!-- Optional: sistema-ui for monitoring / important notifications
              NOTE: kept in DOM to continue receiving postMessage events, but
@@ -2507,7 +2507,7 @@
                 try {
                     // NOTE: Using a minimal critical set for system readiness. The UI menu children
                     // 'hijo1-hamburguesa' and 'hijo1-opciones' are purposefully excluded here.
-                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                     for (const h of hijosCriticos) {
                         try {
                             const padreIdRest = estado.elementoActual?.padreid || (estado.paradaActual ? `padre-${estado.paradaActual}` : null);
@@ -2580,7 +2580,7 @@
                 persistProgressState();
                 try {
                     // NOTE: Minimal set of critical children; UI helper frames (hijo1-*) are not required for readiness.
-                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                     for (const h of hijosCriticos) {
                             try {
                                 // Debug: store last Cambio Parada payload for diagnostics
@@ -4183,7 +4183,7 @@
                     }
                 }
 
-                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                 const todosListos = hijosCriticos.every(id => estado.hijosInicializados && estado.hijosInicializados.has(id));
 
                 if (todosListos && !estado.todosHijosListos) {
@@ -4276,7 +4276,7 @@
 
                     // 🔥 PROPAGACIÓN DEL CAMBIO DE MODO A HIJOS CRÍTICOS
                     const { origen, modo } = mensaje.datos || {};
-                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                    const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
 
                     logger.info(`${logPrefix} Propagando cambio de modo ${modo} a hijos críticos: ${hijosCriticos.join(', ')}`);
 
@@ -4390,8 +4390,8 @@
                         try { hideGpsOutOfRangeOverlay(); } catch (e) {}
                     }
 
-                    // 🔥 COORDINACIÓN GPS: Si el cambio viene de hijo5-casa, sincronizar GPS con hijo2
-                    if (origen === 'boton-gps' && mensaje.origen === 'hijo5-casa') {
+                    // 🔥 COORDINACIÓN GPS: Si el cambio viene de hijo5, sincronizar GPS con hijo2
+                    if (origen === 'boton-gps' && mensaje.origen === 'hijo5') {
                         const gpsMessageType = modo === 'aventura'
                             ? TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR
                             : TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR;
@@ -4406,7 +4406,7 @@
                                 destino: 'hijo2',
                                 datos: {
                                     razon: `modo_cambiado_a_${modo}`,
-                                    solicitadoPor: 'hijo5-casa',
+                                    solicitadoPor: 'hijo5',
                                     timestamp: Date.now()
                                 }
                             });
@@ -4728,7 +4728,7 @@
                 { id: 'hijo2', src: 'coordenadas-hijo2.html' },
                 { id: 'hijo3', src: 'audio-hijo3.html' },
                 { id: 'hijo4', src: 'retos-hijo4.html' }
-                // hijo5-casa se carga después de seleccionar aventura
+                // hijo5 se carga después de seleccionar aventura
             ];
 
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
@@ -5163,17 +5163,17 @@
         })();
 
         /**
-         * Carga el iframe hijo5-casa después de seleccionar aventura
+         * Carga el iframe hijo5 después de seleccionar aventura
          * Se ejecuta solo cuando el usuario ha completado la selección
          */
         async function cargarHijoCasa() {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CARGAR_HIJO_CASA]`;
 
             try {
-                logger.info(`${logPrefix} 🚀 Iniciando carga de hijo5-casa después de selección de aventura...`);
+                logger.info(`${logPrefix} 🚀 Iniciando carga de hijo5 después de selección de aventura...`);
 
                 const iframeCasa = {
-                    id: 'hijo5-casa',
+                    id: 'hijo5',
                     src: 'Av1-boton-casa.html'
                 };
 
@@ -5216,8 +5216,8 @@
                     iframeEl.src = iframeCasa.src;
                 });
 
-                // Enviar PADRE_LISTO a hijo5-casa
-                logger.info(`${logPrefix} Enviando PADRE_LISTO a hijo5-casa`);
+                // Enviar PADRE_LISTO a hijo5
+                logger.info(`${logPrefix} Enviando PADRE_LISTO a hijo5`);
                 if (typeof enviarMensaje_S1 === 'function') {
                     await enviarMensaje_S1({
                         destino: iframeCasa.id,
@@ -5233,7 +5233,7 @@
                     logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframeCasa.id}`);
                 }
 
-                // Esperar a que hijo5-casa esté listo
+                // Esperar a que hijo5 esté listo
                 await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         reject(new Error(`Timeout esperando HIJO_LISTO de ${iframeCasa.id}`));
@@ -5250,11 +5250,11 @@
                     check();
                 });
 
-                logger.success(`${logPrefix} ✅ hijo5-casa listo y confirmado después de selección de aventura`);
+                logger.success(`${logPrefix} ✅ hijo5 listo y confirmado después de selección de aventura`);
 
             } catch (error) {
-                logger.error(`${logPrefix} ❌ Error cargando hijo5-casa:`, error);
-                // No es crítico, continuar sin hijo5-casa
+                logger.error(`${logPrefix} ❌ Error cargando hijo5:`, error);
+                // No es crítico, continuar sin hijo5
             }
         }
 
@@ -5382,7 +5382,7 @@
         // CONTROLADOR: NAVEGACION.SOLICITAR_DATOS_PARADAS (SCRIPT 1)
         // ============================================================
         // Movido a Script 1 para evitar warning "Mensaje no reconocido"
-        // cuando hijo5-casa envía el mensaje antes de que Script 2 cargue
+        // cuando hijo5 envía el mensaje antes de que Script 2 cargue
         registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
 
@@ -6372,7 +6372,7 @@
         });
 
         // CONTROLADOR SOLICITAR_DATOS_PARADAS movido a Script 1
-        // para evitar warning cuando hijo5-casa envía mensaje temprano
+        // para evitar warning cuando hijo5 envía mensaje temprano
 
         // ============================================================
         // CONFIRMAR A HIJOS QUE CONTROLADORES ESTÁN LISTOS
@@ -6410,7 +6410,7 @@
         /**
          * Controlador: NAVEGACION.GPS.ACTIVAR
          * Descripción: Activa GPS real usando las funciones centralizadas del padre
-         * Origen esperado: cualquier componente (hijo5-casa, otros)
+         * Origen esperado: cualquier componente (hijo5, otros)
          * Respuesta: Reenvía respuesta al solicitante
          */
         registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
@@ -7373,13 +7373,13 @@
                     origenCambio: mensaje.origen
                 };
 
-                // Notificar a hijo5-casa (solo si el cambio NO vino de él)
-                if (mensaje.origen !== 'hijo5-casa') {
+                // Notificar a hijo5 (solo si el cambio NO vino de él)
+                if (mensaje.origen !== 'hijo5') {
                     notificaciones.push(
                         Promise.resolve(enviarMensajePadre({
                             tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA,
                             origen: getPadreId(),
-                            destino: 'hijo5-casa',
+                            destino: 'hijo5',
                             datos: {
                                 ...datosNotificacion,
                                 // keep legacy keys too
@@ -7389,7 +7389,7 @@
                                 padreid: datosNotificacion.padreid
                             }
                         })).catch(error => {
-                            logger.warn(`${logPrefix} Error notificando a hijo5-casa:`, error);
+                            logger.warn(`${logPrefix} Error notificando a hijo5:`, error);
                             return null;
                         })
                     );
@@ -8442,8 +8442,8 @@
                     }
                 }
                 
-                // 🔥 CARGAR HIJO5-CASA después de selección de aventura
-                logger.info(`${logPrefix} 🚀 Cargando hijo5-casa después de selección de aventura...`);
+                // 🔥 CARGAR hijo5 después de selección de aventura
+                logger.info(`${logPrefix} 🚀 Cargando hijo5 después de selección de aventura...`);
                 await cargarHijoCasa();
                 
             } catch (error) {
@@ -8698,7 +8698,7 @@
                 logger.info(`${logPrefix} Mostrando componentes de la aventura...`);
                 
                 // Mostrar los iframes de los hijos
-                const iframesToShow = ['hijo2', 'hijo3', 'hijo1-hamburguesa', 'hijo1-opciones', 'hijo5-casa'];
+                const iframesToShow = ['hijo2', 'hijo3', 'hijo1-hamburguesa', 'hijo1-opciones', 'hijo5'];
                 for (const iframeId of iframesToShow) {
                     const iframe = document.getElementById(iframeId);
                     if (iframe) {
@@ -9179,7 +9179,7 @@
 
             // Propagar control de heartbeat a hijos críticos según el modo inicial
             try {
-                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'];
+                const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                 for (const h of hijosCriticos) {
                     try {
                         await enviarMensaje_S4({
