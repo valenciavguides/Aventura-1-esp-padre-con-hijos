@@ -18,12 +18,14 @@
 
 // Access global mensajeria functions
 let _pendingRegistrations = [];
+let _pendingMessages = [];
+
 const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => {
     console.error('mensajeria not loaded', t);
     _pendingRegistrations.push({tipo: t, callback: c});
 };
 
-// Function to apply pending registrations
+// Function to apply pending registrations and send pending messages
 const applyPendingRegistrations = () => {
     if (window.mensajeria && window.mensajeria.registrarControlador) {
         _pendingRegistrations.forEach(({tipo, callback}) => {
@@ -34,6 +36,16 @@ const applyPendingRegistrations = () => {
             }
         });
         _pendingRegistrations = [];
+        
+        // Send pending messages
+        _pendingMessages.forEach((msg) => {
+            try {
+                window.mensajeria.enviarMensaje(msg);
+            } catch (e) {
+                console.error('Error sending pending message', msg, e);
+            }
+        });
+        _pendingMessages = [];
     }
 };
 
@@ -48,7 +60,11 @@ if (!window.mensajeria) {
     };
     checkMensajeria();
 }
-const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
+
+const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => {
+    console.error('mensajeria not loaded, queuing message', msg);
+    _pendingMessages.push(msg);
+};
 
 /**
  * Migrar registros tempranos desde el fallback global a la mensajería.
