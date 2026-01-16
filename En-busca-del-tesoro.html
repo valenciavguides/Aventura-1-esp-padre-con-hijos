@@ -18,6 +18,8 @@
   </script>
   
   <script src="js/suppress-warnings.js"></script>
+  <script src="js/mensajeria.js"></script>
+  <script src="js/monitoreo.js"></script>
   <style>
     body { margin: 0; font-family: 'Book Antiqua', serif; background-color: black; color: white; }
     .pantalla { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; position: relative; text-align: center; padding: 20px; box-sizing: border-box; }
@@ -156,7 +158,6 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
 
   <!-- MÓDULO DE MENSAJERÍA - Comunicación con el Padre -->
   <script type="module">
-    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import { getPadreId } from './js/utils.js';
     import logger from './js/logger.js';
@@ -175,8 +176,8 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                     return;
                 }
                 window.__CONTROLADOR_REGISTRADOS.add(tipo);
-                if (typeof registrarControlador === 'function') {
-                    return registrarControlador(tipo, handler, opciones);
+                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') {
+                    return window.mensajeria.registrarControlador(tipo, handler, opciones);
                 }
                 // Encolar para migración posterior
                 globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
@@ -223,7 +224,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             logger.info(`[SELECCION] Idioma seleccionado: ${idioma}`);
             
             // Enviar mensaje al padre
-            await enviarMensaje({
+            await window.mensajeria.enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.IDIOMA_SELECCIONADO,
                 origen: CONFIG_SELECCION.IFRAME_ID,
                 destino: getPadreId(),
@@ -255,7 +256,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             logger.info(`[SELECCION] Aventura seleccionada: ${aventura}`);
             
             // Enviar mensaje al padre con la selección completa
-            await enviarMensaje({
+            await window.mensajeria.enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.AVENTURA_SELECCIONADA,
                 origen: CONFIG_SELECCION.IFRAME_ID,
                 destino: getPadreId(),
@@ -294,7 +295,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             console.log('🚀 [SELECCION] Destino (padre):', padreId);
             
             // Enviar mensaje de inicio al padre
-            const mensajeEnviado = await enviarMensaje({
+            const mensajeEnviado = await window.mensajeria.enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.INICIAR_AVENTURA,
                 origen: CONFIG_SELECCION.IFRAME_ID,
                 destino: padreId,
@@ -352,7 +353,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             
             // Inicializar mensajería - FORZAR ROL HIJO
             // Este archivo SIEMPRE debe cargarse como iframe
-            await inicializarMensajeria({
+            await window.mensajeria.inicializarMensajeria({
                 rol: 'hijo',  // ← Forzar rol hijo
                 iframeId: CONFIG_SELECCION.IFRAME_ID,
                 componenteId: CONFIG_SELECCION.IFRAME_ID,  // ← Usar 'seleccion' (minúsculas)
