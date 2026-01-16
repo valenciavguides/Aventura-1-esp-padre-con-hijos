@@ -7,45 +7,9 @@
  * con manejo de errores, reintentos, validación de mensajes y limpieza de recursos.
  */
 
-// Convert to global module to avoid ES6 import issues
-(function() {
-    'use strict';
-
-    // ================== DEPENDENCIAS ==================
-    // Load synchronously since dependencies are loaded as global scripts before this one
-
-    // Load constants synchronously
-    let TIPOS_MENSAJE, TIPOS_MENSAJE_VALIDOS;
-    if (typeof window !== 'undefined' && window.constants) {
-        TIPOS_MENSAJE = window.constants.TIPOS_MENSAJE;
-        TIPOS_MENSAJE_VALIDOS = window.constants.TIPOS_MENSAJE_VALIDOS;
-    } else {
-        // Fallback values if constants not available
-        console.warn('[MENSAJERIA] window.constants not available, using fallback values');
-        TIPOS_MENSAJE = {};
-        TIPOS_MENSAJE_VALIDOS = [];
-    }
-
-    // Load basic utils synchronously
-    let ajustarTimeoutPorConexion, generarIdUnico, getPadreId;
-    if (typeof window !== 'undefined' && window.basicUtils) {
-        ajustarTimeoutPorConexion = window.basicUtils.ajustarTimeoutPorConexion;
-        generarIdUnico = window.basicUtils.generarIdUnico;
-        getPadreId = window.basicUtils.getPadreId;
-    } else {
-        // Fallback functions
-        ajustarTimeoutPorConexion = (timeout) => timeout;
-        generarIdUnico = () => 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        getPadreId = () => 'padre';
-    }
-
-    // Load logger synchronously
-    let logger;
-    if (typeof window !== 'undefined' && window.logger && window.logger.default) {
-        logger = window.logger.default;
-    } else {
-        logger = console;
-    }
+import { TIPOS_MENSAJE, TIPOS_MENSAJE_VALIDOS } from './constants.js';
+import { ajustarTimeoutPorConexion, generarIdUnico, getPadreId } from './utils.js';
+import logger from './logger.js';
 
 // ================== UTILIDADES INTERNAS =====================
 
@@ -83,7 +47,7 @@ globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
  * Esta función es idempotente y segura de llamar múltiples veces.
  * Devuelve true si se migraron entradas, false si no había nada que migrar.
  */
-function migrarManejadoresTempranos() {
+export function migrarManejadoresTempranos() {
     try {
         if (globalThis.__vv_manejadores && globalThis.__vv_manejadores.size > 0) {
             const migrated = [];
@@ -149,7 +113,7 @@ const estadoMensajeria = {
     // Hijos críticos: estos deben estar listos antes de considerar la aplicación completamente inicializada.
     // Nota: `hijo1-hamburguesa` y `hijo1-opciones` se excluyen a propósito (son UI helpers) y se cargan secuencialmente
     // por el padre, pero no se consideran críticos para bloquear la readiness del sistema.
-    hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5'], // Hijos críticos que deben estar listos
+    hijosEsperados: ['hijo2', 'hijo3', 'hijo4', 'hijo5-casa'], // Hijos críticos que deben estar listos
     hijosListos: new Set(), // Hijos críticos que ya enviaron HIJO_LISTO
     
     // ✅ Sistema de sincronización Script 1 ↔ Script 2
@@ -215,7 +179,7 @@ if (typeof window !== 'undefined') {
  * @param {string} capability
  * @returns {Array<string>} lista de ids
  */
-function hijosConCapability(capability) {
+export function hijosConCapability(capability) {
     const result = [];
     for (const [hijoId, set] of hijosCapacidades.entries()) {
         if (set && set.has(capability)) result.push(hijoId);
@@ -228,7 +192,7 @@ function hijosConCapability(capability) {
  * @param {string} capability
  * @param {Object} mensajeObj - objeto con tipo, origen, datos, version opcional
  */
-function broadcastToCapability(capability, mensajeObj) {
+export function broadcastToCapability(capability, mensajeObj) {
     if (!capability || !mensajeObj) return { enviados: 0 };
     // Security: only allow GPS capability broadcasts from the parent
     try {
@@ -275,7 +239,7 @@ function broadcastToCapability(capability, mensajeObj) {
 }
 
 // Export registrarCapacidadesHijo too so other modules can introspect/update
-// export { registrarCapacidadesHijo };
+export { registrarCapacidadesHijo };
 
 // ================== FUNCIONES PRINCIPALES CENTRALIZADAS =====================
 
@@ -321,7 +285,7 @@ function validarDestino(destino) {
  * @param {string} [config.estado] - Estado inicial (obsoleto, se mantiene por compatibilidad)
  * @returns {Promise<void>}
  */
-async function inicializarMensajeria(config = {}) {
+export async function inicializarMensajeria(config = {}) {
     try {
         // Detectar rol automáticamente si no se proporciona
         const rol = config.rol || (window.parent === window ? 'padre' : 'hijo');
@@ -387,7 +351,7 @@ async function inicializarMensajeria(config = {}) {
  * @param {number} [timeoutMs]
  * @returns {Promise<{ready:boolean}>}
  */
-async function preiniciarHeartbeat(timeoutMs = null) {
+export async function preiniciarHeartbeat(timeoutMs = null) {
     try {
         const cfgTimeout = (window.Config && window.Config.MENSAJERIA && window.Config.MENSAJERIA.HEARTBEAT_PREWARM && window.Config.MENSAJERIA.HEARTBEAT_PREWARM.TIMEOUT_MS) || 8000;
         const to = timeoutMs || cfgTimeout;
@@ -416,7 +380,7 @@ async function preiniciarHeartbeat(timeoutMs = null) {
  * @param {number} timeoutMs
  * @returns {Promise<{ready:boolean, missing:Array<string>}>}
  */
-function esperarHijosListos(timeoutMs = 10000) {
+export function esperarHijosListos(timeoutMs = 10000) {
     return new Promise(resolve => {
         const expected = Array.from(estadoMensajeria.hijosEsperados || []);
 
@@ -597,7 +561,7 @@ function debeEncolarMensaje(destino, tipo) {
  * @param {Object} [params.datos={}] - Datos del mensaje.
  * @param {string} [params.version='1.0.0'] - Versión del mensaje.
  */
-function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
+export function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
     // Compute default origin with more robust parent canonicalization.
     // Prefer explicit componenteId; if not available, and we're running in the parent
     // prefer a canonical parent id via getPadreId() (runtime-seguro helper), then fall back to 'padre'.
@@ -835,7 +799,7 @@ function enviarMensaje(paramsOrDestino, tipoOrOptions, maybeDatos) {
  * @param {number} [params.timeout=10000] - Timeout en milisegundos
  * @returns {Promise<Object>} Promesa que resuelve con la respuesta
  */
-function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = ajustarTimeoutPorConexion(10000) }) {
+export function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, version = '1.0.0', timeout = ajustarTimeoutPorConexion(10000) }) {
     return new Promise((resolve, reject) => {
         const internalId = generarIdUnico();
         const publishedId = generarIdUnico();
@@ -888,7 +852,7 @@ function enviarMensajeConConfirmacion({ tipo, origen, destino, datos = {}, versi
  * @param {string} tipo - Tipo de mensaje.
  * @param {Function} callback - Función que manejará el mensaje.
  */
-function registrarControlador(tipo, callback) {
+export function registrarControlador(tipo, callback) {
     if (!tipo || typeof callback !== 'function') {
         // No lanzar excepción para evitar romper la inicialización de la app.
         // En su lugar, registrar información diagnóstica para investigar la llamada errónea.
@@ -1273,7 +1237,7 @@ function eliminarConfirmacionPorInfo(info) {
  * Inicia el sistema de heartbeat para monitorear conectividad con hijos.
  * @param {number} [intervalo] - Intervalo en milisegundos entre heartbeats (opcional, por defecto usa configuración)
  */
-function iniciarHeartbeat(intervalo) {
+export function iniciarHeartbeat(intervalo) {
     if (estadoMensajeria.rol !== 'padre') {
         throw new Error('El sistema de heartbeat solo puede iniciarse en el componente padre');
     }
@@ -1348,7 +1312,7 @@ function iniciarHeartbeat(intervalo) {
 /**
  * Detiene el sistema de heartbeat
  */
-function detenerHeartbeat() {
+export function detenerHeartbeat() {
     if (estadoMensajeria.heartbeat.timer) {
         clearInterval(estadoMensajeria.heartbeat.timer);
         estadoMensajeria.heartbeat.timer = null;
@@ -1360,7 +1324,7 @@ function detenerHeartbeat() {
  * Pausa el sistema de heartbeat (deja de enviar pings)
  * ✅ PROBLEMA 29: Pausar heartbeat en modo casa para ahorrar recursos
  */
-function pausarHeartbeat() {
+export function pausarHeartbeat() {
     // Solo el padre mantiene la lógica de heartbeat; en hijos ignorar la llamada
     if (estadoMensajeria.rol !== 'padre') {
         try { logger.debug && logger.debug('[heartbeat] pausarHeartbeat invocado en rol no-padre, omitiendo'); } catch (e) { /* ignore logging failure */ }
@@ -1396,7 +1360,7 @@ function pausarHeartbeat() {
  * Reanuda el sistema de heartbeat (vuelve a enviar pings)
  * ✅ PROBLEMA 29: Reanudar heartbeat en modo aventura
  */
-function reanudarHeartbeat() {
+export function reanudarHeartbeat() {
     // Only re-enable if the pause was explicitly set by the user
     if (estadoMensajeria.rol !== 'padre') return;
     try {
@@ -1417,7 +1381,7 @@ function reanudarHeartbeat() {
  * Procesa respuesta de datos de un componente hijo
  * @param {Object} mensaje - Mensaje de respuesta
  */
-async function procesarRespuestaDatosHijo(mensaje) {
+export async function procesarRespuestaDatosHijo(mensaje) {
     const { idSolicitud, datos, exito, error } = mensaje.datos || {};
 
     if (!idSolicitud || !estadoCoordinacion.solicitudesPendientes.has(idSolicitud)) {
@@ -1573,7 +1537,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_ESTADO, async (mensaje) => 
  * Obtiene el estado actual del sistema de coordinación
  * @returns {Object} Estado de coordinación
  */
-function obtenerEstadoCoordinacion() {
+export function obtenerEstadoCoordinacion() {
     return {
         solicitudesPendientes: estadoCoordinacion.solicitudesPendientes.size,
         datosCache: estadoCoordinacion.datosCache.size,
@@ -2310,7 +2274,7 @@ registrarControlador(TIPOS_MENSAJE.COORDINACION.SINCRONIZAR_COMPONENTES, async (
  * 
  * @returns {Object} Resultado del procesamiento con estadísticas
  */
-function marcarScript2Listo() {
+export function marcarScript2Listo() {
     const logPrefix = '[MENSAJERIA][SCRIPT2_LISTO]';
     
     if (estadoMensajeria.script2Listo) {
@@ -2401,30 +2365,4 @@ function marcarScript2Listo() {
     };
 }
 
-// ================== EXPORTACIONES GLOBALES ==================
-// Moved to end of IIFE to ensure all functions are defined
-
-// ================== EXPORTACIONES GLOBALES ==================
-window.mensajeria = {
-    migrarManejadoresTempranos,
-    hijosConCapability,
-    broadcastToCapability,
-    registrarCapacidadesHijo,
-    inicializarMensajeria,
-    preiniciarHeartbeat,
-    esperarHijosListos,
-    enviarMensaje,
-    enviarMensajeConConfirmacion,
-    registrarControlador,
-    iniciarHeartbeat,
-    detenerHeartbeat,
-    pausarHeartbeat,
-    reanudarHeartbeat,
-    procesarRespuestaDatosHijo,
-    obtenerEstadoCoordinacion,
-    marcarScript2Listo,
-    estadoMensajeria,
-    procesarColaMensajes
-};
-
-})(); // End of IIFE
+export { estadoMensajeria, procesarColaMensajes };
