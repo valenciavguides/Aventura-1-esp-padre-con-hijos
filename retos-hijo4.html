@@ -7,6 +7,7 @@
     <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
     <title>retos-hijo4</title>
     <script src="js/suppress-warnings.js"></script>
+    <script src="js/mensajeria.js"></script>
     <script>
         // Definir ejecutarValidacion globalmente lo antes posible para evitar errores de "not defined"
         window.ejecutarValidacion = function(reto, respuestaUsuario) {
@@ -207,7 +208,10 @@
     <script type="module">
     /* --- Integración con Sistema de Mensajería --- */
     
-    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    // Access global mensajeria functions
+    const inicializarMensajeria = window.mensajeria ? window.mensajeria.inicializarMensajeria : () => console.error('mensajeria not loaded');
+    const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+    const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
