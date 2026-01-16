@@ -16,9 +16,15 @@ import { generarIdUnico, manejarError, ajustarTimeoutPorConexion, normalizarPara
 import logger from './logger.js';
 
 /**
- * Migrar registros tempranos desde el fallback global a la mensajería.
- * Ejecutar después de inicializar mensajería en el padre.
+ * Maneja errores de geolocalización
+ * @param {GeolocationPositionError} err - Error de geolocalización
  */
+function handleGeolocationError(err) {
+    console.error('Geolocation error', err);
+    logger.error('[GPS] Geolocation error:', err.code, err.message);
+}
+
+// ... existing code ...
 export async function registrarControladoresMapa() {
     try {
         const { migrarManejadoresTempranos } = await import('./mensajeria.js');
@@ -4482,6 +4488,7 @@ registrarControlador(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL, async (mensaje)
                     });
                 },
                 (error) => {
+                    handleGeolocationError(error);
                     enviarMensaje({
                         tipo: TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_GLOBAL,
                         origen: 'funciones-mapa',
