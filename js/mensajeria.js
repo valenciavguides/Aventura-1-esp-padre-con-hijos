@@ -881,10 +881,24 @@ export function registrarControlador(tipo, callback) {
 if (typeof window !== 'undefined') {
     window.mensajeria = {
         enviarMensaje,
+        enviarMensajeConConfirmacion,
         registrarControlador,
         inicializarMensajeria,
-        migrarManejadoresTempranos
+        migrarManejadoresTempranos,
+        marcarScript2Listo,
+        esperarHijosListos,
+        iniciarHeartbeat,
+        pausarHeartbeat,
+        reanudarHeartbeat,
+        broadcastToCapability,
+        hijosConCapability
     };
+
+    // Exponer alias globales legados para compatibilidad con código que llama directamente
+    try {
+        if (typeof window.enviarMensaje === 'undefined') window.enviarMensaje = enviarMensaje;
+        if (typeof window.marcarScript2Listo === 'undefined') window.marcarScript2Listo = marcarScript2Listo;
+    } catch (e) { /* ignore */ }
 }
 
 /**
