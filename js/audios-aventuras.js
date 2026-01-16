@@ -428,7 +428,7 @@ export const AUDIOS_AVENTURAS = {
     ja: []
   },
   Aventura2: {
-    español: [],
+    es: [],
     en: [],
     fr: [],
     it: [],
@@ -436,7 +436,7 @@ export const AUDIOS_AVENTURAS = {
     ja: []
   },
   Aventura3: {
-    español: [],
+    es: [],
     en: [],
     fr: [],
     it: [],
@@ -444,7 +444,7 @@ export const AUDIOS_AVENTURAS = {
     ja: []
   },
   Aventura4: {
-    español: [],
+    es: [],
     en: [],
     fr: [],
     it: [],
@@ -452,7 +452,7 @@ export const AUDIOS_AVENTURAS = {
     ja: []
   },
   Aventura5: {
-    español: [],
+    es: [],
     en: [],
     fr: [],
     it: [],
@@ -460,19 +460,19 @@ export const AUDIOS_AVENTURAS = {
     ja: []
   },
   AventuraFallas: {
-    español: [],
-    ingles: [],
-    frances: [],
-    italiano: [],
-    neerlandes: [],
-    japones: []
+     es: [],
+    en: [],
+    fr: [],
+    it: [],
+    nl: [],
+    ja: []
   },
   Aventura34km: {
-    español: [],
-    ingles: [],
-    frances: [],
-    italiano: [],
-    neerlandes: [],
-    japones: []
+     es: [],
+    en: [],
+    fr: [],
+    it: [],
+    nl: [],
+    ja: []
   }
 };
