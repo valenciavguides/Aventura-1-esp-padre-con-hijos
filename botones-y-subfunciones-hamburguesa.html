@@ -7,8 +7,12 @@
   <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
   <title>Menú Hamburguesa</title>
   <script src="js/suppress-warnings.js"></script>
+  <script src="js/mensajeria.js"></script>
   <script type="module">
-    import { inicializarMensajeria, registrarControlador, enviarMensaje } from './js/mensajeria.js';
+    // Access global mensajeria functions
+    const inicializarMensajeria = window.mensajeria ? window.mensajeria.inicializarMensajeria : () => console.error('mensajeria not loaded');
+    const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+    const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
