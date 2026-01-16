@@ -1,6 +1,5 @@
 /**
  * Módulo de Monitoreo y Telemetría
-import logger from './logger.js';
  * 
  * Este módulo proporciona funcionalidades para el monitoreo y análisis de eventos,
  * métricas de rendimiento y estado de la aplicación Valencia VGuides.
@@ -15,7 +14,11 @@ import logger from './logger.js';
  * @version 1.0.0
  */
 
-import { registrarControlador, enviarMensaje } from './mensajeria.js';
+// import { registrarControlador, enviarMensaje } from './mensajeria.js'; // REMOVED: mensajeria.js is global
+
+// Access global mensajeria functions
+const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
 
 /**
  * Migrar registros tempranos desde el fallback global a la mensajería.
@@ -23,7 +26,14 @@ import { registrarControlador, enviarMensaje } from './mensajeria.js';
  */
 export async function registrarControladoresMonitoreo() {
     try {
-        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        // const { migrarManejadoresTempranos } = await import('./mensajeria.js'); // REMOVED
+        const migrarManejadoresTempranos = window.mensajeria && window.mensajeria.migrarManejadoresTempranos;
+
+        if (!migrarManejadoresTempranos) {
+             console.debug('[MONITOREO][registrarControladores] migrarManejadoresTempranos no disponible');
+             return;
+        }
+
         try {
             const migrated = migrarManejadoresTempranos();
             console.info('[MONITOREO][registrarControladores] Controladores migrados (si existían):', migrated);
@@ -84,7 +94,7 @@ export function resolverDestinatariosNotificacion() {
     try {
         const cfgTargets = window.Config && window.Config.MONITOREO && Array.isArray(window.Config.MONITOREO.DESTINATARIOS_NOTIFICACION)
             ? window.Config.MONITOREO.DESTINATARIOS_NOTIFICACION
-            : ['sistema-ui', 'hijo1-opciones', 'hijo5-casa', 'broadcast'];
+            : ['sistema-ui', 'hijo1-opciones', 'hijo5', 'broadcast'];
 
         let destinatarios = cfgTargets.filter(d => {
             if (!d || typeof d !== 'string') return false;
