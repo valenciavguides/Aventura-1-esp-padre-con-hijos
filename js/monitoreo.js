@@ -17,7 +17,37 @@
 // import { registrarControlador, enviarMensaje } from './mensajeria.js'; // REMOVED: mensajeria.js is global
 
 // Access global mensajeria functions
-const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+let _pendingRegistrations = [];
+const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => {
+    console.error('mensajeria not loaded', t);
+    _pendingRegistrations.push({tipo: t, callback: c});
+};
+
+// Function to apply pending registrations
+const applyPendingRegistrations = () => {
+    if (window.mensajeria && window.mensajeria.registrarControlador) {
+        _pendingRegistrations.forEach(({tipo, callback}) => {
+            try {
+                window.mensajeria.registrarControlador(tipo, callback);
+            } catch (e) {
+                console.error('Error registering pending controlador', tipo, e);
+            }
+        });
+        _pendingRegistrations = [];
+    }
+};
+
+// Check immediately and set up a check
+if (!window.mensajeria) {
+    const checkMensajeria = () => {
+        if (window.mensajeria) {
+            applyPendingRegistrations();
+        } else {
+            setTimeout(checkMensajeria, 50);
+        }
+    };
+    checkMensajeria();
+}
 const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
 
 /**
