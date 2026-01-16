@@ -243,6 +243,7 @@
             height: 17vh; /* responsive height */
             z-index: 3000;
             object-fit: contain;
+            display: none; /* Initially hidden until adventure starts */
         }
         /* Background panel behind the logo: now full-width and semi-transparent */
         #fondo-blanco {
@@ -258,6 +259,7 @@
             border-bottom-left-radius: 24px;
             border-bottom-right-radius: 24px;
             pointer-events: none; /* decorative only; let interactions pass to map */
+            display: none; /* Initially hidden until adventure starts */
         }
         
         #info-parada { font-weight: bold; margin: 0; padding: 7px 12px; background-color: rgba(255, 255, 255, 0.9); border-radius: 7px; position: fixed; left: 50%; transform: translateX(-50%); z-index: 1201; display: none; color: #333; font-family: sans-serif; text-align: center; bottom: 325px; min-width: 220px; max-width: 90vw; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10); }
@@ -1687,7 +1689,7 @@
     <div id="mapa"></div>
     <div id="map-debug"></div>
     <iframe id="fondo-blanco" tabindex="-1" aria-hidden="true"></iframe>
-    <img id="logo-aventura" src="fotos_Av1/LOGO LETRAS FINAL transparente recorte.png" alt="Logo" 
+    <img id="logo-aventura" src="fotos-botones/Logo alargado.jpg" alt="Logo" 
          onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'100\'%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'%23f0f0f0\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' font-family=\'Arial\' font-size=\'20\' fill=\'%23333\'%3EValencia VGuides%3C/text%3E%3C/svg%3E';" />
     <div id="info-parada"></div>
 
@@ -8681,6 +8683,18 @@
                         iframe.style.visibility = 'visible';
                     }
                 }
+                
+                // Mostrar logo y fondo blanco ahora que la aventura ha iniciado
+                const logoElement = document.getElementById('logo-aventura');
+                const fondoElement = document.getElementById('fondo-blanco');
+                if (logoElement) {
+                    logoElement.style.display = 'block';
+                }
+                if (fondoElement) {
+                    fondoElement.style.display = 'block';
+                }
+                
+                logger.info(`${logPrefix} Logo y fondo blanco mostrados`);
                 
                 // Notificar a los hijos que la aventura ha iniciado
                 const datosInicio = {
