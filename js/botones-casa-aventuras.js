@@ -64,31 +64,6 @@ export const BOTONES_CASA_AVENTURAS = {
       puntosRuta: [/* array vacío para futuras aventuras */]
     }
   },
-  Aventura3: {
-    "boton-casa-hijo5.html": {
-      puntosRuta: [/* array vacío para futuras aventuras */]
-    }
-  },
-  Aventura4: {
-    "boton-casa-hijo5.html": {
-      puntosRuta: [/* array vacío para futuras aventuras */]
-    }
-  },
-  Aventura5: {
-    "boton-casa-hijo5.html": {
-      puntosRuta: [/* array vacío para futuras aventuras */]
-    }
-  },
-  AventuraFallas: {
-    "boton-casa-hijo5.html": {
-      puntosRuta: [/* array vacío para futuras aventuras */]
-    }
-  },
-  Aventura34km: {
-    "boton-casa-hijo5.html": {
-      puntosRuta: [/* array vacío para futuras aventuras */]
-    }
-  },
   // ... otras aventuras
 };
 
