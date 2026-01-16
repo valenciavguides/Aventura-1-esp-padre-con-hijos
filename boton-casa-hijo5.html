@@ -731,6 +731,21 @@
         });
         console.log(`✅ [hijo5] MENSAJERIA INICIALIZADA`);
 
+        // Enviar HIJO_PREPARADO para iniciar handshake
+        logger.info(`Hijo hijo5 enviando HIJO_PREPARADO`);
+        await enviarMensaje({
+            destino: getPadreId(),
+            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+            origen: CONFIG_HIJO.IFRAME_ID,
+            datos: {
+                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                version: '1.0.0',
+                capacidades: ['modo-selector', 'gps', 'paradas-list'],
+                timestamp: Date.now()
+            }
+        });
+        console.log(`✅ [hijo5] HIJO_PREPARADO enviado`);
+
         // INICIALIZACIÓN ASÍNCRONA: Esperar datos del padre antes de activar UI
         console.log(`🏠 [hijo5] ESPERANDO DATOS DEL PADRE PARA INICIALIZACIÓN`);
         // No activar modo ni generar botones hasta recibir RESPUESTA_DATOS_PARADAS
@@ -825,6 +840,10 @@
                 }
                 
                 // Ahora sí solicitar datos iniciales del padre
+                // Confirmar UI y mostrar
+                _uiConfirmado = true;
+                mostrarUI();
+                
                 await solicitarParadasDelPadre();
                 
                 logger.info(`${logPrefix} Solicitud de datos iniciales enviada tras confirmación`);
