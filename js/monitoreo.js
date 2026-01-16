@@ -20,10 +20,13 @@
 let _pendingRegistrations = [];
 let _pendingMessages = [];
 
-const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => {
-    console.error('mensajeria not loaded', t);
-    _pendingRegistrations.push({tipo: t, callback: c});
-};
+const registrarControlador = (window.mensajeria && window.mensajeria.registrarControlador)
+    ? window.mensajeria.registrarControlador
+    : (t, c) => {
+        // Encolar registros hasta que `mensajeria` esté disponible.
+        // No emitir errores para evitar spam en consola durante el orden de carga.
+        _pendingRegistrations.push({ tipo: t, callback: c });
+    };
 
 // Function to apply pending registrations and send pending messages
 const applyPendingRegistrations = () => {
@@ -61,10 +64,12 @@ if (!window.mensajeria) {
     checkMensajeria();
 }
 
-const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => {
-    console.error('mensajeria not loaded, queuing message', msg);
-    _pendingMessages.push(msg);
-};
+const enviarMensaje = (window.mensajeria && window.mensajeria.enviarMensaje)
+    ? window.mensajeria.enviarMensaje
+    : (msg) => {
+        // Encolar mensajes hasta que `mensajeria` esté disponible.
+        _pendingMessages.push(msg);
+    };
 
 /**
  * Migrar registros tempranos desde el fallback global a la mensajería.
