@@ -7,6 +7,7 @@
     <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
     <title>coordenadas-hijo2</title>
     <script src="js/suppress-warnings.js"></script>
+    <script src="js/mensajeria.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
@@ -433,7 +434,11 @@
 
 // ==================== INICIALIZACIÓN DE MENSAJERÍA ====================
 
-import { inicializarMensajeria, registrarControlador, enviarMensaje, enviarMensajeConConfirmacion } from './js/mensajeria.js';
+// Access global mensajeria functions
+const inicializarMensajeria = window.mensajeria ? window.mensajeria.inicializarMensajeria : () => console.error('mensajeria not loaded');
+const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
+const enviarMensajeConConfirmacion = window.mensajeria ? window.mensajeria.enviarMensajeConConfirmacion : (msg) => Promise.reject('mensajeria not loaded');
 
 // Wrapper seguro para evitar doble registro de controladores en hijos
 if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
