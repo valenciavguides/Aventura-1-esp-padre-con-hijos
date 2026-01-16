@@ -12,7 +12,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https://unpkg.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com; upgrade-insecure-requests" />
     <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload" />
     <meta http-equiv="Permissions-Policy" content="geolocation=*" />
     <title>Aventura 1 - Padre</title>
@@ -29,6 +29,10 @@
     </script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🗺️%3C/text%3E%3C/svg%3E">
 
+    <!-- Preconnect to external origins for faster loading -->
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+
     <!-- Carga de Leaflet desde CDN -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -36,7 +40,7 @@
     <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
 
         <!-- Add warning suppression script early in the head -->
-    <script src="js/suppress-warnings.js"></script>
+    <script src="js/suppress-warnings.js" defer></script>
 
     <!-- Ensure an activator stub is available immediately so tests and early callers can invoke it.
          Calls are queued until the real implementation is registered via window.__setRealActivarGPS(fn). -->
@@ -1903,27 +1907,30 @@
 
         ] = await Promise.all([
 
-          import('./js/constants.js'),
+          import('./js/constants.min.js'),
 
-          import('./js/utils.js'),
+          import('./js/utils.min.js'),
 
-          import('./js/device-detection.js'),
+          import('./js/device-detection.min.js'),
 
-          import('./js/validacion.js'),
+          import('./js/validacion.min.js'),
 
-          import('./js/logger.js'),
+          import('./js/logger.min.js'),
 
-          import('./js/monitoreo.js'),
+          import('./js/monitoreo.min.js'),
 
-          import('./js/config.js'),
+          import('./js/config.min.js'),
 
-          import('./js/mensajeria.js'),
+          import('./js/mensajeria.min.js'),
 
-          import('./js/app.js'),
+          import('./js/app.min.js'),
 
-          import('./js/funciones-mapa.js')
+          import('./js/funciones-mapa.min.js')
 
         ]);
+
+        // Exponer mensajeria globalmente para evitar imports duplicados
+        window.mensajeria = { inicializarMensajeria: inicializarMensajeria_S1, registrarControlador: registrarControlador_S1, enviarMensaje: enviarMensaje_S1, enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1, broadcastToCapability: broadcastToCapability_S1, hijosConCapability: hijosConCapability_S1 };
 
         // =====================================================================
         // DATOS CENTRALIZADOS DE AVENTURAS (coordenadas, audios, retos, índice)
@@ -1991,8 +1998,7 @@
 
         // Asegurar que la mensajería se inicialice en el padre antes de usar funciones
         try {
-            const { inicializarMensajeria } = await import('./js/mensajeria.js');
-            await inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
+            await window.mensajeria.inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
             console.info('[PADRE] Mensajería inicializada como padre');
         } catch (e) {
             console.warn('[PADRE] No se pudo inicializar mensajería automáticamente:', e && e.message ? e.message : e);
@@ -5420,7 +5426,7 @@
         const { inicializarMonitoreo: inicializarMonitoreo_S2 } = await import('./js/monitoreo.js');
         const { CONFIG: CONFIG_S2 } = await import('./js/config.js');
         
-        const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = await import('./js/mensajeria.js');
+        const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = window.mensajeria;
         const { manejarCambioModo: manejarCambioModo_S2, actualizarInterfazModo: actualizarInterfazModo_S2, enviarCambioModo: enviarCambioModo_S2, notificarError: notificarError_S2 } = await import('./js/app.js');
         const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, actualizarMarcadorUsuario, limpiarMarcadorUsuario, limpiarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
 
@@ -8772,8 +8778,7 @@
         // ============================================================
         (async () => {
             try {
-                const { marcarScript2Listo } = await import('./js/mensajeria.js');
-                const resultado = marcarScript2Listo();
+                const resultado = window.mensajeria.marcarScript2Listo();
                 logger.info(`[SCRIPT2] ✅ Script 2 marcado como LISTO (inmediato)`, resultado);
             } catch (error) {
                 logger.error('[SCRIPT2] Error marcando Script 2 como listo:', error);
@@ -8882,7 +8887,7 @@
         const { CONFIG: CONFIG_IFRAME } = await import('./js/config.js');
         const loggerIframe = (await import('./js/logger.js')).default;
         const { coordinarAccion } = await import('./js/app.js');
-        const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = await import('./js/mensajeria.js');
+        const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = window.mensajeria;
         
         // Functions to manage hijo4 visibility through the centralized messaging system
         window.mostrarHijo4 = async function() {
@@ -9105,7 +9110,7 @@
         // NOTA: inicializarMensajeria ya fue llamada en Script 1
         // ============================================================
         
-        const { enviarMensaje: enviarMensaje_S4 } = await import('./js/mensajeria.js');
+        const { enviarMensaje: enviarMensaje_S4 } = window.mensajeria;
         const { ajustarTimeoutPorConexion } = await import('./js/utils.js');
         const { TIPOS_MENSAJE: TIPOS_MENSAJE_S4, MODOS: MODOS_S4 } = await import('./js/constants.js');
         const { CONFIG: CONFIG_PADRE } = await import('./js/config.js');
