@@ -4,8 +4,8 @@
  */
 
 // Importar mensajería y configuración
-import {
-    enviarMensaje,
+import { 
+    enviarMensaje, 
     enviarMensajeConConfirmacion,
     registrarControlador
 } from './mensajeria.js';
@@ -1848,7 +1848,7 @@ async function completarCambioParada() {
         estadoMapa.paradaActual = paradaId;
         estadoMapa.timestamp = Date.now();
         
-        // Confirmar a hijo5
+        // Confirmar a hijo5-casa
         await enviarMensaje({
             destino: origen,
             tipo: TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO,
