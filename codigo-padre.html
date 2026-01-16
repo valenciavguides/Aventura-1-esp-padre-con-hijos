@@ -9116,7 +9116,7 @@
         if (window.parent === window && !window.__HEARTBEAT_INICIADO) {
             const modoInicial = window.estadoPadre?.modo?.actual || MODOS_S4.CASA;
             try {
-                if (modoInicial === MODOS.AVENTURA) {
+                if (modoInicial === MODOS_S4.AVENTURA) {
                     // Start heartbeat via messaging (mensajeria.js handler will call iniciarHeartbeat internally)
                     try {
                         await enviarMensaje_S4({
