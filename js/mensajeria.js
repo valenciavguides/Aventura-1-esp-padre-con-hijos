@@ -2365,4 +2365,14 @@ export function marcarScript2Listo() {
     };
 }
 
+// Exponer globalmente para compatibilidad con código que espera window.mensajeria
+if (typeof window !== 'undefined') {
+    window.mensajeria = {
+        enviarMensaje,
+        registrarControlador,
+        inicializarMensajeria,
+        migrarManejadoresTempranos
+    };
+}
+
 export { estadoMensajeria, procesarColaMensajes };
