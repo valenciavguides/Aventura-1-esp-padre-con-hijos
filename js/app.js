@@ -6,13 +6,20 @@
 
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import logger from './logger.js';
-import { enviarMensaje, registrarControlador } from './mensajeria.js';
+// import { enviarMensaje, registrarControlador } from './mensajeria.js'; // REMOVED: mensajeria.js is a global script, not a module
 import { CONFIG } from './config.js';
 import { generarIdUnico, getPadreId, canonicalizarModo } from './utils.js';
 import { promesasPendientes, registrarMetrica as registrarMetricaMonitoreo } from './monitoreo.js';
 import { esMovil } from './device-detection.js';
 
 import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './funciones-mapa.js';
+import { DATOS_PADRE } from './aventuras-ID-padre.js';
+
+// Access global mensajeria functions
+const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
+const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
+const enviarMensajeConConfirmacion = window.mensajeria ? window.mensajeria.enviarMensajeConConfirmacion : (msg) => Promise.reject('mensajeria not loaded');
+// registrarControladorSeguro is globally defined in codigo-padre.html or utils.js
 
 /**
  * Migrar registros tempranos desde el fallback global a la mensajería.
@@ -22,7 +29,14 @@ import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './func
  */
 export async function registrarControladoresApp() {
     try {
-        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+        // const { migrarManejadoresTempranos } = await import('./mensajeria.js'); // REMOVED
+        const migrarManejadoresTempranos = window.mensajeria && window.mensajeria.migrarManejadoresTempranos;
+        
+        if (!migrarManejadoresTempranos) {
+             logger.debug('[APP][registrarControladores] migrarManejadoresTempranos no disponible (mensajeria no cargada o versión antigua)');
+             return;
+        }
+
         try {
             const migrated = migrarManejadoresTempranos();
             // Agregar verificación para evitar duplicados
@@ -730,8 +744,9 @@ export async function manejarCambioModo(estado, mensaje) {
 
                                 // Establecer parada por defecto "padre-P-0" y solicitar coordenadas a hijo2
                                 try {
-                                    if (window.AVENTURA_PARADAS && window.AVENTURA_PARADAS.length > 0) {
-                                        const paradaDefecto = window.AVENTURA_PARADAS.find(p => p.padreid === 'padre-P-0') || window.AVENTURA_PARADAS[0];
+                                    const elementosIDpadre = DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado].elementosIDpadre;
+                                    if (elementosIDpadre && elementosIDpadre.length > 0) {
+                                        const paradaDefecto = elementosIDpadre.find(p => p.padreid === 'padre-P-0') || elementosIDpadre[0];
                                         estado.paradaActual = paradaDefecto.padreid;
                                         estado.elementoActual = paradaDefecto;
                                         logger.info('[APP][CAMBIO_MODO] Establecida parada por defecto: padre-P-0');
@@ -1440,7 +1455,6 @@ if (typeof window !== 'undefined') {
             }
             
             // Limpiar arrays globales
-            if (window.AVENTURA_PARADAS) delete window.AVENTURA_PARADAS;
             if (window.puntosRuta) delete window.puntosRuta;
             if (window.CoordenadasParadas) delete window.CoordenadasParadas;
             
