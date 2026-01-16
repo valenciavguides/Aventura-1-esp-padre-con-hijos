@@ -8640,6 +8640,21 @@
                 estado.seleccion.timestampInicio = timestamp;
                 
                 // =====================================================
+                // DISTRIBUIR DATOS DE AVENTURA A LOS HIJOS
+                // =====================================================
+                logger.info(`${logPrefix} Distribuyendo datos de aventura ${aventura} (${idioma}) a los hijos...`);
+                try {
+                    const resultadosDistribucion = await distribuirDatosAventura(aventura, idioma);
+                    if (resultadosDistribucion.pospuesto) {
+                        logger.warn(`${logPrefix} ⚠️ Distribución pospuesta: ${resultadosDistribucion.mensaje}`);
+                    } else {
+                        logger.success(`${logPrefix} ✅ Distribución completada:`, resultadosDistribucion);
+                    }
+                } catch (distribucionError) {
+                    logger.error(`${logPrefix} ❌ Error distribuyendo datos:`, distribucionError);
+                }
+                
+                // =====================================================
                 // ESPERAR CONFIRMACIONES DE CARGA DE LOS HIJOS
                 // =====================================================
                 logger.info(`${logPrefix} Esperando confirmaciones de carga de datos...`);
