@@ -4093,18 +4093,22 @@
                 // Si es hijo2, enviar datos de paradas para inicializar funciones-mapa
                 if (hijoId === 'hijo2') {
                     try {
-                        const paradasNormalizadas = normalizarParadas_S1(DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado].elementosIDpadre || []);
-                        if (typeof enviarMensaje_S1 === 'function') {
-                            await enviarMensaje_S1({
-                                destino: 'hijo2',
-                                tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
-                                origen: getPadreId(),
-                                datos: {
-                                    paradas: paradasNormalizadas,
-                                    timestamp: Date.now()
-                                }
-                            });
-                            logger.info(`${logPrefix} Datos de paradas enviados a hijo2 para inicialización (normalizados)`);
+                        if (window.aventuraSeleccionada && window.idiomaSeleccionado && DATOS_PADRE[window.aventuraSeleccionada] && DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado]) {
+                            const paradasNormalizadas = normalizarParadas_S1(DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado].elementosIDpadre || []);
+                            if (typeof enviarMensaje_S1 === 'function') {
+                                await enviarMensaje_S1({
+                                    destino: 'hijo2',
+                                    tipo: TIPOS_MENSAJE_S1.NAVEGACION.RESPUESTA_DATOS_PARADAS,
+                                    origen: getPadreId(),
+                                    datos: {
+                                        paradas: paradasNormalizadas,
+                                        timestamp: Date.now()
+                                    }
+                                });
+                                logger.info(`${logPrefix} Datos de paradas enviados a hijo2 para inicialización (normalizados)`);
+                            }
+                        } else {
+                            logger.debug(`${logPrefix} Aventura no seleccionada aún, omitiendo envío de datos de paradas a hijo2`);
                         }
                     } catch (error) {
                         logger.error(`${logPrefix} Error enviando datos de paradas a hijo2:`, error);
