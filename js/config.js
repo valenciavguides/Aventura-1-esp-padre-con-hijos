@@ -19,7 +19,7 @@ export const CONFIG = {
     HIJOS: {
         HAMBURGUESA: { id: 'hijo1-hamburguesa', nombre: 'Menú Hamburguesa' },
         OPCIONES: { id: 'hijo1-opciones', nombre: 'Menú Opciones' },
-        CASA: { id: 'hijo5-casa', nombre: 'Botón Casa' },
+        CASA: { id: 'hijo5', nombre: 'Botón Casa' },
         COORDENADAS: { id: 'hijo2', nombre: 'Coordenadas' },
         AUDIO: { id: 'hijo3', nombre: 'Audio' },
         RETOS: { id: 'hijo4', nombre: 'Retos' } // Confirmado: ID coincide con el iframe real
@@ -126,7 +126,7 @@ export const CONFIG = {
         // Lista preferida (en orden) de IDs de iframes para enviar notificaciones de sistema.
         // Si ninguno existe, se usará 'broadcast' como fallback.
         // Se agrega 'sistema-ui' por defecto como destino prioritario centralizado.
-        DESTINATARIOS_NOTIFICACION: ['sistema-ui', 'hijo1-opciones', 'hijo5-casa', 'broadcast']
+        DESTINATARIOS_NOTIFICACION: ['sistema-ui', 'hijo1-opciones', 'hijo5', 'broadcast']
     }
 };
 
@@ -169,5 +169,5 @@ export const MAPA_TIPOS_HIJO = {
     'hijo2': 'COORDENADAS',
     'hijo3': 'AUDIO', 
     'hijo4': 'RETOS',
-    'hijo5-casa': 'PARADAS'
+    'hijo5': 'PARADAS'
 };
