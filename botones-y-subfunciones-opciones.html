@@ -288,7 +288,8 @@
         abierto: false,
         inicializado: false,
         ultimaInteraccion: null,
-        parentReady: false
+        parentReady: false,
+        hijoListoEnviado: false  // Flag para evitar envío duplicado de HIJO_LISTO
     };
 
     // ============================================================
@@ -411,8 +412,9 @@
             logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
 
             // ============================================================
-            // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+            // CONTROLADOR 1: SISTEMA.PADRE_LISTO (mantenido para compatibilidad)
             // ============================================================
+            // NOTA: HIJO_LISTO ahora se envía en PADRE_DATOS para consistencia con otros hijos
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
                 const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
                 
@@ -442,24 +444,8 @@
                         }
                     }
 
-                    logger.info(`${controladorPrefix} Datos procesados, inicialización completa`);
-
-                    // Enviar HIJO_LISTO al padre
-                    try {
-                        await enviarMensaje({
-                            destino: getPadreId(),
-                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                            origen: CONFIG_HIJO.IFRAME_ID,
-                            datos: {
-                                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                                capacidades: ['opciones', 'configuracion'],
-                                timestamp: Date.now()
-                            }
-                        });
-                        logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
-                    } catch (error) {
-                        logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
-                    }
+                    // HIJO_LISTO se envía en PADRE_DATOS para consistencia
+                    logger.debug(`${controladorPrefix} Datos procesados (HIJO_LISTO se envía en PADRE_DATOS)`);
 
                 } catch (error) {
                     logger.error(`${controladorPrefix} Error procesando PADRE_LISTO:`, error);
@@ -489,7 +475,28 @@
                         }
                     }
 
-                    logger.debug(`${controladorPrefix} Datos del padre procesados, esperando PADRE_LISTO`);
+                    // Enviar HIJO_LISTO al padre (solo si no se ha enviado antes)
+                    // Este es el punto de envío estandarizado para todos los hijos
+                    if (!estadoMenu.hijoListoEnviado) {
+                        try {
+                            await enviarMensaje({
+                                destino: getPadreId(),
+                                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                                origen: CONFIG_HIJO.IFRAME_ID,
+                                datos: {
+                                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                                    capacidades: ['opciones', 'configuracion'],
+                                    timestamp: Date.now()
+                                }
+                            });
+                            estadoMenu.hijoListoEnviado = true;
+                            logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
+                        } catch (error) {
+                            logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                        }
+                    } else {
+                        logger.debug(`${controladorPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
+                    }
 
                 } catch (error) {
                     logger.error(`${controladorPrefix} Error procesando PADRE_DATOS:`, error);

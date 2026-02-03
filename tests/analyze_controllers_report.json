@@ -3,8 +3,8 @@
   "totalRegistered": 69,
   "duplicates": [
     {
-      "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
-      "count": 11
+      "tipo": "SISTEMA.PADRE_LISTO",
+      "count": 3
     },
     {
       "tipo": "SISTEMA.PADRE_DATOS",
@@ -12,6 +12,18 @@
     },
     {
       "tipo": "SISTEMA.PADRE_CONFIRMA_HIJO_LISTO",
+      "count": 7
+    },
+    {
+      "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+      "count": 9
+    },
+    {
+      "tipo": "SISTEMA.HEARTBEAT",
+      "count": 8
+    },
+    {
+      "tipo": "SISTEMA.ACK",
       "count": 7
     },
     {
@@ -31,10 +43,6 @@
       "count": 3
     },
     {
-      "tipo": "SISTEMA.HEARTBEAT",
-      "count": 8
-    },
-    {
       "tipo": "SISTEMA.HEARTBEAT_START",
       "count": 4
     },
@@ -45,10 +53,6 @@
     {
       "tipo": "NAVEGACION.CAMBIO_PARADA",
       "count": 5
-    },
-    {
-      "tipo": "SISTEMA.ACK",
-      "count": 7
     },
     {
       "tipo": "NAVEGACION.GPS.UBICACION_ACTUALIZADA",
@@ -69,10 +73,6 @@
     {
       "tipo": "NAVEGACION.CAMBIO_PARADA_CONFIRMADO",
       "count": 2
-    },
-    {
-      "tipo": "SISTEMA.PADRE_LISTO",
-      "count": 3
     },
     {
       "tipo": "UI.CLOSE_MENUS",
@@ -112,19 +112,7 @@
         "count": 2
       }
     ],
-    "boton-casa-hijo5.html": [
-      {
-        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
-        "count": 2
-      }
-    ],
     "coordenadas-hijo2.html": [
-      {
-        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
-        "count": 2
-      }
-    ],
-    "retos-hijo4.html": [
       {
         "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
         "count": 2
@@ -132,12 +120,11 @@
     ]
   },
   "directRegistrations": {
-    "js\\app.js": [
+    "js/app.js": [
       "...",
-      "SISTEMA.NACK",
-      "SISTEMA.HIJO_LISTO"
+      "SISTEMA.NACK"
     ],
-    "js\\funciones-mapa.js": [
+    "js/funciones-mapa.js": [
       "NAVEGACION.ESTABLECER_DESTINO",
       "SISTEMA.CAMBIO_MODO",
       "NAVEGACION.MOSTRAR_RUTA",
@@ -173,7 +160,7 @@
       "NAVEGACION.CENTRAR_EN_UBICACION",
       "NAVEGACION.GPS.ESTADO_GLOBAL"
     ],
-    "tests\\analyze_controllers.js": [
+    "tests/analyze_controllers.js": [
       "..."
     ]
   }
