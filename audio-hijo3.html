@@ -678,7 +678,8 @@
     const estado = {
         inicializado: false,
         modoActual: 'aventura',
-        pendingCambioModo: null
+        pendingCambioModo: null,
+        hijoListoEnviado: false  // Flag para evitar envío duplicado de HIJO_LISTO
     };
 
     // Funciones de reproductor (fusionadas y adaptadas)
@@ -1144,20 +1145,25 @@
                     }
                 }
 
-                // Enviar HIJO_LISTO directamente después de procesar datos
-                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
-                await enviarMensaje({
-                    destino: getPadreId(),
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                    origen: 'hijo3',
-                    datos: {
-                        version: '1.0.0',
-                        capacidades: ['audio', 'retos-button'],
-                        timestamp: Date.now()
-                    }
-                });
-                estado.inicializado = true;
-                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+                // Enviar HIJO_LISTO directamente después de procesar datos (solo si no se ha enviado antes)
+                if (!estado.hijoListoEnviado) {
+                    logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
+                    await enviarMensaje({
+                        destino: getPadreId(),
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: 'hijo3',
+                        datos: {
+                            version: '1.0.0',
+                            capacidades: ['audio', 'retos-button'],
+                            timestamp: Date.now()
+                        }
+                    });
+                    estado.hijoListoEnviado = true;
+                    estado.inicializado = true;
+                    logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+                } else {
+                    logger.debug(`${logPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
+                }
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_DATOS:`, error);

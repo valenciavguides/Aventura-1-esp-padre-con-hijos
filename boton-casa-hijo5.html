@@ -553,7 +553,8 @@
         modo: 'casa',
         aventuraParadas: [], // Array de paradas recibidas del padre
         paradasMapeadas: {}, // Mapeo de IDs locales a IDs del padre
-        datosRecibidos: false // Flag para evitar procesamiento duplicado
+        datosRecibidos: false, // Flag para evitar procesamiento duplicado
+        hijoListoEnviado: false  // Flag para evitar envío duplicado de HIJO_LISTO
     };
 
     // Controladores se registrarán después de la confirmación del padre
@@ -1012,20 +1013,25 @@
                     }
                 }
 
-                // Enviar HIJO_LISTO directamente
-                logger.info(`Hijo hijo5 enviando HIJO_LISTO`);
-                await enviarMensaje({
-                    destino: getPadreId(),
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                        version: '1.0.0',
-                        capacidades: ['modo-selector', 'gps', 'paradas-list'],
-                        timestamp: Date.now()
-                    }
-                });
-                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+                // Enviar HIJO_LISTO directamente (solo si no se ha enviado antes)
+                if (!estado.hijoListoEnviado) {
+                    logger.info(`Hijo hijo5 enviando HIJO_LISTO`);
+                    await enviarMensaje({
+                        destino: getPadreId(),
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                            version: '1.0.0',
+                            capacidades: ['modo-selector', 'gps', 'paradas-list'],
+                            timestamp: Date.now()
+                        }
+                    });
+                    estado.hijoListoEnviado = true;
+                    logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+                } else {
+                    logger.debug(`${logPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
+                }
 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_DATOS:`, error);

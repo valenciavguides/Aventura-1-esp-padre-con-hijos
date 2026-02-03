@@ -465,7 +465,8 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         idiomaSeleccionado: null,
         aventuraSeleccionada: null,
         terminosAceptados: false,
-        ultimaInteraccion: null
+        ultimaInteraccion: null,
+        hijoListoEnviado: false  // Flag para evitar envío duplicado de HIJO_LISTO
     };
 
     // ============================================================
@@ -610,21 +611,26 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                         }
                     }
 
-                    // Enviar HIJO_LISTO al padre
-                    try {
-                        await enviarMensaje({
-                            destino: getPadreId(),
-                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                            origen: CONFIG_HIJO.IFRAME_ID,
-                            datos: {
-                                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                                capacidades: ['seleccion', 'idioma', 'aventura'],
-                                timestamp: Date.now()
-                            }
-                        });
-                        logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
-                    } catch (error) {
-                        logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                    // Enviar HIJO_LISTO al padre (solo si no se ha enviado antes)
+                    if (!estadoComponente.hijoListoEnviado) {
+                        try {
+                            await enviarMensaje({
+                                destino: getPadreId(),
+                                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                                origen: CONFIG_HIJO.IFRAME_ID,
+                                datos: {
+                                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                                    capacidades: ['seleccion', 'idioma', 'aventura'],
+                                    timestamp: Date.now()
+                                }
+                            });
+                            estadoComponente.hijoListoEnviado = true;
+                            logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
+                        } catch (error) {
+                            logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                        }
+                    } else {
+                        logger.debug(`${controladorPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
                     }
 
                 } catch (error) {
@@ -635,6 +641,8 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             // ============================================================
             // CONTROLADOR: SISTEMA.PADRE_DATOS
             // ============================================================
+            // NOTA: NO enviar HIJO_LISTO aquí - ya se envía en PADRE_LISTO
+            // Este controlador solo procesa los datos adicionales del padre
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
                 const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_DATOS]`;
                 
@@ -659,22 +667,9 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                         }
                     }
 
-                    // Enviar HIJO_LISTO al padre
-                    try {
-                        await enviarMensaje({
-                            destino: getPadreId(),
-                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                            origen: CONFIG_HIJO.IFRAME_ID,
-                            datos: {
-                                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                                capacidades: ['seleccion', 'idioma', 'aventura'],
-                                timestamp: Date.now()
-                            }
-                        });
-                        logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
-                    } catch (error) {
-                        logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
-                    }
+                    // HIJO_LISTO ya se envía en el controlador PADRE_LISTO
+                    // No enviar duplicado aquí para evitar mensajes redundantes
+                    logger.debug(`${controladorPrefix} Datos procesados (HIJO_LISTO ya enviado por PADRE_LISTO)`);
 
                 } catch (error) {
                     logger.error(`${controladorPrefix} Error procesando PADRE_DATOS:`, error);

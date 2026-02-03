@@ -791,7 +791,8 @@ const estadoComponente = {
     posicionActualUsuario: null, // {lat, lng} Posición GPS recibida del padre
     timestampSalioDeRango: null, // Timestamp cuando salió >50m (null si está <50m)
     tiempoFueraRequerido: 5 * 60 * 1000, // 5 minutos en milisegundos
-    ultimoHeading: 0 // Última dirección del usuario (0-360 grados)
+    ultimoHeading: 0, // Última dirección del usuario (0-360 grados)
+    hijoListoEnviado: false  // Flag para evitar envío duplicado de HIJO_LISTO
 };
 
 // Referencias DOM
@@ -1659,21 +1660,26 @@ try {
                 }
             }
 
-            // Enviar HIJO_LISTO directamente después de procesar datos
-            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
-            await enviarMensaje({
-                destino: getPadreId(),
-                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                datos: {
-                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                    coordenadasDisponibles: obtenerCoordenadasParadas().length,
-                    capacidades: ['navegacion', 'coordenadas'],
-                    timestamp: Date.now()
-                }
-            });
-            estadoComponente.inicializado = true;
-            logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+            // Enviar HIJO_LISTO directamente después de procesar datos (solo si no se ha enviado antes)
+            if (!estadoComponente.hijoListoEnviado) {
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        coordenadasDisponibles: obtenerCoordenadasParadas().length,
+                        capacidades: ['navegacion', 'coordenadas'],
+                        timestamp: Date.now()
+                    }
+                });
+                estadoComponente.hijoListoEnviado = true;
+                estadoComponente.inicializado = true;
+                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
+            } else {
+                logger.debug(`${logPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
+            }
 
         } catch (error) {
             logger.error(`${logPrefix} Error procesando PADRE_DATOS:`, error);
