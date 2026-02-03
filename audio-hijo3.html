@@ -1105,23 +1105,8 @@
 
         // No necesitamos inicializarMensajeria aquí, los fallbacks esperan automáticamente
 
-        // Enviar HIJO_PREPARADO y esperar PADRE_DATOS antes de enviar HIJO_LISTO
-        try {
-            await enviarMensaje({
-                destino: getPadreId(),
-                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                datos: {
-                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                    version: '1.0.0',
-                    capacidades: ['audio', 'reproduccion', 'controles'],
-                    timestamp: Date.now()
-                }
-            });
-            logger.debug('[hijo3] HIJO_PREPARADO enviado; esperando PADRE_DATOS');
-        } catch (e) {
-            logger.warn('[hijo3] Error enviando HIJO_PREPARADO:', e);
-        }
+        // NOTA: HIJO_PREPARADO se envía MÁS ABAJO, DESPUÉS de registrar todos los controladores críticos.
+        // Esto garantiza que el padre no envíe PADRE_DATOS antes de que los controladores estén listos.
 
         // ============================================================
         // CONTROLADOR 1: SISTEMA.PADRE_DATOS
@@ -1882,6 +1867,27 @@
                 logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
             }
         });
+
+        // ============================================================
+        // ENVIAR HIJO_PREPARADO AHORA QUE TODOS LOS CONTROLADORES ESTÁN REGISTRADOS
+        // ============================================================
+        try {
+            logger.debug('[hijo3] Todos los controladores registrados; enviando HIJO_PREPARADO ahora');
+            await enviarMensaje({
+                destino: getPadreId(),
+                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                origen: CONFIG_HIJO.IFRAME_ID,
+                datos: {
+                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                    version: '1.0.0',
+                    capacidades: ['audio', 'reproduccion', 'controles'],
+                    timestamp: Date.now()
+                }
+            });
+            logger.debug('[hijo3] HIJO_PREPARADO enviado; esperando PADRE_DATOS');
+        } catch (e) {
+            logger.warn('[hijo3] Error enviando HIJO_PREPARADO:', e);
+        }
 
         logger.info(`[hijo3] Inicialización completada exitosamente`);
     } catch (error) {
