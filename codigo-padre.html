@@ -33,6 +33,12 @@
     <link rel="preconnect" href="https://unpkg.com">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 
+    <!-- Preload critical modules for faster loading -->
+    <!-- NOTA: Los módulos se importan dinámicamente en los scripts, por lo que no hacemos preload -->
+    <!-- Si se necesita optimización de carga, usar dns-prefetch en su lugar -->
+    <!-- <link rel="preload" href="js/mensajeria.js" as="module" crossorigin>
+    <link rel="preload" href="js/app.js" as="module" crossorigin> -->
+
     <!-- Carga de Leaflet desde CDN -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -100,7 +106,7 @@
         };
 
         // Listen for child readiness messages to ensure paradas styling is applied
-        window.addEventListener('message', (ev) => {
+        window.addEventListener('message', async (ev) => {
             try {
                 const data = ev && ev.data;
                 if (!data || !data.tipo) return;
@@ -127,6 +133,82 @@
                             doc.head && doc.head.appendChild(s);
                         }
                     } catch (e) { console.warn('[PADRE] Error applying hijo5 paradas fallback styles', e); }
+                } else if (data.tipo === 'SISTEMA.HIJO_MANEJADORES') {
+                    // Handle HIJO_MANEJADORES from children sent via postMessage
+                    const logPrefix2 = '[PADRE][HIJO_MANEJADORES]';
+                    try {
+                        const hijoOrigen = data?.origen;
+                        const manejadores = (data && data.datos && data.datos.manejadores) || [];
+                        const pedidoId = data?.datos?.pedidoId || null;
+
+                        if (!hijoOrigen) {
+                            console.warn(`${logPrefix2} Mensaje HIJO_MANEJADORES sin campo origen, omitiendo`);
+                            return;
+                        }
+
+                        if (!window.estadoPadre) window.estadoPadre = {};
+                        if (!window.estadoPadre.estadoHijos || !window.estadoPadre.estadoHijos.has(hijoOrigen)) {
+                            console.warn(`${logPrefix2} Origen ${hijoOrigen} no registrado como hijo preparado; revisar seguridad`);
+                            // continue processing but mark with a flag
+                        }
+
+                        // Sanitize manifest entries
+                        const saneManejadores = [];
+                        for (const m of manejadores) {
+                            if (m && typeof m.tipo === 'string') saneManejadores.push(m);
+                            else console.warn(`${logPrefix2} Manifest entry inválido, omitiendo: ${JSON.stringify(m)}`);
+                        }
+
+                        window.estadoPadre = window.estadoPadre || {};
+                        window.estadoPadre.manejadoresRegistrados = window.estadoPadre.manejadoresRegistrados || new Map();
+                        const aplicados = [];
+
+                        for (const m of saneManejadores) {
+                            const tipo = m.tipo;
+                            if (!window.estadoPadre.manejadoresRegistrados.has(tipo)) {
+                                const proxy = async (msg) => {
+                                    try {
+                                        if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
+                                            await window.mensajeria.enviarMensaje({ destino: hijoOrigen, tipo: tipo, origen: getPadreId(), datos: msg.datos || {} });
+                                        }
+                                    } catch (err) { console.warn(`${logPrefix2} Error proxy reenviando ${tipo} a ${hijoOrigen}:`, err && err.message); }
+                                };
+                                try {
+                                    if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') {
+                                        await window.mensajeria.registrarControlador(tipo, proxy);
+                                    }
+                                    window.estadoPadre.manejadoresRegistrados.set(tipo, hijoOrigen);
+                                    aplicados.push(tipo);
+                                    console.info(`${logPrefix2} Proxy creado para ${tipo} -> ${hijoOrigen}`);
+                                } catch (err) { console.warn(`${logPrefix2} Error registrando proxy para ${tipo}:`, err && err.message); }
+                            } else {
+                                console.debug(`${logPrefix2} Tipo ${tipo} ya registrado, omitiendo`);
+                            }
+                        }
+
+                        // Enviar ACK de aplicación de manejadores
+                        try {
+                            if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
+                                await window.mensajeria.enviarMensaje({ destino: hijoOrigen, tipo: 'SISTEMA.PADRE_APLICA_MANEJADORES', origen: getPadreId(), datos: { pedidoId, aplicados, timestamp: Date.now() } });
+                                console.info(`${logPrefix2} PADRE_APLICA_MANEJADORES enviado a ${hijoOrigen}`);
+                            }
+                        } catch (err) { console.warn(`${logPrefix2} Error enviando PADRE_APLICA_MANEJADORES a ${hijoOrigen}:`, err && err.message); }
+
+                        // Resolver petición pendiente si existe
+                        try {
+                            if (pedidoId && window.estadoPadre && window.estadoPadre.pendingMigraciones && window.estadoPadre.pendingMigraciones.has(pedidoId)) {
+                                const pending = window.estadoPadre.pendingMigraciones.get(pedidoId);
+                                if (pending && pending.hijoId === hijoOrigen && typeof pending.resolve === 'function') {
+                                    pending.resolved = true;
+                                    try { pending.resolve({ pedidoId, manejadores, aplicados, timestamp: Date.now() }); } catch (e) { console.warn(`${logPrefix2} Error al invocar resolve de pending:`, e && e.message); }
+                                    console.info(`${logPrefix2} Pending migracion resuelta pedidoId=${pedidoId}`);
+                                } else if (pending) {
+                                    console.warn(`${logPrefix2} Pending migracion pedidoId=${pedidoId} no coincide con hijoOrigen esperado: ${pending.hijoId}`);
+                                }
+                            }
+                        } catch (err) { console.warn(`${logPrefix2} Error resolviendo pending migracion pedidoId=${pedidoId}:`, err && err.message); }
+
+                    } catch (err) { console.error('[PADRE][HIJO_MANEJADORES] Error procesando manifest:', err && err.message); }
                 }
             } catch (e) { /* ignore message handling errors */ }
         });
@@ -1062,9 +1144,11 @@
 
     <!-- Create map container early with inline script -->
     <script>
-        // Create map container if it doesn't exist when DOM starts parsing
+        // ÚNICO DOMContentLoaded listener consolidado para evitar duplicaciones
         document.addEventListener('DOMContentLoaded', function() {
-            // Check if container already exists
+            console.log('[PADRE] DOMContentLoaded - Inicialización unificada');
+            
+            // 1. Crear contenedor de mapa si no existe
             if (!document.getElementById('mapa')) {
                 console.log('Creating #mapa container during early DOM initialization');
                 const mapContainer = document.createElement('div');
@@ -1083,6 +1167,52 @@
                 }
                 console.log('#mapa container created successfully during early initialization');
             }
+            
+            // 2. Inicializar toggleRotationMessage (antes duplicado en línea 2403)
+            if (typeof toggleRotationMessage === 'function') {
+                try {
+                    toggleRotationMessage();
+                } catch (e) {
+                    console.warn('[PADRE] Error ejecutando toggleRotationMessage:', e);
+                }
+            }
+            
+            // 3. Registrar backdrop click handler (antes duplicado en línea 9324)  
+            const backdrop = document.getElementById('backdrop');
+            if (backdrop) {
+                backdrop.addEventListener('click', async function() {
+                    // Usar sistema de coordinación para manejar click en backdrop
+                    try {
+                        if (typeof coordinarAccion === 'function' && window.TIPOS_MENSAJE) {
+                            await coordinarAccion('backdrop_click', [{
+                                componente: 'hijo4',
+                                tipo: window.TIPOS_MENSAJE.UI.ACCION_USUARIO,
+                                datos: {
+                                    accion: 'backdrop_click',
+                                    timestamp: Date.now()
+                                }
+                            }]);
+                        }
+                    } catch (e) {
+                        console.error('[PADRE] Error manejando backdrop click:', e);
+                    }
+                });
+            }
+            
+            // 4. Registrar evento de inicialización app (desde js/app.js)
+            if (typeof window.registrarEvento === 'function') {
+                try {
+                    window.registrarEvento('app_inicializada', { 
+                        version: '1.0.0',
+                        userAgent: navigator.userAgent,
+                        url: window.location.href,
+                        timestamp: new Date().toISOString()
+                    }, 'info');
+                } catch (e) {
+                    console.warn('[PADRE] Error registrando evento app_inicializada:', e);
+                }
+            }
+            
         }, { once: true });
     </script>
     
@@ -1735,7 +1865,7 @@
             aria-hidden="true"
             style="position:fixed; right:1vw; top:2vh; height:120px; width:320px; z-index:400; pointer-events:none; display:block; visibility:visible;"
             onload="handleIframeLoad('sistema-ui')" onerror="handleIframeError('sistema-ui', event)"
-            srcdoc="<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Sistema UI - Notificaciones</title><style>body{font-family:Arial,sans-serif;font-size:14px;margin:0;padding:8px;}#notificaciones{max-height:100%;overflow-y:auto;} .notif{border-radius:6px;padding:8px;margin-bottom:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.1);} .notif.info{border-left:6px solid #2196F3;} .notif.warn{border-left:6px solid #FFC107;} .notif.error{border-left:6px solid #F44336;}</style></head><body><h3>Notificaciones</h3><div id=\"notificaciones\"></div><script>window.addEventListener('message',function(event){try{var data=event.data||{};if(!data||!data.tipo)return;if(data.tipo!=='SISTEMA.NOTIFICACION'&&data.tipo!=='TIPO_UI_NOTIFICACION')return;var n=document.getElementById('notificaciones');var d=document.createElement('div');d.className='notif '+(data.datos&&data.datos.tipo||'info');var t=data.datos&&data.datos.titulo||'Notificación';var m=data.datos&&data.datos.mensaje||'';d.innerHTML='<strong>'+t+'</strong><div>'+m+'</div><small><em>'+data.origen+'</em></small>';n.insertBefore(d,n.firstChild);}catch(e){console.warn('sistema-ui error parsing message',e);}});</script></body></html>"></iframe>
+            srcdoc="<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Sistema UI - Notificaciones</title><style>body{font-family:Arial,sans-serif;font-size:14px;margin:0;padding:8px;}#notificaciones{max-height:100%;overflow-y:auto;} .notif{border-radius:6px;padding:8px;margin-bottom:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.1);} .notif.info{border-left:6px solid #2196F3;} .notif.warn{border-left:6px solid #FFC107;} .notif.error{border-left:6px solid #F44336;}</style></head><body><h3>Notificaciones</h3><div id=\"notificaciones\"></div><script>window.addEventListener('message',function(event){try{var data=event.data||{};if(!data||!data.tipo)return;if(data.tipo!=='SISTEMA.NOTIFICACION'&&data.tipo!=='UI.NOTIFICACION')return;var n=document.getElementById('notificaciones');var d=document.createElement('div');d.className='notif '+(data.datos&&data.datos.tipo||'info');var t=data.datos&&data.datos.titulo||'Notificación';var m=data.datos&&data.datos.mensaje||'';d.innerHTML='<strong>'+t+'</strong><div>'+m+'</div><small><em>'+data.origen+'</em></small>';n.insertBefore(d,n.firstChild);}catch(e){console.warn('sistema-ui error parsing message',e);}});</script></body></html>"></iframe>
     
     <!-- Trapezoid-shaped audio component -->
     <iframe id="hijo3" src=""
@@ -1884,11 +2014,56 @@
         
         // Carga de módulos base
         
-        // Import mensajeria first to set window.mensajeria before other modules load
-        const { inicializarMensajeria: inicializarMensajeria_S1, registrarControlador: registrarControlador_S1, enviarMensaje: enviarMensaje_S1, enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1, broadcastToCapability: broadcastToCapability_S1, hijosConCapability: hijosConCapability_S1 } = await import('./js/mensajeria.js');
+        // =====================================================
+        // PASO 1: Importar e inicializar state-manager PRIMERO
+        // Esto es crítico para que mensajeria.js pueda conectarse
+        // =====================================================
+        const { 
+            inicializarStateManager: inicializarStateManager_S1,
+            setEstadoPadre: setEstadoPadre_S1,
+            createEstadoPadreProxy: createEstadoPadreProxy_S1,
+            registrarControladorCentral: registrarControladorCentral_SM,
+            enviarMensajeCentral: enviarMensajeCentral_SM,
+            getControladoresRegistrados: getControladoresRegistrados_SM,
+            getControladoresPorTipo: getControladoresPorTipo_SM,
+            diagnosticarStateManager: diagnosticarStateManager_S1
+        } = await import('./js/state-manager.js');
         
-        // Exponer mensajeria globalmente para evitar imports duplicados
-        window.mensajeria = { inicializarMensajeria: inicializarMensajeria_S1, registrarControlador: registrarControlador_S1, enviarMensaje: enviarMensaje_S1, enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1, broadcastToCapability: broadcastToCapability_S1, hijosConCapability: hijosConCapability_S1 };
+        // Inicializar state-manager y exponer globalmente ANTES de mensajeria
+        await inicializarStateManager_S1();
+        console.log('[PADRE] State-manager inicializado correctamente');
+        
+        // =====================================================
+        // PASO 2: Importar mensajeria (ahora puede ver __vv_stateManager)
+        // NOTA: mensajeria.js ya expone window.mensajeria via exponerAPIGlobal()
+        // NO sobrescribir - usar la fuente de verdad única del módulo
+        // =====================================================
+        const mensajeriaModule = await import('./js/mensajeria.js');
+        
+        // Extraer funciones del módulo para uso local en Script 1
+        const {
+            inicializarMensajeria: inicializarMensajeria_S1, 
+            registrarControlador: registrarControlador_S1, 
+            enviarMensaje: enviarMensaje_S1, 
+            enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1, 
+            broadcastToCapability: broadcastToCapability_S1, 
+            hijosConCapability: hijosConCapability_S1, 
+            marcarScript2Listo: marcarScript2Listo_S1,
+            getControladoresRegistrados: getControladoresRegistrados_S1,
+            getControladoresPorTipo: getControladoresPorTipo_S1,
+            registrarControladorCentral: registrarControladorCentral_S1,
+            enviarMensajeCentral: enviarMensajeCentral_S1
+        } = mensajeriaModule;
+        
+        // Verificar que window.mensajeria existe (creado por mensajeria.js)
+        if (!window.mensajeria) {
+            console.error('[PADRE] CRÍTICO: window.mensajeria no fue creado por mensajeria.js');
+            throw new Error('Sistema de mensajería no inicializado correctamente');
+        }
+        
+        console.log('[PADRE] window.mensajeria disponible (fuente: mensajeria.js)');
+        
+        // El evento mensajeriaReady se dispara más adelante tras inicialización completa
         
         const [
 
@@ -1932,8 +2107,8 @@
 
         ]);
 
-        // Exponer mensajeria globalmente para evitar imports duplicados
-        window.mensajeria = { inicializarMensajeria: inicializarMensajeria_S1, registrarControlador: registrarControlador_S1, enviarMensaje: enviarMensaje_S1, enviarMensajeConConfirmacion: enviarMensajeConConfirmacion_S1, broadcastToCapability: broadcastToCapability_S1, hijosConCapability: hijosConCapability_S1 };
+        // Nota: window.mensajeria ya fue asignado arriba con todas las funciones centralizadas
+        // No sobrescribir aquí para evitar perder las funciones de state-manager
 
         // =====================================================================
         // DATOS CENTRALIZADOS DE AVENTURAS (coordenadas, audios, retos, índice)
@@ -2001,8 +2176,22 @@
 
         // Asegurar que la mensajería se inicialice en el padre antes de usar funciones
         try {
-            await window.mensajeria.inicializarMensajeria({ rol: 'padre', componenteId: 'padre', debug: false });
-            console.info('[PADRE] Mensajería inicializada como padre');
+            // Pasar referencia al stateManager para conexión directa
+            await window.mensajeria.inicializarMensajeria({ 
+                rol: 'padre', 
+                componenteId: 'padre', 
+                debug: false,
+                stateManager: window.__vv_stateManager  // Conexión directa con state-manager
+            });
+            console.info('[PADRE] Mensajería inicializada como padre con conexión a state-manager');
+            
+            // Disparar evento ÚNICO para notificar que mensajeria está completamente lista
+            window.dispatchEvent(new CustomEvent('mensajeriaReady'));
+            
+            // Procesar controladores que estaban en cola esperando la mensajería
+            if (typeof window.procesarControladoresPendientes === 'function') {
+                window.procesarControladoresPendientes();
+            }
         } catch (e) {
             console.warn('[PADRE] No se pudo inicializar mensajería automáticamente:', e && e.message ? e.message : e);
         }
@@ -2260,8 +2449,7 @@
         window.addEventListener('orientationchange', toggleRotationMessage);
         window.addEventListener('resize', toggleRotationMessage);
         
-        // Inicializar al cargar
-        document.addEventListener('DOMContentLoaded', toggleRotationMessage);
+        // toggleRotationMessage se ejecutará en el DOMContentLoaded unificado
 
         // ============================================================
         // ESTADO GLOBAL DE LA APLICACIÓN (compartido con Script 2)
@@ -2345,6 +2533,18 @@
             // Pendientes por elemento (padreId): { llegada: bool, audio: bool, reto: bool, timestamp }
             pendingCompleciones: {}
         };
+
+        // Sincronizar estadoPadre con state-manager (ya inicializado en Script 1)
+        (async () => {
+            try {
+                // Usar las funciones ya importadas para sincronizar el estadoPadre
+                await setEstadoPadre_S1(window.estadoPadre);
+                createEstadoPadreProxy_S1();
+                console.log('Estado padre sincronizado con state-manager para prevenir race conditions');
+            } catch (error) {
+                console.error('Error sincronizando estadoPadre con state-manager:', error);
+            }
+        })();
 
         // Alias global para compatibilidad (sin const para evitar redeclaración en Script 2)
         // eslint-disable-next-line no-undef
@@ -2574,9 +2774,37 @@
                         return;
                     }
                     window.__CONTROLADOR_REGISTRADOS.add(tipo);
-                    return registrarControlador_S1(tipo, handler, opciones);
+                    
+                    // Si registrarControlador_S1 no está disponible, usar mensajeria directa como fallback
+                    if (typeof registrarControlador_S1 === 'function') {
+                        return registrarControlador_S1(tipo, handler, opciones);
+                    } else if (window.mensajeria && window.mensajeria.registrarControlador) {
+                        return window.mensajeria.registrarControlador(tipo, handler, opciones);
+                    } else {
+                        // Como último recurso, guardar en cola para registrar después
+                        if (!window.__CONTROLADORES_PENDIENTES) window.__CONTROLADORES_PENDIENTES = [];
+                        window.__CONTROLADORES_PENDIENTES.push({tipo, handler, opciones});
+                        (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Controlador encolado: ${tipo} (mensajería no disponible)`);
+                        return;
+                    }
                 } catch (e) {
                     (window.logger || console).error(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Error registrando controlador seguro ${tipo}:`, e && e.message);
+                }
+            };
+            
+            // Función para procesar controladores en cola cuando mensajería esté lista
+            window.procesarControladoresPendientes = function() {
+                if (window.__CONTROLADORES_PENDIENTES && window.__CONTROLADORES_PENDIENTES.length > 0) {
+                    const pendientes = window.__CONTROLADORES_PENDIENTES.splice(0);
+                    (window.logger || console).info(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Procesando ${pendientes.length} controladores pendientes`);
+                    
+                    for (const {tipo, handler, opciones} of pendientes) {
+                        try {
+                            window.registrarControladorSeguro(tipo, handler, opciones);
+                        } catch (e) {
+                            (window.logger || console).error(`${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} Error procesando controlador pendiente ${tipo}:`, e && e.message);
+                        }
+                    }
                 }
             };
         }
@@ -2627,6 +2855,139 @@
         };
 
         logger.info(`${CONFIG_PADRE.LOG_PREFIX} Script 1: Configuración y estado inicializados`);
+
+        // ===== HANDLER GLOBAL: Recibir manifest de manejadores desde hijos (migration) =====
+        try {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES, async (mensaje) => {
+                const logPrefix2 = `${CONFIG_PADRE.LOG_PREFIX}[HIJO_MANEJADORES]`;
+                try {
+                    const hijoOrigen = mensaje?.origen;
+                    const manejadores = (mensaje && mensaje.datos && mensaje.datos.manejadores) || [];
+                    const pedidoId = mensaje?.datos?.pedidoId || null;
+
+                    if (!hijoOrigen) {
+                        logger.warn(`${logPrefix2} Mensaje HIJO_MANEJADORES sin campo origen, omitiendo`);
+                        return;
+                    }
+
+                    if (!window.estadoPadre) window.estadoPadre = {};
+                    if (!window.estadoPadre.estadoHijos || !window.estadoPadre.estadoHijos.has(hijoOrigen)) {
+                        logger.warn(`${logPrefix2} Origen ${hijoOrigen} no registrado como hijo preparado; revisar seguridad`);
+                        // continue processing but mark with a flag
+                    }
+
+                    // Sanitize manifest entries
+                    const saneManejadores = [];
+                    for (const m of manejadores) {
+                        if (m && typeof m.tipo === 'string') saneManejadores.push(m);
+                        else logger.warn(`${logPrefix2} Manifest entry inválido, omitiendo: ${JSON.stringify(m)}`);
+                    }
+
+                    window.estadoPadre = window.estadoPadre || {};
+                    window.estadoPadre.manejadoresRegistrados = window.estadoPadre.manejadoresRegistrados || new Map();
+                    const aplicados = [];
+
+                    for (const m of saneManejadores) {
+                        const tipo = m.tipo;
+                        if (!window.estadoPadre.manejadoresRegistrados.has(tipo)) {
+                            const proxy = async (msg) => {
+                                try {
+                                    if (typeof enviarMensaje_S1 === 'function') {
+                                        await enviarMensaje_S1({ destino: hijoOrigen, tipo: tipo, origen: getPadreId(), datos: msg.datos || {} });
+                                    }
+                                } catch (err) { logger.warn(`${logPrefix2} Error proxy reenviando ${tipo} a ${hijoOrigen}:`, err && err.message); }
+                            };
+                            try {
+                                registrarControladorSeguro(tipo, proxy);
+                                window.estadoPadre.manejadoresRegistrados.set(tipo, hijoOrigen);
+                                aplicados.push(tipo);
+                                logger.info(`${logPrefix2} Proxy creado para ${tipo} -> ${hijoOrigen}`);
+                            } catch (err) { logger.warn(`${logPrefix2} Error registrando proxy para ${tipo}:`, err && err.message); }
+                        } else {
+                            logger.debug(`${logPrefix2} Tipo ${tipo} ya registrado, omitiendo`);
+                        }
+                    }
+
+                    // Enviar ACK de aplicación de manejadores
+                    try {
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({ destino: hijoOrigen, tipo: TIPOS_MENSAJE.SISTEMA.PADRE_APLICA_MANEJADORES, origen: getPadreId(), datos: { pedidoId, aplicados, timestamp: Date.now() } });
+                            logger.info(`${logPrefix2} PADRE_APLICA_MANEJADORES enviado a ${hijoOrigen}`);
+                        }
+                    } catch (err) { logger.warn(`${logPrefix2} Error enviando PADRE_APLICA_MANEJADORES a ${hijoOrigen}:`, err && err.message); }
+
+                    // Resolver petición pendiente si existe
+                    try {
+                        if (pedidoId && window.estadoPadre && window.estadoPadre.pendingMigraciones && window.estadoPadre.pendingMigraciones.has(pedidoId)) {
+                            const pending = window.estadoPadre.pendingMigraciones.get(pedidoId);
+                            if (pending && pending.hijoId === hijoOrigen && typeof pending.resolve === 'function') {
+                                pending.resolved = true;
+                                try { pending.resolve({ pedidoId, manejadores, aplicados, timestamp: Date.now() }); } catch (e) { logger.warn(`${logPrefix2} Error al invocar resolve de pending:`, e && e.message); }
+                                logger.info(`${logPrefix2} Pending migracion resuelta pedidoId=${pedidoId}`);
+                            } else if (pending) {
+                                logger.warn(`${logPrefix2} Pending migracion pedidoId=${pedidoId} no coincide con hijoOrigen esperado: ${pending.hijoId}`);
+                            }
+                        }
+                    } catch (err) { logger.warn(`${logPrefix2} Error resolviendo pending migracion pedidoId=${pedidoId}:`, err && err.message); }
+
+                } catch (err) { logger.error('[PADRE][HIJO_MANEJADORES] Error procesando manifest:', err && err.message); }
+            });
+        } catch (err) { logger.warn('[PADRE] No se pudo registrar handler HIJO_MANEJADORES:', err && err.message); }
+
+        // ======= Helpers para migración con retries y telemetría =======
+        const MIGRATION_DEFAULT_TIMEOUT_MS = (TTL_LIMPIEZA && TTL_LIMPIEZA.MENSAJERIA && TTL_LIMPIEZA.MENSAJERIA.MOVIL) ? TTL_LIMPIEZA.MENSAJERIA.MOVIL : 400;
+        const MIGRATION_MAX_RETRIES = 2;
+
+        window.estadoPadre = window.estadoPadre || {};
+        window.estadoPadre.telemetria = window.estadoPadre.telemetria || { migraciones: { total:0, success:0, failed:0, retries:0, totalResponseTime:0 } };
+        window.estadoPadre.pendingMigraciones = window.estadoPadre.pendingMigraciones || new Map();
+
+        async function solicitarManejadoresConRetry(hijoId, opts = {}) {
+            const timeoutMs = opts.timeoutMs || MIGRATION_DEFAULT_TIMEOUT_MS;
+            const maxRetries = (typeof opts.maxRetries === 'number') ? opts.maxRetries : MIGRATION_MAX_RETRIES;
+            const pedidoId = opts.pedidoId || generarIdUnico();
+
+            window.estadoPadre.telemetria.migraciones.total++;
+            return new Promise(async (resolve, reject) => {
+                let attempts = 0;
+                let timer = null;
+
+                const attemptSend = async () => {
+                    attempts++;
+                    const entry = window.estadoPadre.pendingMigraciones.get(pedidoId) || {};
+                    entry.attempts = attempts;
+                    window.estadoPadre.pendingMigraciones.set(pedidoId, entry);
+
+                    try {
+                        logger.info && logger.info(`[PADRE][MIGRATION] solicitarManejadoresConRetry attempt=${attempts} pedidoId=${pedidoId} hijo=${hijoId} timeoutMs=${timeoutMs}`);
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({ destino: hijoId, tipo: TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, origen: getPadreId(), datos: { pedidoId, timeoutMs } });
+                            logger.info(`[PADRE][MIGRATION] PADRE_PIDE_MANEJADORES enviado a ${hijoId} pedidoId=${pedidoId} intento=${attempts}`);
+                        }
+                    } catch (e) {
+                        logger.warn(`[PADRE][MIGRATION] Error enviando PADRE_PIDE_MANEJADORES a ${hijoId}:`, e && e.message);
+                    }
+
+                    timer = setTimeout(async () => {
+                        const pending = window.estadoPadre.pendingMigraciones.get(pedidoId);
+                        if (!pending || pending.resolved) return;
+                        if (attempts < maxRetries) {
+                            window.estadoPadre.telemetria.migraciones.retries++;
+                            await attemptSend();
+                        } else {
+                            window.estadoPadre.telemetria.migraciones.failed++;
+                            window.estadoPadre.pendingMigraciones.delete(pedidoId);
+                            reject(new Error('No response after retries'));
+                        }
+                    }, timeoutMs);
+                };
+
+                // Register resolve to be called by HIJO_MANEJADORES handler
+                window.estadoPadre.pendingMigraciones.set(pedidoId, { hijoId, attempts:0, resolve: (result)=>{ if (timer) clearTimeout(timer); window.estadoPadre.telemetria.migraciones.success++; window.estadoPadre.telemetria.migraciones.totalResponseTime += (Date.now() - (result && result.timestamp || Date.now())); try { logger && logger.info && logger.info(`[PADRE][MIGRATION] Received HIJO_MANEJADORES response for pedidoId=${pedidoId} hijo=${hijoId} manejadores=${(result && result.manejadores && result.manejadores.length) || 0}`); } catch (e) {} window.estadoPadre.pendingMigraciones.delete(pedidoId); resolve(result); }, reject });
+
+                await attemptSend();
+            });
+        }
 
         // ============================================================
         // FUNCIONES GPS CENTRALIZADAS EN EL PADRE
@@ -2722,9 +3083,10 @@
                     if (window.mensajeria && typeof window.mensajeria.esperarHijosListos === 'function') {
                         const esperar = window.mensajeria.esperarHijosListos;
                         const waitPromise = typeof esperar === 'function' ? esperar(5000) : Promise.resolve({ ready: true });
-                        const race = await Promise.race([waitPromise, new Promise(r => setTimeout(() => r({ timeout: true }), 5000))]);
+                        const dynamicTimeout = window.ajustarTimeoutPorConexion ? window.ajustarTimeoutPorConexion(5000) : 5000;
+                        const race = await Promise.race([waitPromise, new Promise(r => setTimeout(() => r({ timeout: true }), dynamicTimeout))]);
                         if (race && race.timeout) {
-                            logger.warn(`${logPrefix} Espera de hijosListos expiró (5000ms); proceder de todos modos`);
+                            logger.warn(`${logPrefix} Espera de hijosListos expiró (${dynamicTimeout}ms); proceder de todos modos`);
                         } else {
                             logger.debug(`${logPrefix} Hijos listos o settled antes de iniciar GPS`);
                         }
@@ -2831,24 +3193,7 @@
                             logger.warn(`${logPrefix} No se obtuvo posición inicial aceptable tras ${maxAttempts} intentos; intentando fallback a coordenadas de inicio (P-0)`);
                             try { typeof window.incrementarContador === 'function' && window.incrementarContador('gps.fallback_intento_hijo2'); } catch (e) { /* ignore */ }
                             try {
-                                const coordenadasResponse = await new Promise((resolve, reject) => {
-                                    const timeout = setTimeout(() => reject(new Error('Timeout solicitando coordenadas a hijo2 (fallback)')), ajustarTimeoutPorConexionSafe(5000));
-
-                                    const controladorTemporal = async (mensaje) => {
-                                        clearTimeout(timeout);
-                                        desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-                                        resolve(mensaje.datos);
-                                    };
-
-                                    registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-
-                                    enviarMensajePadre({
-                                        tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                                        origen: getPadreId(),
-                                        destino: 'hijo2',
-                                        datos: { paradaId: 'P-0', incluirMetadatos: false, contexto: 'gps_fallback' }
-                                    });
-                                });
+                                const coordenadasResponse = await solicitarCoordenadasHijo('hijo2', { paradaId: 'P-0', incluirMetadatos: false, contexto: 'gps_fallback' }, ajustarTimeoutPorConexionSafe(5000));
 
                                 if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0 && coordenadasResponse.coordenadas[0].coordenadas) {
                                     const c = coordenadasResponse.coordenadas[0].coordenadas;
@@ -3404,7 +3749,7 @@
         function registrarControladorSafe(tipo, handler, opciones) {
             try {
                 if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') return window.mensajeria.registrarControlador(tipo, handler, opciones);
-                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+                if (typeof registrarControladorSafe === 'function') return registrarControladorSafe(tipo, handler, opciones);
             } catch (e) { (window.logger || console).warn('[PADRE] registrarControladorSafe error', e && e.message); }
         }
 
@@ -3414,6 +3759,54 @@
                 if (typeof desregistrarControlador === 'function') return desregistrarControlador(tipo, handler);
             } catch (e) { (window.logger || console).warn('[PADRE] desregistrarControladorSeguro error', e && e.message); }
         }
+
+        // Global map to correlate DATOS.COORDENADAS_PARADAS_RESPONSE by pedidoId
+        try {
+            if (typeof window !== 'undefined') {
+                window.__coordResponseWaiters = window.__coordResponseWaiters || new Map();
+
+                // Helper: solicita coordenadas a un hijo y devuelve la respuesta correlacionada por pedidoId
+                window.solicitarCoordenadasHijo = async function(destino, payload, timeoutMs) {
+                    timeoutMs = typeof timeoutMs === 'number' ? timeoutMs : ajustarTimeoutPorConexionSafe(5000);
+                    const pedidoId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+                    return new Promise((resolve, reject) => {
+                        const to = setTimeout(() => {
+                            const entry = window.__coordResponseWaiters.get(pedidoId);
+                            if (entry) { window.__coordResponseWaiters.delete(pedidoId); try { entry.reject(new Error('Timeout solicitando coordenadas')); } catch(_){} }
+                            reject(new Error('Timeout solicitando coordenadas'));
+                        }, timeoutMs);
+                        window.__coordResponseWaiters.set(pedidoId, { resolve, reject, timeout: to });
+                        try {
+                            enviarMensajePadre({
+                                tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
+                                origen: (typeof getPadreId === 'function') ? getPadreId() : undefined,
+                                destino: destino,
+                                datos: Object.assign({}, payload, { pedidoId })
+                            });
+                        } catch (e) {
+                            clearTimeout(to);
+                            window.__coordResponseWaiters.delete(pedidoId);
+                            reject(e);
+                        }
+                    });
+                };
+
+                // Persistent handler that routes responses to waiting promises by pedidoId
+                try {
+                    registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, (mensaje) => {
+                        try {
+                            const pid = mensaje && mensaje.datos && mensaje.datos.pedidoId;
+                            if (!pid) return;
+                            const entry = window.__coordResponseWaiters.get(pid);
+                            if (!entry) return;
+                            clearTimeout(entry.timeout);
+                            try { entry.resolve(mensaje.datos); } catch (e) { try { entry.reject(e); } catch(_){} }
+                            window.__coordResponseWaiters.delete(pid);
+                        } catch (e) { (window.logger || console).warn && (window.logger || console).warn('[PADRE] Error en handler global COORDENADAS_PARADAS_RESPONSE', e && e.message); }
+                    });
+                } catch (e) { /* ignore if registration fails early */ }
+            }
+        } catch (e) { /* ignore global install errors */ }
 
         try {
             if (typeof window !== 'undefined') {
@@ -4004,7 +4397,21 @@
 
                 logger.success(`${logPrefix} ✅ ${hijoId} marcado como preparado`);
 
-                // Enviar PADRE_DATOS para completar el handshake
+                // Solicitar manifest (manejadores) al hijo para migración segura con retries
+                try {
+                    const pedidoId = generarIdUnico();
+                    try {
+                        const timeoutMs = (TTL_LIMPIEZA && TTL_LIMPIEZA.MENSAJERIA && TTL_LIMPIEZA.MENSAJERIA.MOVIL) ? TTL_LIMPIEZA.MENSAJERIA.MOVIL : 400;
+                        try {
+                            const resultado = await solicitarManejadoresConRetry(hijoId, { pedidoId, timeoutMs, maxRetries: 2 });
+                            logger.info(`${logPrefix} Migración OK pedidoId=${pedidoId}, aplicados=${JSON.stringify(resultado && resultado.aplicados || [])}`);
+                        } catch (err) {
+                            logger.warn(`${logPrefix} Migración fallida pedidoId=${pedidoId}:`, err && err.message);
+                        }
+                    } catch (e) { logger.warn(`${logPrefix} No se pudo iniciar migración a ${hijoId}:`, e && e.message); }
+                } catch (e) { logger.warn(`${logPrefix} Error construyendo pedido de manejadores:`, e && e.message); }
+
+                // Enviar PADRE_DATOS para completar el handshake (sigue siendo necesario)
                 try {
                     if (typeof enviarMensaje_S1 === 'function') {
                         await enviarMensaje_S1({
@@ -4646,21 +5053,19 @@
         logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ Controladores CRÍTICOS registrados (Script 1)`);
 
         // Función para carga secuencial de iframes
-        async function cargarIframeSecuencial() {
+        // ============================================================
+        // FUNCIÓN: CARGAR SOLO IFRAME DE SELECCIÓN
+        // Se llama durante startup - carga SOLO En-busca-del-tesoro.html
+        // ============================================================
+        async function cargarIframeSoloSeleccion() {
             // Asegurarse de que el Map estadoHijos existe
             if (!window.estadoPadre.estadoHijos) {
                 window.estadoPadre.estadoHijos = new Map();
             }
 
             const iframes = [
-                // Página de selección - se carga primero y visible
-                { id: 'seleccion', src: 'En-busca-del-tesoro.html', mostrarInicial: true },
-                { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
-                { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
-                { id: 'hijo2', src: 'coordenadas-hijo2.html' },
-                { id: 'hijo3', src: 'audio-hijo3.html' },
-                { id: 'hijo4', src: 'retos-hijo4.html' }
-                // hijo5 se carga después de seleccionar aventura
+                // SOLO la página de selección - se carga primero y visible
+                { id: 'seleccion', src: 'En-busca-del-tesoro.html', mostrarInicial: true }
             ];
 
             logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
@@ -4704,7 +5109,7 @@
                             clearTimeout(timeoutFallback);
                             iframeEl.removeEventListener('load', onLoad);
                             iframeEl.removeEventListener('error', onError);
-                            logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Error cargando ${iframe.id}, continuando...`);
+                            logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error de carga para ${iframe.id}:`, err);
                             resolve(); // Continuar incluso si hay error (se manejará después)
                         };
 
@@ -4712,8 +5117,28 @@
                         iframeEl.addEventListener('error', onError, { once: true });
 
                         // Iniciar la carga DESPUÉS de registrar los listeners
+                        logger.info(`${CONFIG_PADRE.LOG_PREFIX} Asignando src a ${iframe.id}: ${iframe.src}`);
                         iframeEl.src = iframe.src;
                     });
+
+                    // Solicitar migración de manejadores al hijo antes de enviar PADRE_LISTO
+                    try {
+                        logger.info(`[PADRE][MIGRATION] Esperando inicialización del iframe ${iframe.id}...`);
+                        // Agregar delay para permitir inicialización completa del iframe
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        logger.info(`[PADRE][MIGRATION] Solicitando manejadores a ${iframe.id}`);
+                        await solicitarManejadoresConRetry(iframe.id, { timeoutMs: MIGRATION_DEFAULT_TIMEOUT_MS, maxRetries: MIGRATION_MAX_RETRIES });
+                        logger.info(`[PADRE][MIGRATION] Manejadores recibidos/ACK de ${iframe.id}`);
+                    } catch (e) {
+                        logger.warn(`[PADRE][MIGRATION] No response a PADRE_PIDE_MANEJADORES de ${iframe.id}:`, e && e.message);
+                        // fallback diagnóstico: listar controladores centralizados para HIJO_LISTO
+                        try {
+                            if (window.__vv_stateManager && typeof window.__vv_stateManager.getControladoresPorTipo === 'function') {
+                                const central = await window.__vv_stateManager.getControladoresPorTipo(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO);
+                                console.log(`${CONFIG_PADRE.LOG_PREFIX} [MIGRATION][DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
+                            }
+                        } catch (e2) { /* ignore */ }
+                    }
 
                     // Enviar PADRE_LISTO
                     logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
@@ -4728,11 +5153,13 @@
                                 modo: window.estadoPadre.modo?.actual || MODOS.CASA
                             }
                         });
+                        logger.info(`${CONFIG_PADRE.LOG_PREFIX} PADRE_LISTO enviado a ${iframe.id}`);
                     } else {
-                        logger.warn(`enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframe.id}`);
+                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframe.id}`);
                     }
 
                     // Esperar a que el hijo esté listo
+                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Esperando HIJO_LISTO de ${iframe.id}...`);
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
@@ -4741,6 +5168,7 @@
                         const check = () => {
                             if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
                                 clearTimeout(timeout);
+                                logger.info(`${CONFIG_PADRE.LOG_PREFIX} HIJO_LISTO recibido de ${iframe.id}`);
                                 resolve();
                             } else {
                                 setTimeout(check, 100);
@@ -4757,7 +5185,23 @@
                     // Si un hijo falla, registrarlo pero continuar con los demás
                     logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error cargando ${iframe.id}: ${error.message}`);
                     logger.warn(`${CONFIG_PADRE.LOG_PREFIX} Continuando con siguiente hijo...`);
-                    
+
+                    // DEBUG: Dump central handlers and estadoPadre for diagnosis
+                    try {
+                        (async () => {
+                            try {
+                                if (window.__vv_stateManager && typeof window.__vv_stateManager.getControladoresPorTipo === 'function') {
+                                    const central = await window.__vv_stateManager.getControladoresPorTipo(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO);
+                                    console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
+                                }
+                            } catch (e) {
+                                console.warn(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] No se pudo consultar state-manager:`, e && e.message);
+                            }
+                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosInicializados:`, Array.from(window.estadoPadre.hijosInicializados || new Set())); } catch (e) {}
+                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosListos:`, Array.from(window.estadoPadre.hijosListos || new Set())); } catch (e) {}
+                        })();
+                    } catch (e) { /* ignore debug errors */ }
+
                     // Rastrear hijo fallido para reconexión posterior
                     hijosFallidos.push({
                         id: iframe.id,
@@ -4765,7 +5209,7 @@
                         error: error.message,
                         timestamp: Date.now()
                     });
-                    
+
                     // Inicializar estado del hijo fallido
                     if (!window.estadoPadre.estadoHijos.has(iframe.id)) {
                         window.estadoPadre.estadoHijos.set(iframe.id, {
@@ -4997,22 +5441,14 @@
                 // 2. Pequeña pausa para asegurar que el mapa esté completamente renderizado
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                // 3. Cargar iframes secuencialmente
-                logger.info(`${logPrefix} Iniciando carga de iframes...`);
-                updateLoadingStatus('Cargando componentes...', 'Inicializando iframes de la aplicación');
-                await cargarIframeSecuencial();
-                logger.success(`${logPrefix} ✅ Iframes cargados`);
+                // 3. Cargar SOLO iframe de selección (En-busca-del-tesoro.html)
+                logger.info(`${logPrefix} Iniciando carga de iframe de selección...`);
+                updateLoadingStatus('Cargando componentes...', 'Inicializando pantalla de selección');
+                await cargarIframeSoloSeleccion();
+                logger.success(`${logPrefix} ✅ Iframe de selección cargado - esperando selección de aventura`);
                 
-                // 4. 🌍 ACTIVAR GPS DESPUÉS de cargar iframes (evitar race condition)
-                logger.info(`${logPrefix} 🚀 Activando GPS desde el inicio (ambos modos)...`);
-                updateLoadingStatus('Activando GPS...', 'Solicitando permisos de ubicación');
-                try {
-                    await activarGPS();
-                    logger.success(`${logPrefix} ✅ GPS activado correctamente`);
-                } catch (gpsError) {
-                    logger.error(`${logPrefix} ❌ Error activando GPS inicial:`, gpsError);
-                    // Continuar aunque GPS falle (no es crítico para la carga)
-                }
+                // GPS y resto de iframes se cargarán DESPUÉS de seleccionar aventura
+                logger.info(`${logPrefix} ⏳ GPS y componentes adicionales se cargarán tras seleccionar aventura...`);
                 
                 // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
                 logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
@@ -5236,8 +5672,141 @@
             }
         }
 
+        // ============================================================
+        // FUNCIÓN: CARGAR RESTO DE IFRAMES
+        // Se llama después de AVENTURA_SELECCIONADA
+        // Carga todos excepto 'seleccion' e 'hijo5' (que se carga con cargarHijoCasa)
+        // ============================================================
+        async function cargarRestoDeiframes() {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CARGAR_RESTO]`;
+            logger.info(`${logPrefix} 🚀 Iniciando carga de iframes restantes...`);
+
+            // Asegurarse de que el Map estadoHijos existe
+            if (!window.estadoPadre.estadoHijos) {
+                window.estadoPadre.estadoHijos = new Map();
+            }
+
+            const iframes = [
+                // Cargar todos EXCEPTO seleccion (ya está cargado) e hijo5 (se carga con cargarHijoCasa)
+                { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                { id: 'hijo3', src: 'audio-hijo3.html' },
+                { id: 'hijo4', src: 'retos-hijo4.html' }
+            ];
+            
+            const hijosFallidos = [];
+
+            for (const iframe of iframes) {
+                logger.info(`${logPrefix} Cargando iframe: ${iframe.id}`);
+                
+                try {
+                    const iframeEl = document.getElementById(iframe.id);
+                    if (!iframeEl) {
+                        throw new Error(`Iframe ${iframe.id} no encontrado en DOM`);
+                    }
+
+                    // Ocultar inicialmente (se mostrarán cuando sea necesario)
+                    iframeEl.style.display = 'none';
+                    iframeEl.style.visibility = 'hidden';
+
+                    // Esperar a que el iframe cargue
+                    await new Promise((resolve, reject) => {
+                        const timeoutFallback = setTimeout(() => {
+                            logger.warn(`${logPrefix} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
+                            resolve();
+                        }, ajustarTimeoutPorConexion_S1(10000));
+
+                        const onLoad = () => {
+                            clearTimeout(timeoutFallback);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.info(`${logPrefix} ✅ ${iframe.id} cargado`);
+                            resolve();
+                        };
+
+                        const onError = (err) => {
+                            clearTimeout(timeoutFallback);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.error(`${logPrefix} ❌ Error de carga para ${iframe.id}:`, err);
+                            resolve();
+                        };
+
+                        iframeEl.addEventListener('load', onLoad, { once: true });
+                        iframeEl.addEventListener('error', onError, { once: true });
+
+                        logger.info(`${logPrefix} Asignando src a ${iframe.id}: ${iframe.src}`);
+                        iframeEl.src = iframe.src;
+                    });
+
+                    // Solicitar manejadores
+                    try {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await solicitarManejadoresConRetry(iframe.id, { timeoutMs: MIGRATION_DEFAULT_TIMEOUT_MS, maxRetries: MIGRATION_MAX_RETRIES });
+                    } catch (e) {
+                        logger.warn(`${logPrefix} No response a PADRE_PIDE_MANEJADORES de ${iframe.id}:`, e && e.message);
+                    }
+
+                    // Enviar PADRE_LISTO
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            destino: iframe.id,
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
+                            origen: CONFIG_PADRE.ID,
+                            datos: {
+                                version: CONFIG_PADRE.VERSION,
+                                timestamp: new Date().toISOString(),
+                                modo: window.estadoPadre.modo?.actual || MODOS.CASA
+                            }
+                        });
+                    }
+
+                    // Esperar HIJO_LISTO
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
+                        }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
+
+                        const check = () => {
+                            if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
+                                clearTimeout(timeout);
+                                resolve();
+                            } else {
+                                setTimeout(check, 100);
+                            }
+                        };
+                        check();
+                    });
+
+                    logger.success(`${logPrefix} ✅ ${iframe.id} listo y confirmado`);
+
+                } catch (error) {
+                    logger.error(`${logPrefix} ❌ Error cargando ${iframe.id}: ${error.message}`);
+                    hijosFallidos.push({ id: iframe.id, error: error.message });
+                }
+            }
+
+            if (hijosFallidos.length > 0) {
+                logger.warn(`${logPrefix} ⚠️ ${hijosFallidos.length} iframes fallaron:`, hijosFallidos);
+            } else {
+                logger.success(`${logPrefix} ✅ Todos los iframes cargados correctamente`);
+            }
+
+            // 🌍 ACTIVAR GPS DESPUÉS de cargar iframes
+            logger.info(`${logPrefix} 🚀 Activando GPS...`);
+            try {
+                await activarGPS();
+                logger.success(`${logPrefix} ✅ GPS activado correctamente`);
+            } catch (gpsError) {
+                logger.error(`${logPrefix} ❌ Error activando GPS:`, gpsError);
+            }
+        }
+
         // Exponer funciones a window para debugging
-        window.cargarIframeSecuencial = cargarIframeSecuencial;
+        window.cargarIframeSoloSeleccion = cargarIframeSoloSeleccion;
+        window.cargarRestoDeiframes = cargarRestoDeiframes;
+        window.cargarIframeSecuencial = cargarIframeSoloSeleccion; // Backward compatibility
         window.cargarHijoCasa = cargarHijoCasa;
         window.waitForLeafletAndInitialize = waitForLeafletAndInitialize;
         
@@ -5361,7 +5930,7 @@
         // ============================================================
         // Movido a Script 1 para evitar warning "Mensaje no reconocido"
         // cuando hijo5 envía el mensaje antes de que Script 2 cargue
-        registrarControlador(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
+        registrarControladorSafe(TIPOS_MENSAJE.NAVEGACION.SOLICITAR_DATOS_PARADAS, async (mensaje) => {
             const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[NAVEGACION.SOLICITAR_DATOS_PARADAS][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -5430,9 +5999,11 @@
         await import('./js/suppress-warnings.js');
         
         const loggerScript2 = (await import('./js/logger.js')).default;
-        const { inicializarMonitoreo: inicializarMonitoreo_S2 } = await import('./js/monitoreo.js');
+        // inicializarMonitoreo ya importado en Script 1 como inicializarMonitoreo_S1
         const { CONFIG: CONFIG_S2 } = await import('./js/config.js');
         
+        
+        // mensajeria.js ya importado en Script 1 - usar window.mensajeria
         const { registrarControlador: registrarControlador_S2, enviarMensaje: enviarMensaje_S2 } = window.mensajeria;
         const { manejarCambioModo: manejarCambioModo_S2, actualizarInterfazModo: actualizarInterfazModo_S2, enviarCambioModo: enviarCambioModo_S2, notificarError: notificarError_S2 } = await import('./js/app.js');
         const { invalidarTamañoMapa, diagnosticarMapa, manejarGPSDesactivar, setMapView, dibujarPolylineNavegacion, actualizarMarcadorUsuario, limpiarMarcadorUsuario, limpiarPolylineNavegacion, inicializarServicioMapa: inicializarServicioMapa_S2 } = await import('./js/funciones-mapa.js');
@@ -5622,29 +6193,7 @@
                 const padreId = pendKey;
                 const paradaId = (elemento && (elemento.parada_id || elemento.tramo_id)) || String(pendKey).replace(/^padre-/, '');
                 const timeoutMs = (window.Config && window.Config.PENDING && window.Config.PENDING.CLEANUP_INTERVAL_MS) ? Math.max(window.Config.PENDING.CLEANUP_INTERVAL_MS * 0.5, 2000) : 5000;
-                const coordsResponse = await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
-                        reject(new Error('Timeout solicitando coordenadas'));
-                    }, timeoutMs);
-
-                    const temporal = async (mensaje) => {
-                        clearTimeout(timeout);
-                        try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal); } catch (e) {}
-                        resolve(mensaje.datos);
-                    };
-
-                    try {
-                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, temporal);
-                        // Request coordinates from hijo2, making sure `origen` is set to the local padre ID
-                        enviarMensajePadre({
-                            tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                            origen: getPadreId(),
-                            destino: 'hijo2',
-                            datos: { paradaId: paradaId, padreId }
-                        }).catch(() => {});
-                    } catch (e) { clearTimeout(timeout); reject(e); }
-                }).catch(err => null);
+                const coordsResponse = await solicitarCoordenadasHijo('hijo2', { paradaId: paradaId, padreId }, timeoutMs).catch(err => null);
 
                     if (coordsResponse) {
                     // Normalize: coordsResponse might be array or object
@@ -5976,6 +6525,8 @@
             }
         }
 
+        // Usar window.CONFIG_PADRE ya que CONFIG_PADRE no está en scope local de Script 2
+        const CONFIG_PADRE = window.CONFIG_PADRE || { LOG_PREFIX: '[PADRE]', ID: 'padre' };
         logger.info(`${CONFIG_PADRE.LOG_PREFIX} Inicializando controladores del padre...`);
 
         // Controladores SISTEMA registrados en Script 1: CAMBIO_MODO, ESTADO, HEARTBEAT, APLICACION_INICIALIZADA
@@ -6718,31 +7269,7 @@
                         logger.warn(`${logPrefix} Parada ${paradaActual} no encontrada o sin coordenadas en padre; solicitando a hijo2...`);
 
                         try {
-                                const coordenadasResponse = await new Promise((resolve, reject) => {
-                                const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
-                                    reject(new Error('Timeout solicitando coordenadas a hijo2'));
-                                }, ajustarTimeoutPorConexionSafe(5000));
-
-                                const controladorTemporal = async (mensaje) => {
-                                    clearTimeout(timeout);
-                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-                                    resolve(mensaje.datos);
-                                };
-
-                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-
-                                enviarMensajePadre({
-                                    tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                                    origen: getPadreId(),
-                                    destino: 'hijo2',
-                                    datos: {
-                                        paradaId: paradaActual,
-                                        padreId: `padre-${paradaActual}`,
-                                        incluirMetadatos: false
-                                    }
-                                });
-                            });
+                                const coordenadasResponse = await solicitarCoordenadasHijo('hijo2', { paradaId: paradaActual, padreId: `padre-${paradaActual}`, incluirMetadatos: false }, ajustarTimeoutPorConexionSafe(5000));
 
                             if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0 && coordenadasResponse.coordenadas[0].coordenadas) {
                                 const c = coordenadasResponse.coordenadas[0].coordenadas;
@@ -6853,33 +7380,7 @@
                             if (siguienteParada) {
                                 // Solicitar coordenadas de la siguiente parada a hijo2
                                 try {
-                                        const coordenadasResponse = await new Promise((resolve, reject) => {
-                                        const timeout = setTimeout(() => {
-                                            try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
-                                            reject(new Error('Timeout solicitando coordenadas'));
-                                        }, ajustarTimeoutPorConexionSafe(5000));
-
-                                        // Controlador temporal para respuesta
-                                        const controladorTemporal = async (mensaje) => {
-                                            clearTimeout(timeout);
-                                            desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-                                            resolve(mensaje.datos);
-                                        };
-
-                                        registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-
-                                        // Enviar solicitud
-                                        enviarMensajePadre({
-                                            tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                                            origen: getPadreId(),
-                                            destino: 'hijo2',
-                                            datos: {
-                                                paradaId: siguienteParada.parada_id || siguienteParada.tramo_id,
-                                                padreId: siguienteParada.padreid || `padre-${siguienteParada.parada_id || siguienteParada.tramo_id || siguienteParada.id}`,
-                                                incluirMetadatos: false
-                                            }
-                                        });
-                                    });
+                                        const coordenadasResponse = await solicitarCoordenadasHijo('hijo2', { paradaId: siguienteParada.parada_id || siguienteParada.tramo_id, padreId: siguienteParada.padreid || `padre-${siguienteParada.parada_id || siguienteParada.tramo_id || siguienteParada.id}`, incluirMetadatos: false }, ajustarTimeoutPorConexionSafe(5000));
                                     
                                     if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0) {
                                         const destinoCoords = coordenadasResponse.coordenadas[0].coordenadas;
@@ -7027,31 +7528,7 @@
                         // Solicitar coordenadas a hijo2
                         logger.debug(`${logPrefix} Solicitando coordenadas de ${elementoId} a hijo2...`);
                         try {
-                            const coordenadasResponse = await new Promise((resolve, reject) => {
-                                const timeout = setTimeout(() => {
-                                    try { desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal); } catch (e) {}
-                                    reject(new Error('Timeout solicitando coordenadas'));
-                                }, ajustarTimeoutPorConexionSafe(5000));
-
-                                const controladorTemporal = async (mensaje) => {
-                                    clearTimeout(timeout);
-                                    desregistrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-                                    resolve(mensaje.datos);
-                                };
-
-                                registrarControladorSafe(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE, controladorTemporal);
-
-                                enviarMensajePadre({
-                                    tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
-                                    origen: getPadreId(),
-                                    destino: 'hijo2',
-                                    datos: {
-                                        paradaId: elementoId,
-                                        padreId: `padre-${elementoId}`,
-                                        incluirMetadatos: false
-                                    }
-                                });
-                            });
+                            const coordenadasResponse = await solicitarCoordenadasHijo('hijo2', { paradaId: elementoId, padreId: `padre-${elementoId}`, incluirMetadatos: false }, ajustarTimeoutPorConexionSafe(5000));
 
                             if (coordenadasResponse && coordenadasResponse.exito && coordenadasResponse.coordenadas && Array.isArray(coordenadasResponse.coordenadas) && coordenadasResponse.coordenadas.length > 0) {
                                 coordenadasDestino = coordenadasResponse.coordenadas[0].coordenadas;
@@ -8432,6 +8909,16 @@
                     }
                 }
                 
+                // 🔥 CARGAR RESTO DE IFRAMES después de selección de aventura
+                logger.info(`${logPrefix} 🚀 Cargando resto de iframes después de selección de aventura...`);
+                try {
+                    await cargarRestoDeiframes();
+                    logger.success(`${logPrefix} ✅ Resto de iframes cargados correctamente`);
+                } catch (error) {
+                    logger.error(`${logPrefix} ❌ Error cargando resto de iframes:`, error);
+                    // Continuar aunque algunos iframes fallen
+                }
+                
                 // 🔥 CARGAR hijo5 después de selección de aventura
                 logger.info(`${logPrefix} 🚀 Cargando hijo5 después de selección de aventura...`);
                 await cargarHijoCasa();
@@ -8792,6 +9279,32 @@
             }
         });
 
+        // ============================================================
+        // CONTROLADOR: SISTEMA.HIJO_PREPARADO
+        // Recibe notificación de que un hijo completó inicialización local
+        // ============================================================
+        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO, async (mensaje) => {
+            const logPrefix = `[PADRE][HIJO_PREPARADO]`;
+            try {
+                const origen = mensaje.origen || 'desconocido';
+                logger.info(`${logPrefix} Recibido de ${origen}`);
+                
+                // Enviar ACK confirmando que padre recibió la notificación
+                await enviarMensaje_S1({
+                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                    origen: getPadreId(),
+                    destino: origen,
+                    datos: {
+                        tipoMensajeOriginal: 'SISTEMA.HIJO_PREPARADO',
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`${logPrefix} ACK enviado a ${origen}`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error procesando HIJO_PREPARADO:`, error);
+            }
+        });
+
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores Script 2 registrados`);
 
         // ============================================================
@@ -8800,7 +9313,7 @@
         // ============================================================
         (async () => {
             try {
-                const resultado = window.mensajeria.marcarScript2Listo();
+                const resultado = await window.mensajeria.marcarScript2Listo();
                 logger.info(`[SCRIPT2] ✅ Script 2 marcado como LISTO (inmediato)`, resultado);
             } catch (error) {
                 logger.error('[SCRIPT2] Error marcando Script 2 como listo:', error);
@@ -8909,6 +9422,7 @@
         const { CONFIG: CONFIG_IFRAME } = await import('./js/config.js');
         const loggerIframe = (await import('./js/logger.js')).default;
         const { coordinarAccion } = await import('./js/app.js');
+        // mensajeria.js ya importado en Script 1 - usar window.mensajeria
         const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = window.mensajeria;
         
         // Functions to manage hijo4 visibility through the centralized messaging system
@@ -9013,36 +9527,10 @@
             }
         };
         
-        // Register backdrop click handler via messaging system
-        document.addEventListener('DOMContentLoaded', async () => {
-            // NOTA: GPS se activa DESPUÉS de cargar iframes (ver ejecutarInicializacionAutomatica)
-            // para evitar race condition donde broadcasts llegan antes de que hijos estén listos
-            
-            const backdrop = document.getElementById('backdrop');
-            if (backdrop) {
-                backdrop.addEventListener('click', async function() {
-                    // Usar sistema de coordinación para manejar click en backdrop
-                    try {
-                        await coordinarAccion('backdrop_click', [{
-                            componente: 'hijo4',
-                            tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
-                            datos: {
-                                accion: 'backdrop_click',
-                                timestamp: Date.now()
-                            }
-                        }]);
-                    } catch (error) {
-                        console.error('Error coordinando backdrop click:', error);
-                        // Fallback to direct call if messaging fails
-                        window.ocultarHijo4();
-                    }
-                });
-            }
-            
-            // NOTA: El controlador UI.ACCION_USUARIO está en utils.js y maneja tanto las acciones 
-            // de modal/alerta como las acciones de iframe (mostrar-imagen, reproducir-video, backdrop_click)
-            // No duplicar aquí para evitar conflictos.
-        });
+        // NOTA: El controlador del backdrop ya se registra en el DOMContentLoaded unificado
+        // (ver líneas ~1185 del listener consolidado)
+        // No duplicar aquí para evitar conflictos.
+        
     </script>
 
     <!-- Cleanup on pagehide: removes iframes and global references to reduce memory -->
@@ -9132,6 +9620,7 @@
         // NOTA: inicializarMensajeria ya fue llamada en Script 1
         // ============================================================
         
+        // mensajeria.js ya importado en Script 1 - usar window.mensajeria
         const { enviarMensaje: enviarMensaje_S4 } = window.mensajeria;
         const { ajustarTimeoutPorConexion } = await import('./js/utils.js');
         const { TIPOS_MENSAJE: TIPOS_MENSAJE_S4, MODOS: MODOS_S4 } = await import('./js/constants.js');
@@ -9197,7 +9686,7 @@
                 for (const h of hijosCriticos) {
                     try {
                         await enviarMensaje_S4({
-                            tipo: modoInicial === MODOS.AVENTURA ? TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START : TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_PAUSE,
+                            tipo: modoInicial === MODOS_S4.AVENTURA ? TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START : TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_PAUSE,
                             origen: CONFIG_PADRE.ID,
                             destino: h,
                             datos: { timestamp: Date.now(), initial: true }
