@@ -4400,6 +4400,24 @@
 
                 logger.success(`${logPrefix} ✅ ${hijoId} marcado como preparado`);
 
+                // Enviar ACK confirmando que padre recibió la notificación HIJO_PREPARADO
+                try {
+                    if (typeof enviarMensaje_S1 === 'function') {
+                        await enviarMensaje_S1({
+                            tipo: TIPOS_MENSAJE_S1.SISTEMA.ACK,
+                            origen: getPadreId(),
+                            destino: hijoId,
+                            datos: {
+                                tipoMensajeOriginal: 'SISTEMA.HIJO_PREPARADO',
+                                timestamp: Date.now()
+                            }
+                        });
+                        logger.info(`${logPrefix} ACK enviado a ${hijoId}`);
+                    }
+                } catch (ackError) {
+                    logger.warn(`${logPrefix} Error enviando ACK a ${hijoId}:`, ackError?.message);
+                }
+
                 // Solicitar manifest (manejadores) al hijo para migración segura con retries
                 try {
                     const pedidoId = generarIdUnico();
@@ -9326,31 +9344,9 @@
             }
         });
 
-        // ============================================================
-        // CONTROLADOR: SISTEMA.HIJO_PREPARADO
-        // Recibe notificación de que un hijo completó inicialización local
-        // ============================================================
-        window.registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO, async (mensaje) => {
-            const logPrefix = `[PADRE][HIJO_PREPARADO]`;
-            try {
-                const origen = mensaje.origen || 'desconocido';
-                logger.info(`${logPrefix} Recibido de ${origen}`);
-                
-                // Enviar ACK confirmando que padre recibió la notificación
-                await enviarMensaje_S1({
-                    tipo: TIPOS_MENSAJE.SISTEMA.ACK,
-                    origen: getPadreId(),
-                    destino: origen,
-                    datos: {
-                        tipoMensajeOriginal: 'SISTEMA.HIJO_PREPARADO',
-                        timestamp: Date.now()
-                    }
-                });
-                logger.info(`${logPrefix} ACK enviado a ${origen}`);
-            } catch (error) {
-                logger.error(`${logPrefix} Error procesando HIJO_PREPARADO:`, error);
-            }
-        });
+        // NOTA: SISTEMA.HIJO_PREPARADO ya está registrado en Script 1 (línea ~4364)
+        // con funcionalidad completa incluyendo ACK, migración de manejadores y PADRE_DATOS.
+        // Se omite el registro duplicado aquí para evitar conflictos.
 
         }); // End DOMContentLoaded for additional controller registrations
 
