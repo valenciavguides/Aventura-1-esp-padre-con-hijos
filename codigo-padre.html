@@ -6088,7 +6088,7 @@
         const registrarEventoGlobal = window.registrarEvento;
         
         // Aliases locales que no chocan con Script 1
-        const estadoScript2 = estadoGlobal;
+        const estadoScript2 = estadoGlobal || window.estadoPadre || {};
         // NOTE: CONFIG_PADRE_LOCAL alias intentionally avoided; use getPadreId()/CONFIG_PADRE where possible
         // const CONFIG_PADRE_LOCAL = configGlobal;
         const registrarEventoScript2 = registrarEventoGlobal;
@@ -6096,7 +6096,7 @@
         // Aliases adicionales para mantener compatibilidad con código que usa nombres cortos
         // Usamos var para coincidir con la declaración del Script 1
         // eslint-disable-next-line no-redeclare, no-undef
-        var estado = estadoScript2;
+        var estado = estadoScript2 || window.estadoPadre || {};
         const registrarEvento = registrarEventoScript2;
         let logger = loggerScript2;
 
@@ -9416,7 +9416,12 @@
         });
 
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Proceso de inicialización completado`);
-        estado.tiempoInicio = Date.now();
+        // Defensive: ensure estado exists before setting tiempoInicio
+        if (estado) {
+            estado.tiempoInicio = Date.now();
+        } else if (window.estadoPadre) {
+            window.estadoPadre.tiempoInicio = Date.now();
+        }
         
         // ===================================================================
         // TIMEOUT DE SEGURIDAD PARA OVERLAY
