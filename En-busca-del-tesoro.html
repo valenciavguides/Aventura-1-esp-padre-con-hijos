@@ -18,8 +18,6 @@
   </script>
   
   <script src="js/suppress-warnings.js"></script>
-  <script src="js/mensajeria.js"></script>
-  <script src="js/monitoreo.js"></script>
   <style>
     body { margin: 0; font-family: 'Book Antiqua', serif; background-color: black; color: white; }
     .pantalla { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; position: relative; text-align: center; padding: 20px; box-sizing: border-box; }
@@ -100,10 +98,12 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
     <div class="free-demo">FREE DEMO</div>
     <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
     <h3>Audio de introducción</h3>
-    <audio class="audio-controls" controls autoplay>
+    <!-- Audio file not found: INTRO/Español/Intro ESPAÑOL 1.mp3 -->
+    <!-- <audio class="audio-controls" controls autoplay>
       <source src="INTRO/Español/Intro ESPAÑOL 1.mp3" type="audio/mpeg">
       Tu navegador no soporta el audio.
-    </audio>
+    </audio> -->
+    <p>Audio no disponible (archivo faltante)</p>
     <button class="btn" onclick="mostrar(5)">Siguiente</button>
   </div>
 
@@ -158,75 +158,858 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
 
   <!-- MÓDULO DE MENSAJERÍA - Comunicación con el Padre -->
   <script type="module">
-    import { TIPOS_MENSAJE } from './js/constants.js';
-    import { getPadreId } from './js/utils.js';
-    import logger from './js/logger.js';
+    import { getEnviarMensaje, getRegistrarControlador, getEnviarMensajeConConfirmacion } from './js/utils.js';
 
-    // Wrapper seguro para evitar doble registro de controladores
+    // Fallbacks que esperan a que window.mensajeria esté disponible
+    const enviarMensaje = async (...args) => {
+        // En hijos, usar postMessage directamente al padre
+        if (window.parent && window.parent !== window) {
+            const mensaje = args[0];
+            try {
+                window.parent.postMessage({
+                    tipo: mensaje.tipo,
+                    origen: mensaje.origen || 'seleccion',
+                    destino: mensaje.destino,
+                    datos: mensaje.datos,
+                    timestamp: Date.now()
+                }, window.location.origin);
+                return Promise.resolve();
+            } catch (e) {
+                console.error('[seleccion] Error enviando mensaje via postMessage:', e);
+                return Promise.reject(e);
+            }
+        } else {
+            // Fallback al método anterior si no estamos en iframe
+            if (window.mensajeria && window.mensajeria.enviarMensaje) {
+                return window.mensajeria.enviarMensaje(...args);
+            } else {
+                try {
+                    const send = await getEnviarMensaje();
+                    return send(...args);
+                } catch (e) {
+                    console.error('mensajeria not loaded', args, e);
+                }
+            }
+        }
+    };
+
+    const registrarControlador = async (tipo, callback) => {
+        // En hijos, los controladores se registran localmente para mensajes del padre
+        if (window.parent && window.parent !== window) {
+            // Registrar listener para mensajes del padre
+            const listener = (event) => {
+                if (event.source === window.parent && event.data && event.data.tipo === tipo) {
+                    callback(event.data);
+                }
+            };
+            window.addEventListener('message', listener);
+            return Promise.resolve(() => window.removeEventListener('message', listener));
+        } else {
+            // Fallback al método anterior
+            if (window.mensajeria && window.mensajeria.registrarControlador) {
+                return window.mensajeria.registrarControlador(tipo, callback);
+            } else {
+                // Esperar a que esté disponible
+                try {
+                    const reg = await getRegistrarControlador();
+                    return reg(tipo, callback);
+                } catch (e) {
+                    console.error('mensajeria not loaded for registrarControlador', tipo, e);
+                }
+            }
+        }
+    };
+
+    const enviarMensajeConConfirmacion = async (...args) => {
+        // Similar a enviarMensaje pero esperando confirmación
+        if (window.parent && window.parent !== window) {
+            const mensaje = args[0];
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Timeout esperando confirmación')), 
+                    window.ajustarTimeoutPorConexion ? window.ajustarTimeoutPorConexion(5000) : 5000);
+
+                const confirmListener = (event) => {
+                    if (event.source === window.parent && event.data && event.data.tipo === 'SISTEMA.CONFIRMACION') {
+                        clearTimeout(timeout);
+                        window.removeEventListener('message', confirmListener);
+                        resolve();
+                    }
+                };
+
+                window.addEventListener('message', confirmListener);
+
+                try {
+                    window.parent.postMessage({
+                        tipo: mensaje.tipo,
+                        origen: mensaje.origen || 'seleccion',
+                        destino: mensaje.destino,
+                        datos: mensaje.datos,
+                        timestamp: Date.now(),
+                        requiereConfirmacion: true
+                    }, window.location.origin);
+                } catch (e) {
+                    clearTimeout(timeout);
+                    window.removeEventListener('message', confirmListener);
+                    reject(e);
+                }
+            });
+        } else {
+            // Fallback al método anterior
+            if (window.mensajeria && window.mensajeria.enviarMensajeConConfirmacion) {
+                return window.mensajeria.enviarMensajeConConfirmacion(...args);
+            } else {
+                try {
+                    const sendConf = await getEnviarMensajeConConfirmacion();
+                    return sendConf(...args);
+                } catch (e) {
+                    console.error('mensajeria not loaded', args, e);
+                }
+            }
+        }
+    };
+
+    // ==================== MESSAGING ADAPTER PARA COMUNICACIÓN CON PADRE ====================
+    // Este adapter permite a los hijos registrar controladores centralmente en el state-manager del padre
+    if (typeof window !== 'undefined' && typeof window.messagingAdapter === 'undefined') {
+        window.messagingAdapter = {
+            /**
+             * Registra un controlador en el state-manager centralizado del padre
+             * @param {string} controladorId - ID único del controlador
+             * @param {Function} handler - Función manejadora
+             * @param {Object} opciones - Opciones incluyendo tipoMensaje
+             * @returns {Promise<boolean>} - True si se registró, false si ya existía
+             */
+            registrarControladorCentral: async function(controladorId, handler, opciones = {}) {
+                const iframeId = window.name || (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || 'hijo';
+                const tipo = opciones.tipoMensaje || controladorId;
+                
+                // El registro real ocurre localmente - el padre sincroniza via HIJO_MANEJADORES
+                // Verificar si ya está registrado localmente
+                if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).debug && (window.logger || console).debug(`[messagingAdapter] ${tipo} ya registrado localmente`);
+                    return false;
+                }
+                
+                // Registrar listener local para este tipo de mensaje
+                window.addEventListener('message', function adapterListener(event) {
+                    if (event.source === window.parent && event.data && event.data.tipo === tipo) {
+                        try {
+                            handler(event.data);
+                        } catch (e) {
+                            (window.logger || console).error && (window.logger || console).error(`[messagingAdapter] Error en handler ${tipo}:`, e && e.message);
+                        }
+                    }
+                });
+                
+                (window.logger || console).info && (window.logger || console).info(`[messagingAdapter] Handler registrado para ${tipo} en ${iframeId}`);
+                return true;
+            },
+            
+            /**
+             * Envía mensaje al padre para que lo procese centralmente
+             */
+            enviarMensajeCentral: async function(mensaje) {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(mensaje, window.location.origin);
+                    return { exito: true, metodo: 'postMessage' };
+                }
+                return { exito: false, error: 'No hay padre disponible' };
+            }
+        };
+        (window.logger || console).info && (window.logger || console).info('[HIJO] messagingAdapter creado para comunicación con padre');
+    }
+
+    // Wrapper seguro para evitar doble registro de controladores en hijos
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
         window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
-        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+        window.registrarControladorSeguro = async function(tipo, handler, opciones) {
             try {
+                (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControladorSeguro called: ${tipo}`);
                 if (!tipo || typeof handler !== 'function') {
-                    console.warn(`[SELECCION] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
                     return;
                 }
                 if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
-                    console.warn(`[SELECCION] Controlador ya registrado, omitiendo: ${tipo}`);
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
                     return;
                 }
                 window.__CONTROLADOR_REGISTRADOS.add(tipo);
-                if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') {
-                    return window.mensajeria.registrarControlador(tipo, handler, opciones);
+                // Prefer central registration via messagingAdapter/state-manager when available
+                try {
+                    const iframeId = (window.name || (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || 'hijo');
+                    const controladorId = `${iframeId}:${tipo}`;
+                    if (window.messagingAdapter && typeof window.messagingAdapter.registrarControladorCentral === 'function') {
+                        try {
+                            const centralRes = await window.messagingAdapter.registrarControladorCentral(controladorId, handler, { tipoMensaje: tipo });
+                            if (centralRes === true) {
+                                (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControlador registered centrally: ${controladorId} -> ${tipo}`);
+                                return true;
+                            }
+                        } catch (e) {
+                            (window.logger || console).warn && (window.logger || console).warn(`[HIJO] Central registrar failed for ${tipo}: ${e && e.message}`);
+                        }
+                    }
+                    if (typeof registrarControlador === 'function') {
+                        try {
+                            const res = await safeRegistrar(tipo, handler, opciones);
+                            (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControlador delegated to mensajeria for ${tipo}`);
+                            return res;
+                        } catch (err) {
+                            (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControlador failed for ${tipo}: ${err && err.message}`);
+                        }
+                    }
+                } catch (e) {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro central attempt error for ${tipo}: ${e && e.message}`);
                 }
-                // Encolar para migración posterior
-                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
-                globalThis.__vv_manejadores.set(tipo, handler);
+                (window.logger || console).info && (window.logger || console).info(`[HIJO] Handler queued for migration: ${tipo} (local queue)`);
                 return;
             } catch (e) {
-                console.error(`[SELECCION] Error registrando controlador seguro ${tipo}:`, e && e.message);
+                (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
             }
         };
     }
 
-    // Configuración del componente
-    const CONFIG_SELECCION = {
-        id: 'seleccion',
+    // Helper: safeRegistrar delegates to registrarControladorSeguro when available
+    if (typeof window !== 'undefined' && typeof window.safeRegistrar === 'undefined') {
+        window.safeRegistrar = async function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') return;
+                if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.has(tipo)) return;
+                if (typeof window.registrarControladorSeguro === 'function') return window.registrarControladorSeguro(tipo, handler, opciones);
+                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+            } catch (e) { (window.logger || console).warn && (window.logger || console).warn('[HIJO] safeRegistrar error', e && e.message); }
+        };
+    }
+    import { TIPOS_MENSAJE } from './js/constants.js';
+    import { getPadreId } from './js/utils.js';
+    import logger from './js/logger.js';
+
+// Respaldo: listener para handshake de migración (PADRE_PIDE_MANEJADORES / PADRE_APLICA_MANEJADORES)
+(function(){
+    async function sendManifest(msg) {
+        try {
+            if (typeof migrarManejadoresTempranos === 'function') { try { (window.logger || console).info && (window.logger || console).info('[HIJO] Invoking migrarManejadoresTempranos()'); migrarManejadoresTempranos(); } catch(_){} }
+            const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
+            const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
+            const payload = { pedidoId: msg?.datos?.pedidoId || ('p_' + Date.now()), manejadores: tipos, timestamp: Date.now() };
+            try { (window.logger || console).info && (window.logger || console).info(`[HIJO] sendManifest pedidoId=${payload.pedidoId} manejadores=${tipos.length}`, tipos.map(t => t.tipo)); } catch (e) {}
+            const origen = (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || window.name || 'seleccion';
+            
+            // Enviar respuesta al padre usando múltiples métodos para garantizar entrega
+            const response = {
+                tipo: 'SISTEMA.HIJO_MANEJADORES',
+                datos: payload,
+                origen: origen,
+                destino: 'padre',  // Destino fijo
+                timestamp: Date.now()
+            };
+            
+            try {
+                // Método 1: usar window.mensajeria si está disponible
+                if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
+                    await window.mensajeria.enviarMensaje(response);
+                    (window.logger || console).info && (window.logger || console).info('[HIJO] HIJO_MANEJADORES enviado vía mensajeria');
+                } else {
+                    // Método 2: postMessage directo como fallback
+                    window.parent.postMessage(response, window.location.origin);
+                    (window.logger || console).info && (window.logger || console).info('[HIJO] HIJO_MANEJADORES enviado vía postMessage');
+                }
+            } catch (e) { 
+                try { 
+                    // Método 3: postMessage directo como último recurso
+                    window.parent.postMessage(response, '*');
+                    (window.logger || console).warn && (window.logger || console).warn('[HIJO] HIJO_MANEJADORES enviado vía postMessage con wildcard origin debido a error:', e && e.message);
+                } catch(e2) {
+                    (window.logger || console).error && (window.logger || console).error('[HIJO] Error enviando HIJO_MANEJADORES:', e2 && e2.message);
+                }
+            }
+        } catch (e) { (window.logger || console).warn('[HIJO] Error enviando manifest', e && e.message); }
+    }
+
+    window.addEventListener('message', async (ev) => {
+        try {
+            const m = ev.data || {};
+            if (m && (m.tipo === 'SISTEMA.PADRE_PIDE_MANEJADORES' || (m.tipo && m.tipo.endsWith && m.tipo.endsWith('PADRE_PIDE_MANEJADORES')) || m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES))) {
+                try { 
+                    (window.logger || console).info && (window.logger || console).info(`[HIJO] PADRE_PIDE_MANEJADORES recibido pedidoId=${m?.datos?.pedidoId} origen=${m?.origen || 'unknown'}`);
+                    await sendManifest(m);
+                } catch (e) {
+                    (window.logger || console).error && (window.logger || console).error('[HIJO] Error procesando PADRE_PIDE_MANEJADORES:', e && e.message);
+                }
+            } else if (m && m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_APLICA_MANEJADORES)) {
+                const aplicados = (m && m.datos && m.datos.aplicados) || [];
+                if (window.__CONTROLADOR_REGISTRADOS && aplicados.length) {
+                    aplicados.forEach(t => { try { window.__CONTROLADOR_REGISTRADOS.delete(t); } catch(_){} });
+                    (window.logger || console).info && (window.logger || console).info('[HIJO] Manejadores marcados como migrados:', aplicados);
+                }
+            }
+        } catch (e) { /* ignore */ }
+    });
+})();
+
+    // ============================================================
+    // CONFIGURACIÓN DEL COMPONENTE
+    // ============================================================
+    const CONFIG_HIJO = {
         IFRAME_ID: 'seleccion',
-        nombre: 'Página de Selección',
         COMPONENTE_ID: 'SELECCION',
-        DEBUG: true
+        VERSION: '1.0.0',
+        DEBUG: true,
+        LOG_PREFIX: '[SELECCION]',
+        TIMEOUT_PARENT: 5000 // 5 segundos
     };
 
-    // Estado local del componente
-    const estado = {
+    // ============================================================
+    // GESTIÓN DE ESTADO DEL COMPONENTE
+    // ============================================================
+    const estadoComponente = {
         inicializado: false,
+        padreConectado: false,
         idiomaSeleccionado: null,
         aventuraSeleccionada: null,
         terminosAceptados: false,
-        padreConectado: false
+        ultimaInteraccion: null
     };
 
-    // Exponer estado globalmente para funciones no-módulo
-    window.estadoSeleccion = estado;
-    window.CONFIG_SELECCION = CONFIG_SELECCION;
+    // ============================================================
+    // FUNCIÓN PARA MOSTRAR UI
+    // ============================================================
+    window._uiConfirmado = false;
+    let _originalDisplay = '';
 
-    // ==================== FUNCIONES DE SELECCIÓN ====================
+    function mostrarUI() { 
+        if (!window._uiConfirmado) { 
+            console.warn(`${CONFIG_HIJO.IFRAME_ID} mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO`); 
+            return; 
+        } 
+        try { 
+            if (document.body) document.body.style.display = _originalDisplay || 'block'; 
+            console.log(`${CONFIG_HIJO.IFRAME_ID} UI visible tras PADRE_CONFIRMA_HIJO_LISTO`); 
+        } catch (e) {} 
+    }
+
+    // ============================================================
+    // FUNCIÓN DE INICIALIZACIÓN PRINCIPAL
+    // ============================================================
+    /**
+     * Inicializa el componente de selección
+     * @returns {Promise<void>}
+     */
+    async function init() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[init]`;
+        
+        try {
+            logger.info(`${logPrefix} Iniciando componente...`);
+
+            // 1. Esperar a que el padre esté listo (con timeout)
+            if (window.parent && window.parent !== window) {
+                logger.debug(`${logPrefix} Esperando a que el padre esté listo...`);
+                
+                let attempts = 0;
+                const maxAttempts = CONFIG_HIJO.TIMEOUT_PARENT / 100; // 50 intentos
+                
+                while (attempts < maxAttempts && (!window.parent.postMessage || typeof window.parent.postMessage !== 'function')) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                }
+                
+                if (attempts >= maxAttempts) {
+                    logger.warn(`${logPrefix} Padre no listo después de ${CONFIG_HIJO.TIMEOUT_PARENT}ms`);
+                } else {
+                    estadoComponente.padreConectado = true;
+                    logger.info(`${logPrefix} Padre listo después de ${attempts * 100}ms`);
+                }
+            }
+
+            // 2. Inicializar mensajería
+            // Ocultar UI hasta recibir PADRE_CONFIRMA_HIJO_LISTO
+            window._uiConfirmado = false;
+            _originalDisplay = (document.body && document.body.style && document.body.style.display) || '';
+            try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
+
+            // No necesitamos inicializarMensajeria aquí, los fallbacks esperan automáticamente
+
+            // 3. Registrar controladores
+            registrarControladores();
+
+            estadoComponente.inicializado = true;
+            logger.info(`${logPrefix} Componente inicializado correctamente`);
+
+            // Enviar HIJO_PREPARADO al padre
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: CONFIG_HIJO.VERSION,
+                        capacidades: ['seleccion', 'idioma', 'aventura'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.info(`${logPrefix} HIJO_PREPARADO enviado al padre`);
+            } catch (error) {
+                logger.error(`${logPrefix} Error enviando HIJO_PREPARADO:`, error);
+            }
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
+            
+            // Enviar HIJO_FALLIDO al padre
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_FALLIDO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        error: error.message,
+                        stack: error.stack,
+                        timestamp: Date.now()
+                    }
+                });
+            } catch (notifyError) {
+                logger.error(`${logPrefix} Error notificando fallo al padre:`, notifyError);
+            }
+        }
+    }
+
+    // ============================================================
+    // REGISTRO DE CONTROLADORES
+    // ============================================================
+    /**
+     * Registra todos los controladores de mensajes
+     */
+    function registrarControladores() {
+        const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[registrarControladores]`;
+        
+        try {
+            logger.debug(`${logPrefix} Registrando controladores...`);
+
+            // ============================================================
+            // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
+                
+                try {
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        return;
+                    }
+
+                    logger.info(`${controladorPrefix} Padre listo confirmado desde ${mensaje.origen}`);
+                    estadoComponente.padreConectado = true;
+
+                    // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                    if (mensaje.datos) {
+                        const { modo, paradaActual } = mensaje.datos;
+
+                        if (modo) {
+                            logger.debug(`${controladorPrefix} Modo inicial: ${modo}`);
+                        }
+
+                        if (paradaActual) {
+                            logger.debug(`${controladorPrefix} Parada actual: ${paradaActual}`);
+                        }
+                    }
+
+                    // Enviar HIJO_LISTO al padre
+                    try {
+                        await enviarMensaje({
+                            destino: getPadreId(),
+                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                                capacidades: ['seleccion', 'idioma', 'aventura'],
+                                timestamp: Date.now()
+                            }
+                        });
+                        logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
+                    } catch (error) {
+                        logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                    }
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error procesando PADRE_LISTO:`, error);
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_DATOS
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_DATOS]`;
+                
+                try {
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        return;
+                    }
+
+                    logger.info(`${controladorPrefix} Datos del padre recibidos desde ${mensaje.origen}`);
+
+                    // ✅ PROCESAR DATOS INICIALES DEL PADRE
+                    if (mensaje.datos) {
+                        const { modo, paradaActual } = mensaje.datos;
+
+                        if (modo) {
+                            logger.debug(`${controladorPrefix} Modo inicial: ${modo}`);
+                        }
+
+                        if (paradaActual) {
+                            logger.debug(`${controladorPrefix} Parada actual: ${paradaActual}`);
+                        }
+                    }
+
+                    // Enviar HIJO_LISTO al padre
+                    try {
+                        await enviarMensaje({
+                            destino: getPadreId(),
+                            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                                capacidades: ['seleccion', 'idioma', 'aventura'],
+                                timestamp: Date.now()
+                            }
+                        });
+                        logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
+                    } catch (error) {
+                        logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                    }
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error procesando PADRE_DATOS:`, error);
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_CONFIRMA_HIJO_LISTO]`;
+
+                try {
+                    console.log(`${CONFIG_HIJO.IFRAME_ID} PADRE_CONFIRMA_HIJO_LISTO recibido:`, mensaje);
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        throw new Error('Mensaje sin origen válido');
+                    }
+
+                    logger.info(`${controladorPrefix} Confirmación recibida del padre - controladores listos`);
+
+                    // 🔥 NUEVO: Procesar modo inicial si viene en datos (patrón unificado)
+                    const { modoInicial } = mensaje.datos || {};
+                    if (modoInicial) {
+                        logger.debug(`${controladorPrefix} Modo inicial recibido: ${modoInicial} (registrado para consistencia)`);
+                    }
+
+                    // Inicializar la lógica de menú visible y mostrar UI ahora que el padre confirmó
+                    try { if (typeof inicializarLogicaSeleccion === 'function') inicializarLogicaSeleccion(); } catch (e) { logger.warn(`${controladorPrefix} inicializarLogicaSeleccion falló:`, e); }
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                    try { await enviarMensaje({ destino: getPadreId(), tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION, origen: CONFIG_HIJO.IFRAME_ID, datos: { tipo: 'UI_VISIBLE', timestamp: Date.now() } }); } catch (e) { /* ignore */ }
+
+                    return {
+                        exito: true,
+                        estado: 'confirmado',
+                        timestamp: Date.now()
+                    };
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error en controlador:`, error);
+
+                    // Notificar error al padre
+                    try {
+                        await enviarMensaje({
+                            destino: getPadreId(),
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                error: error.message,
+                                controlador: 'PADRE_CONFIRMA_HIJO_LISTO',
+                                timestamp: Date.now()
+                            }
+                        });
+                    } catch (notifyError) {
+                        logger.error(`${controladorPrefix} Error notificando al padre:`, notifyError);
+                    }
+
+                    return {
+                        exito: false,
+                        error: error.message
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_PIDE_MANEJADORES
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_PIDE_MANEJADORES]`;
+                
+                try {
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        return;
+                    }
+
+                    logger.info(`${controladorPrefix} Solicitud de manejadores recibida desde ${mensaje.origen}`);
+
+                    // Ejecutar migración local para incluir registros tempranos
+                    const migrar = window.mensajeria && window.mensajeria.migrarManejadoresTempranos;
+                    if (typeof migrar === 'function') {
+                        try { migrar(); } catch (e) { logger.warn(`${controladorPrefix} Error en migrarManejadoresTempranos:`, e); }
+                    }
+
+                    // Obtener lista de manejadores registrados (locales y tempranos)
+                    const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
+                    const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
+                    
+                    const payload = { 
+                        pedidoId: mensaje?.datos?.pedidoId || (Date.now() + '_' + Math.random()).toString(), 
+                        manejadores: tipos, 
+                        timestamp: Date.now() 
+                    };
+
+                    logger.info(`${controladorPrefix} Enviando manifest con ${tipos.length} manejadores`);
+
+                    // Enviar respuesta al padre
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: payload
+                    });
+
+                    logger.info(`${controladorPrefix} Manifest enviado al padre`);
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.HEARTBEAT
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[HEARTBEAT]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        return { exito: false, error: 'Sin origen' };
+                    }
+
+                    // 2. Preparar datos de respuesta
+                    const datosRespuesta = {
+                        timestamp: Date.now(),
+                        componente: CONFIG_HIJO.COMPONENTE_ID,
+                        estado: 'activo',
+                        inicializado: estadoComponente.inicializado,
+                        padreConectado: estadoComponente.padreConectado,
+                        idiomaSeleccionado: estadoComponente.idiomaSeleccionado,
+                        aventuraSeleccionada: estadoComponente.aventuraSeleccionada,
+                        terminosAceptados: estadoComponente.terminosAceptados,
+                        ultimaInteraccion: estadoComponente.ultimaInteraccion
+                    };
+
+                    // 3. Enviar respuesta
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.HEARTBEAT_RESPONSE,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: datosRespuesta
+                    });
+
+                    logger.debug(`${controladorPrefix} Respuesta enviada a ${mensaje.origen}`);
+
+                    return {
+                        exito: true,
+                        timestamp: datosRespuesta.timestamp
+                    };
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error en controlador:`, error);
+                    
+                    return {
+                        exito: false,
+                        error: error.message
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.ACK
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.ACK, async (mensaje) => {
+                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[ACK]`;
+                
+                try {
+                    // 1. Validación de origen
+                    if (!mensaje || !mensaje.origen) {
+                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
+                        return { exito: false, error: 'Sin origen' };
+                    }
+
+                    logger.debug(`${controladorPrefix} ACK recibido, respondiendo...`);
+
+                    // 2. Preparar datos de respuesta
+                    const datosRespuesta = {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        timestamp: Date.now(),
+                        estado: 'activo',
+                        inicializado: estadoComponente.inicializado,
+                        padreConectado: estadoComponente.padreConectado
+                    };
+
+                    // 3. Enviar respuesta
+                    await enviarMensaje({
+                        destino: getPadreId(),
+                        tipo: TIPOS_MENSAJE.SISTEMA.ACK,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: datosRespuesta
+                    });
+
+                    logger.debug(`${controladorPrefix} ACK respondido`);
+
+                    return {
+                        exito: true,
+                        timestamp: datosRespuesta.timestamp
+                    };
+
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error respondiendo ACK:`, error);
+                    
+                    return {
+                        exito: false,
+                        error: error.message
+                    };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.CAMBIO_MODO
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO, async (mensaje) => {
+                const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[CAMBIO_MODO]`;
+                try {
+                    // Validar carga secuencial
+                    if (!mensaje.datos?.secuenciaCompleta) {
+                        logger.warn(`${logPrefix} Mensaje recibido antes de secuencia completa`);
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: {
+                                error: 'Secuencia no completa',
+                                esperarPermiso: true,
+                                tipoOriginal: mensaje.tipo,
+                                modoSolicitado: mensaje.datos?.modo
+                            }
+                        });
+                        return;
+                    }
+
+                    const { modo } = mensaje.datos || {};
+                    if (!modo || !['casa', 'aventura'].includes(modo)) {
+                        logger.error(`${logPrefix} Modo inválido: ${modo}`);
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.NACK,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen,
+                            datos: { error: 'Modo inválido', modoRecibido: modo }
+                        });
+                        return;
+                    }
+
+                    // Enviar ENTENDIDO
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" entendido (componente de selección)`);
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: { 
+                            modo, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+                    
+                    // Componente de selección no cambia con el modo - enviar EFECTUADO inmediatamente
+                    logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado (componente de selección)`);
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                        origen: CONFIG_HIJO.IFRAME_ID, // String literal
+                        datos: { 
+                            modo, 
+                            exito: true, 
+                            timestamp: Date.now(),
+                            mensajeId: mensaje.datos?.mensajeId || mensaje.id
+                        }
+                    });
+                    
+                    return { exito: true };
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
+                    try {
+                        await enviarMensaje({
+                            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            destino: mensaje.origen || 'padre',
+                            datos: { error: error.message, tipo: 'CAMBIO_MODO_FALLIDO' }
+                        });
+                    } catch (e) {
+                        logger.error(`${logPrefix} Error notificando fallo:`, e);
+                    }
+                    return { exito: false, error: error.message };
+                }
+            });
+
+            // ============================================================
+            // CONTROLADOR: SISTEMA.CAMBIO_MODO_APLICADO
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_APLICADO, async (mensaje) => {
+                const logPrefix = `${CONFIG_HIJO.LOG_PREFIX}[CAMBIO_MODO_APLICADO]`;
+                try {
+                    const { modo } = mensaje.datos || {};
+                    logger.success(`${logPrefix} ✅ Cambio de modo a "${modo}" aplicado globalmente`);
+                } catch (error) {
+                    logger.error(`${logPrefix} Error:`, error);
+                }
+            });
+
+            logger.info(`${logPrefix} Controladores registrados exitosamente`);
+
+        } catch (error) {
+            logger.error(`${logPrefix} Error registrando controladores:`, error);
+            throw error;
+        }
+    }
+
+    // ============================================================
+    // FUNCIONES DE SELECCIÓN (MANTENIDAS)
+    // ============================================================
 
     /**
      * Selecciona un idioma y notifica al padre
      */
     window.seleccionarIdioma = async function(idioma) {
         try {
-            estado.idiomaSeleccionado = idioma;
+            estadoComponente.idiomaSeleccionado = idioma;
+            estadoComponente.ultimaInteraccion = Date.now();
             window.idiomaSeleccionado = idioma; // Para funciones legacy
             
             logger.info(`[SELECCION] Idioma seleccionado: ${idioma}`);
             
             // Enviar mensaje al padre
-            await window.mensajeria.enviarMensaje({
+            await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.IDIOMA_SELECCIONADO,
-                origen: CONFIG_SELECCION.IFRAME_ID,
+                origen: CONFIG_HIJO.IFRAME_ID,
                 destino: getPadreId(),
                 datos: {
                     idioma: idioma,
@@ -250,19 +1033,20 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
      */
     window.seleccionarAventura = async function(aventura) {
         try {
-            estado.aventuraSeleccionada = aventura;
+            estadoComponente.aventuraSeleccionada = aventura;
+            estadoComponente.ultimaInteraccion = Date.now();
             window.aventuraSeleccionada = aventura;
             
             logger.info(`[SELECCION] Aventura seleccionada: ${aventura}`);
             
             // Enviar mensaje al padre con la selección completa
-            await window.mensajeria.enviarMensaje({
+            await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.AVENTURA_SELECCIONADA,
-                origen: CONFIG_SELECCION.IFRAME_ID,
+                origen: CONFIG_HIJO.IFRAME_ID,
                 destino: getPadreId(),
                 datos: {
                     aventura: aventura,
-                    idioma: estado.idiomaSeleccionado || 'es',
+                    idioma: estadoComponente.idiomaSeleccionado || 'es',
                     timestamp: Date.now()
                 }
             });
@@ -284,25 +1068,25 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         try {
             console.log('🚀 [SELECCION] iniciarAventura() LLAMADA');
             console.log('🚀 [SELECCION] Estado:', JSON.stringify({
-                aventura: estado.aventuraSeleccionada,
-                idioma: estado.idiomaSeleccionado,
-                padreConectado: estado.padreConectado
+                aventura: estadoComponente.aventuraSeleccionada,
+                idioma: estadoComponente.idiomaSeleccionado,
+                padreConectado: estadoComponente.padreConectado
             }));
             
-            logger.info(`[SELECCION] Iniciando aventura: ${estado.aventuraSeleccionada} en idioma ${estado.idiomaSeleccionado}`);
+            logger.info(`[SELECCION] Iniciando aventura: ${estadoComponente.aventuraSeleccionada} en idioma ${estadoComponente.idiomaSeleccionado}`);
             
             const padreId = getPadreId();
             console.log('🚀 [SELECCION] Destino (padre):', padreId);
             
             // Enviar mensaje de inicio al padre
-            const mensajeEnviado = await window.mensajeria.enviarMensaje({
+            const mensajeEnviado = await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.INICIAR_AVENTURA,
-                origen: CONFIG_SELECCION.IFRAME_ID,
+                origen: CONFIG_HIJO.IFRAME_ID,
                 destino: padreId,
                 datos: {
-                    aventura: estado.aventuraSeleccionada || 'Aventura1',
-                    idioma: estado.idiomaSeleccionado || 'es',
-                    terminosAceptados: estado.terminosAceptados,
+                    aventura: estadoComponente.aventuraSeleccionada || 'Aventura1',
+                    idioma: estadoComponente.idiomaSeleccionado || 'es',
+                    terminosAceptados: estadoComponente.terminosAceptados,
                     timestamp: Date.now()
                 }
             });
@@ -321,12 +1105,13 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
      */
     window.aceptarTerminos = async function() {
         try {
-            estado.terminosAceptados = true;
+            estadoComponente.terminosAceptados = true;
+            estadoComponente.ultimaInteraccion = Date.now();
             
             // Enviar mensaje al padre (opcional)
             await enviarMensaje({
                 tipo: TIPOS_MENSAJE.SELECCION.TERMINOS_ACEPTADOS,
-                origen: CONFIG_SELECCION.IFRAME_ID,
+                origen: CONFIG_HIJO.IFRAME_ID,
                 destino: getPadreId(),
                 datos: {
                     aceptados: true,
@@ -341,118 +1126,21 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         }
     };
 
-    // ==================== INICIALIZACIÓN ====================
+    // ============================================================
+    // INICIALIZACIÓN
+    // ============================================================
+    // Ejecutar inicialización cuando el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => init());
+    } else {
+        init();
+    }
 
-    // NOTA: Los script modules se ejecutan en modo defer, por lo que el DOM ya está listo.
-    // NO usar DOMContentLoaded porque ya habrá disparado antes de que este código se ejecute.
-    
-    (async function inicializarSeleccion() {
-        try {
-            console.log('📋 [SELECCION] Iniciando inicialización...');
-            logger.info(`[SELECCION] Inicializando componente de selección...`);
-            
-            // Inicializar mensajería - FORZAR ROL HIJO
-            // Este archivo SIEMPRE debe cargarse como iframe
-            await window.mensajeria.inicializarMensajeria({
-                rol: 'hijo',  // ← Forzar rol hijo
-                iframeId: CONFIG_SELECCION.IFRAME_ID,
-                componenteId: CONFIG_SELECCION.IFRAME_ID,  // ← Usar 'seleccion' (minúsculas)
-                debug: CONFIG_SELECCION.DEBUG
-            });
-            
-            console.log('📋 [SELECCION] Mensajería inicializada');
-            logger.debug(`[SELECCION] Mensajería inicializada`);
-
-            // Registrar controlador para PADRE_LISTO o PADRE_DATOS (respuesta a HIJO_PREPARADO)
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
-                console.log('📋 [SELECCION] PADRE_LISTO recibido');
-                logger.info(`[SELECCION] PADRE_LISTO recibido desde ${mensaje.origen}`);
-                estado.padreConectado = true;
-                
-                // Enviar HIJO_LISTO
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                    origen: CONFIG_SELECCION.IFRAME_ID,
-                    destino: getPadreId(),
-                    datos: {
-                        version: '1.0.0',
-                        capacidades: ['seleccion', 'idioma', 'aventura'],
-                        timestamp: Date.now()
-                    }
-                });
-                
-                logger.info(`[SELECCION] HIJO_LISTO enviado`);
-            });
-
-            // Registrar controlador para confirmación del padre
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO, async (mensaje) => {
-                console.log('📋 [SELECCION] PADRE_CONFIRMA_HIJO_LISTO recibido');
-                logger.info(`[SELECCION] PADRE_CONFIRMA_HIJO_LISTO recibido`);
-                estado.inicializado = true;
-                estado.padreConectado = true;
-                
-                // Procesar datos iniciales si los hay
-                if (mensaje.datos) {
-                    const { modoInicial, idioma, aventura } = mensaje.datos;
-                    if (modoInicial) logger.debug(`[SELECCION] Modo inicial: ${modoInicial}`);
-                    if (idioma) estado.idiomaSeleccionado = idioma;
-                    if (aventura) estado.aventuraSeleccionada = aventura;
-                }
-            });
-
-            // Registrar controlador para PADRE_DATOS (respuesta a HIJO_PREPARADO)
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
-                console.log('📋 [SELECCION] PADRE_DATOS recibido - enviando HIJO_LISTO');
-                logger.info(`[SELECCION] PADRE_DATOS recibido desde ${mensaje.origen}`);
-                estado.padreConectado = true;
-                
-                // Enviar HIJO_LISTO como respuesta
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                    origen: CONFIG_SELECCION.IFRAME_ID,
-                    destino: getPadreId(),
-                    datos: {
-                        version: '1.0.0',
-                        capacidades: ['seleccion', 'idioma', 'aventura'],
-                        timestamp: Date.now()
-                    }
-                });
-                
-                logger.info(`[SELECCION] HIJO_LISTO enviado (respuesta a PADRE_DATOS)`);
-            });
-
-            // Registrar controlador para respuesta de estado
-            registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.RESPUESTA_ESTADO, async (mensaje) => {
-                logger.debug(`[SELECCION] Respuesta de estado recibida:`, mensaje.datos);
-            });
-
-            // Marcar como inicializado
-            estado.inicializado = true;
-            console.log('✅ [SELECCION] Componente inicializado correctamente');
-            logger.info(`[SELECCION] Componente inicializado correctamente`);
-            
-            // ============================================================
-            // ENVIAR HIJO_PREPARADO PROACTIVAMENTE
-            // El padre responderá con PADRE_DATOS o ya habrá enviado PADRE_LISTO
-            // ============================================================
-            console.log('📤 [SELECCION] Enviando HIJO_PREPARADO al padre...');
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-                origen: CONFIG_SELECCION.IFRAME_ID,
-                destino: getPadreId(),
-                datos: {
-                    version: '1.0.0',
-                    capacidades: ['seleccion', 'idioma', 'aventura'],
-                    timestamp: Date.now()
-                }
-            });
-            console.log('✅ [SELECCION] HIJO_PREPARADO enviado');
-            
-        } catch (error) {
-            console.error('❌ [SELECCION] Error durante inicialización:', error);
-            logger.error(`[SELECCION] Error durante inicialización:`, error);
-        }
-    })();
+    // Función para inicializar la lógica de selección (llamada después de PADRE_CONFIRMA_HIJO_LISTO)
+    function inicializarLogicaSeleccion() {
+        console.log('📋 [SELECCION] inicializarLogicaSeleccion() - Lógica de menú visible activada');
+        // Aquí se puede agregar lógica adicional que necesite ejecutarse después de la confirmación del padre
+    }
   </script>
 
 <!-- P7: Elección de Aventura -->
