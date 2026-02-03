@@ -1,2455 +1,659 @@
 /**
- * Utilidades generales para la aplicación
- * @module Utils
- * @version 1.2.0
+ * @fileoverview Utilidades generales para ValenciaVGuides
+ * @version 2.0.0
+ * 
+ * Funciones de utilidad comunes usadas a lo largo de toda la aplicación.
  */
 
-import logger from './logger.js';
-import { CSS_CLASES, MODOS, ERRORES, TIPOS_MENSAJE } from './constants.js';
-import { promesasPendientes } from './monitoreo.js';
-import { enviarMensaje } from './mensajeria.js';
+import { TIPOS_MENSAJE } from './constants.js';
 
 /**
- * Resolves the best UI destination for notifications/modals/alerts.
- * Prefer explicit monitoring recipients if available (window resolver from monitoreo),
- * otherwise check DOM for known iframe IDs and fall back to 'broadcast'.
- * @returns {string} destination id or 'broadcast'
- */
-export function resolverUIDestino() {
-    try {
-        // Prefer a runtime-provided resolver from monitoreo if available
-        if (typeof window.resolverDestinatariosNotificacion === 'function') {
-            try {
-                const list = window.resolverDestinatariosNotificacion();
-                if (Array.isArray(list) && list.length > 0 && list[0]) return list[0];
-            } catch (e) {
-                // ignore and continue to DOM checks
-            }
-        }
-
-        // Prefer legacy 'sistema-notificaciones' if present (legacy alias), else prefer 'sistema-ui'
-        if (document.getElementById('sistema-notificaciones')) return 'sistema-notificaciones';
-        if (document.getElementById('sistema-ui')) return 'sistema-ui';
-        // Prefer options or hamburger components
-        if (document.getElementById('hijo1-opciones')) return 'hijo1-opciones';
-        if (document.getElementById('hijo1-hamburguesa')) return 'hijo1-hamburguesa';
-        // Prefer casa button
-        if (document.getElementById('hijo5-casa')) return 'hijo5-casa';
-
-    } catch (err) {
-        // Nothing we can do — fall back to broadcast
-    }
-    return 'broadcast';
-}
-
-/**
- * Check whether the destination resolves to a known recipient (iframe exists) or is broadcast
- * @param {string} destino
- * @returns {boolean}
- */
-export function esDestinoValido(destino) {
-    if (!destino) return false;
-    if (destino === 'broadcast') return true;
-    try {
-        return !!document.getElementById(destino);
-    } catch (e) {
-        return false;
-    }
-}
-
-/**
- * Canonicaliza un valor de modo a la forma admitida por la aplicación.
- * Acepta claves en mayúsculas ('CASA','AVENTURA') o valores ('casa','aventura'),
- * normaliza y devuelve el valor en minúsculas ('casa'|'aventura') o `null` si no es válido.
- * @param {string} modo - Valor de modo (ej. 'CASA', 'casa', 'AVENTURA')
- * @returns {string|null} Modo canónico o null si inválido
+ * Canonicaliza un modo a su forma estándar
+ * @param {string} modo - Modo a canonicalizar
+ * @returns {string|null} 'casa' | 'aventura' | null si no es válido
  */
 export function canonicalizarModo(modo) {
-    if (!modo && modo !== 0) return null;
-    try {
-        const s = String(modo).trim();
-        if (!s) return null;
-        const lower = s.toLowerCase();
-
-        // Aceptar tanto las claves en MODOS (CASA/AVENTURA) como sus valores
-        const modosValues = Object.values(MODOS).map(v => String(v).toLowerCase());
-        if (modosValues.includes(lower)) return lower;
-
-        const modosKeys = Object.keys(MODOS).map(k => String(k).toLowerCase());
-        if (modosKeys.includes(lower)) {
-            // devolver el valor asociado a la clave
-            const key = Object.keys(MODOS).find(k => k.toLowerCase() === lower);
-            return MODOS[key] || null;
-        }
-
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
-// Proveer un fallback seguro para `registrarControlador` durante la
-// evaluación del módulo. Algunos módulos registran controladores en
-// top-level antes de que `mensajeria.js` esté totalmente inicializado
-// (imports circulares). Para evitar `ReferenceError: registrarControlador is not defined`
-// almacenamos las registraciones tempranas en `globalThis.__vv_manejadores`, que
-// `mensajeria.js` migrará a su Map interno cuando se inicialice.
-if (typeof registrarControlador === 'undefined') {
-    try {
-        if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
-    } catch (e) {
-        // En entornos muy restringidos, aseguramos la existencia del objeto
-        globalThis.__vv_manejadores = new Map();
-    }
-
-    /* eslint-disable no-var */
-    var registrarControlador = function(tipo, callback) {
-        if (!globalThis.__vv_manejadores) globalThis.__vv_manejadores = new Map();
-        try {
-            globalThis.__vv_manejadores.set(tipo, callback);
-        } catch (err) {
-            // No bloqueamos la evaluación si algo falla aquí
-            logger.warn('[UTILS] Fallback registrarControlador failed:', err);
-        }
-    };
-    /* eslint-enable no-var */
+    if (!modo) return null;
+    const modoStr = String(modo).toLowerCase().trim();
+    return modoStr === 'casa' || modoStr === 'aventura' ? modoStr : null;
 }
 
 /**
- * Clase personalizada para errores de la aplicación
- * @extends Error
+ * Genera un ID único
+ * @param {string} [prefijo=''] - Prefijo opcional para el ID
+ * @returns {string} ID único generado
  */
-class AppError extends Error {
-    /**
-     * Crea un nuevo error de la aplicación
-     * @param {string} message - Mensaje de error
-     * @param {Object} options - Opciones adicionales
-     * @param {number} options.codigo - Código de error
-     * @param {string} options.nivel - Nivel de error (error, warning, info)
-     * @param {Object} options.detalles - Detalles adicionales del error
-     * @param {Error} options.causa - Error original que causó este error
-     */
-    constructor(message, { codigo = 0, nivel = 'error', detalles = null, causa = null } = {}) {
-        super(message);
-        this.name = this.constructor.name;
-        this.codigo = codigo;
-        this.nivel = nivel;
-        this.detalles = detalles;
-        this.causa = causa;
-        this.timestamp = new Date().toISOString();
-        
-        // Mantener un stack trace adecuado
-        if (Error.captureStackTrace) {
-            Error.captureStackTrace(this, this.constructor);
-        }
+export function generarIdUnico(prefijo = '') {
+    const timestamp = Date.now().toString(36);
+    const aleatorio = Math.random().toString(36).substring(2, 9);
+    return prefijo ? `${prefijo}_${timestamp}_${aleatorio}` : `${timestamp}_${aleatorio}`;
+}
+
+/**
+ * Obtiene el ID del padre desde la URL o genera uno nuevo
+ * @returns {string} ID del padre
+ */
+export function getPadreId() {
+    // Intentar obtener de la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const padreIdFromUrl = urlParams.get('padreId');
+    
+    if (padreIdFromUrl) {
+        return padreIdFromUrl;
     }
     
-    /**
-     * Convierte el error a un objeto plano para registro
-     * @returns {Object} Representación del error como objeto
-     */
-    toJSON() {
+    // Intentar obtener de sessionStorage
+    const padreIdFromStorage = sessionStorage.getItem('vvguides_padreId');
+    if (padreIdFromStorage) {
+        return padreIdFromStorage;
+    }
+    
+    // Generar nuevo ID
+    const nuevoPadreId = generarIdUnico('padre');
+    sessionStorage.setItem('vvguides_padreId', nuevoPadreId);
+    return nuevoPadreId;
+}
+
+/**
+ * Normaliza un array de paradas a un formato consistente
+ * @param {Array|Object} paradas - Paradas a normalizar
+ * @returns {Array} Array de paradas normalizado
+ */
+export function normalizarParadas(paradas) {
+    if (!paradas) return [];
+    
+    // Si ya es un array, procesarlo
+    if (Array.isArray(paradas)) {
+        return paradas.map((parada, index) => normalizarParada(parada, index));
+    }
+    
+    // Si es un objeto con propiedades numéricas o IDs
+    if (typeof paradas === 'object') {
+        return Object.entries(paradas).map(([key, value], index) => {
+            const parada = typeof value === 'object' ? value : { id: key, valor: value };
+            return normalizarParada(parada, index);
+        });
+    }
+    
+    return [];
+}
+
+/**
+ * Normaliza una parada individual
+ * @param {Object|string} parada - Parada a normalizar
+ * @param {number} index - Índice de la parada
+ * @returns {Object} Parada normalizada
+ */
+function normalizarParada(parada, index) {
+    if (typeof parada === 'string') {
         return {
-            nombre: this.name,
-            mensaje: this.message,
-            codigo: this.codigo,
-            nivel: this.nivel,
-            timestamp: this.timestamp,
-            detalles: this.detalles,
-            causa: this.causa ? {
-                nombre: this.causa.name,
-                mensaje: this.causa.message,
-                stack: this.causa.stack
-            } : null,
-            stack: this.stack
+            id: parada,
+            index,
+            nombre: parada
         };
     }
-}
-
-/**
- * Wrapper for async functions to handle errors consistently
- * @param {Function} fn - The async function to wrap
- * @returns {Function} Wrapped function with error handling
- */
-export function asyncHandler(fn) {
-    return async function(...args) {
-        try {
-            return await fn(...args);
-        } catch (error) {
-            logger.error(`Error en ${fn.name || 'función asíncrona'}:`, error);
-            
-            // Add additional context to the error
-            const contextualizedError = new Error(`Error en ${fn.name || 'función asíncrona'}: ${error.message}`);
-            contextualizedError.originalError = error;
-            contextualizedError.args = args;
-            
-            // Re-throw the error with added context
-            throw contextualizedError;
-        }
-    };
-}
-
-/**
- * Validates the parameters against a schema
- * @param {Object} params - The parameters to validate
- * @param {Object} schema - The schema to validate against
- * @param {string} [context] - The context for error messages
- * @returns {Object} - Validation result with valido and error properties
- */
-export function validarParametros(params, schema, context = '') {
-    try {
-        // Handle null or undefined params
-        if (params === null || params === undefined) {
-            return {
-                valido: false,
-                error: `${context ? context + ': ' : ''}Los parámetros no pueden ser null o undefined`
-            };
-        }
-        
-        // Validate each parameter against the schema
-        for (const key in schema) {
-            const fieldSchema = schema[key];
-            let value = params[key];
-            
-            // If the field is required and missing
-            if (fieldSchema.requerido && (value === undefined || value === null)) {
-                return {
-                    valido: false,
-                    error: `${context ? context + ': ' : ''}Parámetro requerido faltante: ${key}`
-                };
-            }
-            
-            // If field is not required and missing, use default value if available
-            if ((value === undefined || value === null) && !fieldSchema.requerido) {
-                if ('valorPorDefecto' in fieldSchema) {
-                    value = fieldSchema.valorPorDefecto;
-                    params[key] = value; // Update the params object with the default value
-                }
-                continue; // Skip further validation for this field
-            }
-            
-            // Check type if the value is defined
-            if (value !== undefined && value !== null) {
-                // Type validation
-                const expectedType = fieldSchema.tipo;
-                let actualType = typeof value;
-                
-                // Special handling for arrays
-                if (Array.isArray(value)) {
-                    actualType = 'array';
-                }
-                
-                if (expectedType && actualType !== expectedType && 
-                    !(expectedType === 'array' && Array.isArray(value))) {
-                    return {
-                        valido: false,
-                        error: `${context ? context + ': ' : ''}Tipo inválido para ${key}, se esperaba ${expectedType} pero se recibió ${actualType}`
-                    };
-                }
-                
-                // Custom validation function
-                if (fieldSchema.validar && typeof fieldSchema.validar === 'function') {
-                    if (!fieldSchema.validar(value)) {
-                        return {
-                            valido: false,
-                            error: `${context ? context + ': ' : ''}Validación personalizada fallida para ${key}`
-                        };
-                    }
-                }
-            }
-        }
-        
-        return { valido: true };
-    } catch (error) {
+    
+    if (typeof parada === 'object' && parada !== null) {
         return {
-            valido: false,
-            error: `${context ? context + ': ' : ''}Error durante la validación: ${error.message}`
+            id: parada.id || parada.ID || parada.parada_id || `parada_${index}`,
+            index: parada.index !== undefined ? parada.index : index,
+            nombre: parada.nombre || parada.name || parada.titulo || `Parada ${index + 1}`,
+            coordenadas: parada.coordenadas || parada.coords || null,
+            audio: parada.audio || null,
+            reto: parada.reto || null,
+            ...parada
         };
     }
-}
-
-/**
- * Maneja un error de manera consistente en toda la aplicación
- * @param {Error|string} error - Error a manejar o mensaje de error
- * @param {Object} options - Opciones adicionales
- * @param {string} options.context - Contexto donde ocurrió el error
- * @param {Object} options.detalles - Detalles adicionales del error
- * @param {string} options.nivel - Nivel de error (error, warning, info)
- * @param {Error} options.causa - Error original que causó este error
- * @throws {AppError} Siempre lanza un AppError
- */
-export function manejarError(error, { context = '', detalles = null, nivel = 'error', causa = null } = {}) {
-    let errorParaLanzar;
     
-    // Si ya es un AppError, simplemente lo propagamos
-    if (error instanceof AppError) {
-        errorParaLanzar = error;
-    } 
-    // Si es un Error estándar, lo convertimos a AppError
-    else if (error instanceof Error) {
-        errorParaLanzar = new AppError(error.message, {
-            causa: error,
-            nivel,
-            detalles: detalles || { stack: error.stack }
-        });
-    }
-    // Si es un string, lo convertimos a Error
-    else if (typeof error === 'string') {
-        errorParaLanzar = new AppError(error, { nivel, detalles, causa });
-    }
-    // Cualquier otro caso
-    else {
-        errorParaLanzar = new AppError('Error desconocido', { 
-            nivel: 'error', 
-            detalles: { error: String(error) },
-            causa: error
-        });
-    }
-    
-    // Añadir contexto si se proporciona
-    if (context) {
-        errorParaLanzar.contexto = context;
-    }
-    
-    // Registrar el error según su nivel
-    switch (errorParaLanzar.nivel) {
-        case 'warning':
-            logger.warn(`[${context}] ${errorParaLanzar.message}`, { error: errorParaLanzar.toJSON() });
-            break;
-        case 'info':
-            logger.info(`[${context}] ${errorParaLanzar.message}`, { error: errorParaLanzar.toJSON() });
-            break;
-        case 'debug':
-            logger.debug(`[${context}] ${errorParaLanzar.message}`, { error: errorParaLanzar.toJSON() });
-            break;
-        default: // error
-            logger.error(`[${context}] ${errorParaLanzar.message}`, { error: errorParaLanzar.toJSON() });
-    }
-    
-    // Lanzar el error para que pueda ser manejado por el llamador
-    throw errorParaLanzar;
-}
-
-/**
- * Crea un error de validación
- * @param {string} tipo - Tipo de error de validación (ej: 'DATOS_INVALIDOS')
- * @param {Object} [detalles] - Detalles adicionales del error
- * @param {string} [context] - Contexto donde ocurrió el error
- * @throws {AppError} Error de validación
- */
-export function errorValidacion(tipo, detalles = null, context = '') {
-    const errorInfo = ERRORES.VALIDACION[tipo] || {
-        codigo: 1000,
-        mensaje: 'Error de validación',
-        nivel: 'error'
+    return {
+        id: `parada_${index}`,
+        index,
+        nombre: `Parada ${index + 1}`
     };
-    
-    throw new AppError(errorInfo.mensaje, {
-        codigo: errorInfo.codigo,
-        nivel: errorInfo.nivel || 'error',
-        detalles: { ...detalles, tipoError: tipo },
-        context
-    });
 }
 
 /**
- * Sanitiza datos de entrada en mensajes, removiendo scripts y caracteres peligrosos
- * @param {any} entrada - Datos a sanitizar
- * @returns {any} Datos sanitizados
+ * Resuelve IDs de parada a partir de diferentes formatos
+ * @param {*} input - Input que puede contener IDs de parada
+ * @returns {Array<string>} Array de IDs de parada
  */
-export function sanitizarEntrada(entrada) {
-    if (typeof entrada === 'string') {
-        return entrada
-            // Remover scripts
-            .replace(/<script[^>]*>.*?<\/script>/gi, '')
-            // Remover iframes
-            .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '')
-            // Remover otros tags peligrosos
-            .replace(/<(embed|object|applet|meta|link|style)[^>]*>.*?<\/\1>/gi, '')
-            // Remover javascript: protocol
-            .replace(/javascript:/gi, '')
-            // Remover data: protocol (puede contener scripts)
-            .replace(/data:text\/html/gi, '')
-            // Remover event handlers
-            .replace(/on\w+\s*=/gi, '')
-            // Remover expresiones eval
-            .replace(/eval\s*\(/gi, '')
-            // Remover import statements
-            .replace(/import\s*\(/gi, '')
-            // Limpiar caracteres de control
-            .replace(/[\x00-\x1F\x7F]/g, '');
+export function resolverIdsParada(input) {
+    if (!input) return [];
+    
+    // Si es string, puede ser un ID único o lista separada por comas
+    if (typeof input === 'string') {
+        return input.split(',').map(id => id.trim()).filter(Boolean);
     }
     
-    if (Array.isArray(entrada)) {
-        return entrada.map(item => sanitizarEntrada(item));
+    // Si es número, convertir a string
+    if (typeof input === 'number') {
+        return [String(input)];
     }
     
-    if (entrada && typeof entrada === 'object') {
-        const resultado = {};
-        for (const [key, value] of Object.entries(entrada)) {
-            // Sanitizar tanto la clave como el valor
-            const keySanitizada = typeof key === 'string' ? sanitizarEntrada(key) : key;
-            resultado[keySanitizada] = sanitizarEntrada(value);
-        }
-        return resultado;
+    // Si es array
+    if (Array.isArray(input)) {
+        return input.flatMap(item => resolverIdsParada(item));
     }
     
-    return entrada;
+    // Si es objeto con propiedad id
+    if (typeof input === 'object' && input !== null) {
+        if (input.id) return [String(input.id)];
+        if (input.ID) return [String(input.ID)];
+        if (input.parada_id) return [String(input.parada_id)];
+    }
+    
+    return [];
 }
 
 /**
- * Genera un ID único basado en la fecha y un valor aleatorio.
- * @returns {string} ID único.
- */
-export function generarIdUnico() {
-    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Normaliza un objeto de parada/tramo a la forma canónica usada por la app.
- * - No muta el objeto original; devuelve una copia o `null` si es inválido.
- * - Deriva `id` a partir de `id || parada_id || tramo_id || padreid`.
- * - Conserva los campos originales y añade `_normalizado: true`.
- * @param {any} item - Objeto potencial de parada/tramo
- * @returns {Object|null} Objeto normalizado o null si no es válido
- */
-export function normalizarParada(item) {
-    try {
-        if (!item || typeof item !== 'object') return null;
-
-        // Derivar id canónico
-        let id = null;
-        if (typeof item.id === 'string' && item.id.trim() !== '') id = item.id.trim();
-        else if (typeof item.parada_id === 'string' && item.parada_id.trim() !== '') id = item.parada_id.trim();
-        else if (typeof item.tramo_id === 'string' && item.tramo_id.trim() !== '') id = item.tramo_id.trim();
-        else if (typeof item.padreid === 'string' && item.padreid.trim() !== '') {
-            // eliminar prefijo 'padre-' si existe
-            id = item.padreid.trim().replace(/^padre-/, '');
-        }
-
-        if (!id) {
-            // No hay id derivable, considerar inválido
-            logger.warn('[UTILS] normalizarParada: elemento sin id derivable, será descartado', item);
-            return null;
-        }
-
-        const tipo = item.tipo || (item.tramo_id ? 'tramo' : (item.parada_id ? 'parada' : undefined));
-
-        // Normalizar coordenadas si se encuentran en campos latitud/longitud
-        const salida = Object.assign({}, item);
-        salida.id = id;
-        // Ensure both canonical ids are present for children: padreid and paradaId
-        // Keep existing padreid if provided, otherwise generate one with prefix
-        if (typeof salida.padreid !== 'string' || salida.padreid.trim() === '') {
-            salida.padreid = `padre-${id}`;
-        }
-        // Provide a consistent camelCase paradaId if available
-        if (!salida.paradaId && typeof item.parada_id === 'string') {
-            salida.paradaId = item.parada_id;
-        } else if (!salida.paradaId && typeof item.paradaId === 'string') {
-            salida.paradaId = item.paradaId;
-        } else if (!salida.paradaId) {
-            // Derive from id if nothing else
-            salida.paradaId = salida.id;
-        }
-        if (!salida.tipo && tipo) salida.tipo = tipo;
-
-        // Normalize lat/long fields into lat/lng and a standard ubicacion object
-        if ((salida.latitud !== undefined && salida.longitud !== undefined) &&
-            (!salida.lat || !salida.lng)) {
-            const lat = Number(salida.latitud);
-            const lng = Number(salida.longitud);
-            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
-                salida.lat = lat;
-                salida.lng = lng;
-            }
-        }
-        // If lat/lng present but no ubicacion, create it for consistency
-        if ((salida.lat !== undefined && salida.lng !== undefined) && !salida.ubicacion) {
-            salida.ubicacion = { lat: Number(salida.lat), lng: Number(salida.lng) };
-        }
-
-        // Normalize waypoints if present (convert latitud/longitud -> lat/lng)
-        if (Array.isArray(salida.waypoints) && salida.waypoints.length > 0) {
-            salida.waypoints = salida.waypoints.map(wp => {
-                const out = Object.assign({}, wp);
-                if (out.latitud !== undefined && out.longitud !== undefined && (out.lat === undefined || out.lng === undefined)) {
-                    const lat = Number(out.latitud);
-                    const lng = Number(out.longitud);
-                    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                        out.lat = lat;
-                        out.lng = lng;
-                    } else {
-                        logger.warn('[UTILS] normalizarParada: waypoint con coordenadas inválidas', out);
-                    }
-                }
-                // Normalize nested coordenadas object as well
-                if (out.coordenadas && out.coordenadas.lat !== undefined && out.coordenadas.lng !== undefined) {
-                    out.lat = Number(out.coordenadas.lat);
-                    out.lng = Number(out.coordenadas.lng);
-                }
-                return out;
-            });
-        }
-
-        // Ensure ubicacion.inicio/fin normalized for tramos
-        if (salida.inicio && typeof salida.inicio === 'object') {
-            if (salida.inicio.latitud !== undefined && salida.inicio.longitud !== undefined) {
-                salida.inicio.lat = Number(salida.inicio.latitud);
-                salida.inicio.lng = Number(salida.inicio.longitud);
-            }
-            if (salida.inicio.coordenadas && salida.inicio.coordenadas.lat !== undefined) {
-                salida.inicio.lat = Number(salida.inicio.coordenadas.lat);
-                salida.inicio.lng = Number(salida.inicio.coordenadas.lng);
-            }
-        }
-        if (salida.fin && typeof salida.fin === 'object') {
-            if (salida.fin.latitud !== undefined && salida.fin.longitud !== undefined) {
-                salida.fin.lat = Number(salida.fin.latitud);
-                salida.fin.lng = Number(salida.fin.longitud);
-            }
-            if (salida.fin.coordenadas && salida.fin.coordenadas.lat !== undefined) {
-                salida.fin.lat = Number(salida.fin.coordenadas.lat);
-                salida.fin.lng = Number(salida.fin.coordenadas.lng);
-            }
-        }
-
-        salida._normalizado = true;
-        return salida;
-    } catch (error) {
-        logger.error('[UTILS] normalizarParada: error normalizando elemento', error, item);
-        return null;
-    }
-}
-
-/**
- * Normaliza un array de paradas/tramos. Devuelve array con elementos válidos.
- * @param {any} arr - Array potencial de paradas
- * @returns {Array} Array normalizado (vacío si entrada inválida)
- */
-export function normalizarParadas(arr) {
-    try {
-        if (!Array.isArray(arr)) {
-            logger.warn('[UTILS] normalizarParadas: entrada no es un array');
-            return [];
-        }
-
-        const resultado = [];
-        let descartados = 0;
-        for (let i = 0; i < arr.length; i++) {
-            const n = normalizarParada(arr[i]);
-            if (n) resultado.push(n);
-            else {
-                descartados += 1;
-                logger.debug('[UTILS] normalizarParadas: elemento descartado en índice', i);
-            }
-        }
-
-        // Deduplicar por id (mantener primer encuentro)
-        const vistos = new Set();
-        const dedup = [];
-        for (const el of resultado) {
-            if (vistos.has(el.id)) continue;
-            vistos.add(el.id);
-            dedup.push(el);
-        }
-
-        // Emitir evento con número de elementos descartados para monitoreo (si aplica)
-        try {
-            if (typeof window !== 'undefined' && window && typeof window.dispatchEvent === 'function' && descartados > 0) {
-                window.dispatchEvent(new CustomEvent('vv:paradas:descartadas', { detail: { descartadas: descartados } }));
-            }
-        } catch (err) {
-            logger.debug('[UTILS] normalizarParadas: no se pudo emitir evento de descartes', err);
-        }
-
-        return dedup;
-    } catch (error) {
-        logger.error('[UTILS] normalizarParadas: error procesando array', error);
-        return [];
-    }
-}
-    /**
-     * Devuelve el ID canónico del padre (runtime-seguro)
-     * - Intenta, en orden: window.CONFIG_PADRE.ID, window.Config.ID_PADRE, window.CONFIG_PADRE_LOCAL.ID
-     * - Fallback: 'padre'
-     * @returns {string}
-     */
-    export function getPadreId() {
-        try {
-            if (typeof window !== 'undefined') {
-                if (window.CONFIG_PADRE && window.CONFIG_PADRE.ID) return window.CONFIG_PADRE.ID;
-                // Do not rely on CONFIG_PADRE_LOCAL alias; prefer canonical CONFIG_PADRE
-                if (window.Config && window.Config.ID_PADRE) return window.Config.ID_PADRE;
-            }
-        } catch (e) {
-            // ignore
-        }
-        return 'padre';
-    }
-
-    /**
-     * Devuelve un ID local de hijo si está disponible (runtime-seguro)
-     * @returns {string|null}
-     */
-    export function getLocalHijoId() {
-        try {
-            if (typeof window !== 'undefined') {
-                if (window.CONFIG_HIJO && window.CONFIG_HIJO.IFRAME_ID) return window.CONFIG_HIJO.IFRAME_ID;
-                if (window.CONFIG_HIJO && window.CONFIG_HIJO.id) return window.CONFIG_HIJO.id;
-            }
-        } catch (e) { /* ignore */ }
-        return null;
-    }
-
-// ============================================================
-// CONTROLADORES DE MENSAJERÍA UI
-// ============================================================
-
-/**
- * Maneja las notificaciones del usuario en la interfaz.
- * Este controlador gestiona la visualización de mensajes de notificación al usuario,
- * incluyendo mensajes informativos, de éxito, advertencias y errores.
- * 
- * @param {Object} mensaje - Mensaje recibido
- * @param {string} mensaje.origen - Origen del mensaje
- * @param {Object} mensaje.datos - Datos de la notificación
- * @param {string} mensaje.datos.titulo - Título de la notificación
- * @param {string} mensaje.datos.mensaje - Contenido del mensaje
- * @param {string} [mensaje.datos.tipo='info'] - Tipo de notificación (info, exito, advertencia, error)
- * @param {number} [mensaje.datos.duracion=5000] - Duración en milisegundos (0 para permanente)
- * @param {Array} [mensaje.datos.acciones=[]] - Acciones disponibles como botones
- * @param {boolean} [mensaje.datos.cerrable=true] - Si la notificación puede ser cerrada por el usuario
- * @param {string} [mensaje.datos.id] - ID único para notificaciones actualizables
- * @param {boolean} [mensaje.datos.reemplazar=false] - Si es true, reemplaza notificaciones con el mismo ID
- * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
- * @returns {Promise<void>}
- */
-registrarControlador(TIPOS_MENSAJE.UI.NOTIFICACION, async (mensaje) => {
-    const logPrefix = `[UI.NOTIFICACION][${mensaje?.origen || 'desconocido'}]`;
-        
-    const timestamp = Date.now();
-    const mensajeId = mensaje.mensajeId || generarIdUnico();
-    
-    try {
-        // 1. Validación del mensaje
-        if (!mensaje?.origen) {
-            logger.warn(`${logPrefix} Mensaje sin origen, ignorando notificación`);
-            return;
-        }
-
-        const { 
-            titulo, 
-            mensaje: contenido, 
-            tipo = 'info', 
-            duracion = 5000, 
-            acciones = [],
-            cerrable = true,
-            id = generarIdUnico(),
-            reemplazar = false,
-            metadata = {}
-        } = mensaje.datos || {};
-
-        // 2. Validar parámetros requeridos
-        if (!contenido) {
-            const errorMsg = 'Falta el contenido del mensaje de notificación';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'PARAMETROS_INVALIDOS',
-                    mensaje: errorMsg,
-                    detalles: {
-                        parametrosRequeridos: ['mensaje'],
-                        parametrosRecibidos: Object.keys(mensaje.datos || {})
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 3. Validar tipo de notificación
-        const tiposValidos = ['info', 'exito', 'advertencia', 'error', 'carga'];
-        if (!tiposValidos.includes(tipo)) {
-            const errorMsg = `Tipo de notificación no válido: ${tipo}`;
-            logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
-            
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'TIPO_INVALIDO',
-                    mensaje: errorMsg,
-                    detalles: {
-                        tipoRecibido: tipo,
-                        tiposValidos
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 4. Validar acciones
-        const accionesValidadas = [];
-        if (Array.isArray(acciones)) {
-            for (const [index, accion] of acciones.entries()) {
-                if (typeof accion === 'string') {
-                    accionesValidadas.push({
-                        id: `accion-${index}`,
-                        texto: accion,
-                        tipo: 'default'
-                    });
-                } else if (accion && typeof accion === 'object' && accion.texto) {
-                    accionesValidadas.push({
-                        id: accion.id || `accion-${index}`,
-                        texto: accion.texto,
-                        tipo: accion.tipo || 'default',
-                        icono: accion.icono,
-                        peligroso: accion.peligroso || false,
-                        datos: accion.datos
-                    });
-                }
-            }
-        }
-
-        // 5. Crear objeto de notificación
-        const notificacion = {
-            id,
-            titulo,
-            mensaje: contenido,
-            tipo,
-            duracion: Math.max(0, parseInt(duracion, 10) || 5000),
-            acciones: accionesValidadas,
-            cerrable,
-            timestamp,
-            origen: mensaje.origen,
-            metadata: {
-                ...metadata,
-                mensajeOriginalId: mensajeId
-            }
-        };
-
-        // 6. Registrar evento de notificación
-        registrarEvento('MOSTRAR_NOTIFICACION', {
-            id,
-            tipo,
-            origen: mensaje.origen,
-            duracion: notificacion.duracion,
-            tieneAcciones: accionesValidadas.length > 0
-        });
-
-        // 7. Enviar notificación al sistema de UI (resolver dinámico)
-        try {
-            // 7.1. Verificar si ya existe una notificación con el mismo ID
-            const destinoUiNoti = resolverUIDestino();
-            const destinoUsableNoti = esDestinoValido(destinoUiNoti) ? destinoUiNoti : 'broadcast';
-            if (destinoUsableNoti === 'broadcast') {
-                try { typeof window.incrementarContador === 'function' && window.incrementarContador('notificacion.fallback_broadcast'); } catch (e) { /* ignore */ }
-            }
-            if (reemplazar) {
-                await enviarMensaje({
-                    destino: destinoUsableNoti,
-                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                    origen: 'sistema',
-                    mensajeId: generarIdUnico(),
-                    mensajeOriginalId: mensajeId,
-                    timestamp,
-                    datos: {
-                        accion: 'reemplazar',
-                        id,
-                        notificacion
-                    }
-                });
-            } else {
-                await enviarMensaje({
-                    destino: destinoUsableNoti,
-                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                    origen: 'sistema',
-                    mensajeId: generarIdUnico(),
-                    mensajeOriginalId: mensajeId,
-                    timestamp,
-                    datos: {
-                        accion: 'mostrar',
-                        notificacion
-                    }
-                });
-            }
-
-            // 7.2. Confirmación al emisor original — incluir siempre 'origen' para evitar errores
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    accion: 'NOTIFICACION_MOSTRADA',
-                    id,
-                    timestamp,
-                    detalles: {
-                        duracion: notificacion.duracion
-                    }
-                }
-            });
-
-            logger.info(`${logPrefix} Notificación mostrada: ${titulo || 'Sin título'}`, {
-                tipo,
-                duracion: notificacion.duracion,
-                id,
-                tieneAcciones: accionesValidadas.length > 0
-            });
-
-        } catch (error) {
-            const errorProcesamiento = `Error al mostrar la notificación: ${error.message}`;
-            logger.error(`${logPrefix} ${errorProcesamiento}`, error);
-            
-            // Notificar el error al emisor original
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp: Date.now(),
-                datos: {
-                    codigo: 'ERROR_MOSTRAR_NOTIFICACION',
-                    mensaje: 'No se pudo mostrar la notificación',
-                    detalles: error.message,
-                    id,
-                    severidad: 'error'
-                }
-            });
-        }
-
-    } catch (error) {
-        const errorNoManejado = `Error no manejado en UI.NOTIFICACION: ${error.message}`;
-        logger.error(`${logPrefix} ${errorNoManejado}`, error);
-        
-        try {
-            // Notificar el error al emisor original si es posible
-            if (mensaje?.origen) {
-                await enviarMensaje({
-                    origen: 'sistema',
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                    mensajeId: generarIdUnico(),
-                    mensajeOriginalId: mensajeId,
-                    timestamp: Date.now(),
-                    datos: {
-                        codigo: 'ERROR_INTERNO',
-                        mensaje: 'Error interno al procesar la notificación',
-                        detalles: error.message,
-                        severidad: 'error',
-                        stack: error.stack
-                    }
-                });
-            }
-        } catch (errorNotificacion) {
-            logger.error(`${logPrefix} Error al notificar error: ${errorNotificacion.message}`, errorNotificacion);
-        }
-    }
-});
-
-/**
- * Maneja los diálogos modales en la interfaz de usuario.
- * Este controlador gestiona la visualización y control de ventanas modales,
- * incluyendo confirmaciones, formularios y contenido personalizado.
- * 
- * @param {Object} mensaje - Mensaje recibido
- * @param {string} mensaje.origen - Origen del mensaje
- * @param {Object} mensaje.datos - Datos del modal
- * @param {string} mensaje.datos.tipo - Tipo de modal (confirmacion, formulario, personalizado, etc.)
- * @param {string} mensaje.datos.titulo - Título del modal
- * @param {string|Object} mensaje.datos.contenido - Contenido del modal (texto o componente)
- * @param {Array} [mensaje.datos.acciones=[]] - Acciones disponibles en el modal
- * @param {Object} [mensaje.datos.config={}] - Configuración adicional del modal
- * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
- * @returns {Promise<void>}
- */
-registrarControlador(TIPOS_MENSAJE.UI.MODAL, async (mensaje) => {
-    const logPrefix = `[UI.MODAL][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    const mensajeId = mensaje.mensajeId || generarIdUnico();
-    const modalId = `modal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    try {
-        // 1. Validación del mensaje
-        if (!mensaje?.origen) {
-            logger.warn(`${logPrefix} Mensaje sin origen, ignorando solicitud de modal`);
-            return;
-        }
-
-        const { 
-            tipo = 'informacion',
-            titulo = '',
-            contenido = '',
-            acciones = [],
-            config = {},
-            datos = {}
-        } = mensaje.datos || {};
-
-        // 2. Validar parámetros requeridos
-        if (!contenido && !acciones.length) {
-            const errorMsg = 'El modal debe tener contenido o al menos una acción';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'PARAMETROS_INVALIDOS',
-                    mensaje: errorMsg,
-                    detalles: {
-                        parametrosRequeridos: ['contenido o acciones'],
-                        parametrosRecibidos: Object.keys(mensaje.datos || {})
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 3. Validar tipo de modal
-        const tiposValidos = ['informacion', 'confirmacion', 'formulario', 'personalizado', 'error', 'advertencia', 'exito'];
-        if (!tiposValidos.includes(tipo)) {
-            const errorMsg = `Tipo de modal no válido: ${tipo}`;
-            logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
-            
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'TIPO_INVALIDO',
-                    mensaje: errorMsg,
-                    detalles: {
-                        tipoRecibido: tipo,
-                        tiposValidos
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 4. Validar y formatear acciones
-        const accionesValidadas = [];
-        if (Array.isArray(acciones)) {
-            for (const [index, accion] of acciones.entries()) {
-                if (typeof accion === 'string') {
-                    accionesValidadas.push({
-                        id: `accion-${index}`,
-                        texto: accion,
-                        tipo: 'secundario',
-                        cierra: true,
-                        datos: {}
-                    });
-                } else if (accion && typeof accion === 'object' && accion.texto) {
-                    accionesValidadas.push({
-                        id: accion.id || `accion-${index}`,
-                        texto: accion.texto,
-                        tipo: accion.tipo || 'secundario',
-                        cierra: accion.cierra !== false, // Por defecto cierra el modal
-                        icono: accion.icono,
-                        peligroso: accion.peligroso || false,
-                        deshabilitado: accion.deshabilitado || false,
-                        datos: accion.datos || {}
-                    });
-                }
-            }
-        }
-
-        // 5. Configuración por defecto del modal
-        const configuracion = {
-            cerrable: config.cerrable !== false, // Por defecto es cerrable
-            cerrarConEscape: config.cerrarConEscape !== false, // Por defecto se cierra con Escape
-            cerrarAlHacerClickAfuera: config.cerrarAlHacerClickAfuera !== false, // Por defecto se cierra al hacer click fuera
-            tamaño: config.tamaño || 'medio', // 'pequeño', 'medio', 'grande', 'completo'
-            estilo: config.estilo || {}, // Estilos CSS personalizados
-            ...config
-        };
-
-        // 6. Crear objeto de modal
-        const modal = {
-            id: modalId,
-            tipo,
-            titulo,
-            contenido,
-            acciones: accionesValidadas,
-            config: configuracion,
-            datos,
-            timestamp,
-            origen: mensaje.origen,
-            metadata: {
-                mensajeOriginalId: mensajeId,
-                ...(config.metadata || {})
-            }
-        };
-
-        // 7. Registrar evento de apertura de modal
-        registrarEvento('MOSTRAR_MODAL', {
-            id: modalId,
-            tipo,
-            origen: mensaje.origen,
-            tieneAcciones: accionesValidadas.length > 0,
-            config: configuracion
-        });
-
-        // 8. Enviar comando para mostrar el modal al sistema de UI (resolver dinámico)
-        try {
-            const destinoUiModal = resolverUIDestino();
-            const destinoUsableModal = esDestinoValido(destinoUiModal) ? destinoUiModal : 'broadcast';
-            await enviarMensaje({
-                destino: destinoUsableModal,
-                tipo: TIPOS_MENSAJE.UI.MODAL,
-                origen: 'sistema',
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    accion: 'mostrar',
-                    modal
-                }
-            });
-
-            // 9. Confirmación al emisor original
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    accion: 'MOSTRAR_MODAL',
-                    id: modalId,
-                    tipo,
-                    timestamp,
-                    detalles: {
-                        tieneContenido: !!contenido,
-                        numAcciones: accionesValidadas.length
-                    }
-                }
-            });
-
-            logger.info(`${logPrefix} Modal mostrado: ${titulo || 'Sin título'}`, {
-                tipo,
-                id: modalId,
-                tieneContenido: !!contenido,
-                numAcciones: accionesValidadas.length
-            });
-
-        } catch (error) {
-            const errorProcesamiento = `Error al mostrar el modal: ${error.message}`;
-            logger.error(`${logPrefix} ${errorProcesamiento}`, error);
-            
-            // Notificar el error al emisor original
-            await enviarMensaje({
-                origen: 'sistema',
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp: Date.now(),
-                datos: {
-                    codigo: 'ERROR_MOSTRAR_MODAL',
-                    mensaje: 'No se pudo mostrar el modal',
-                    detalles: error.message,
-                    id: modalId,
-                    severidad: 'error',
-                    stack: error.stack
-                }
-            });
-        }
-
-    } catch (error) {
-        const errorNoManejado = `Error no manejado en UI.MODAL: ${error.message}`;
-        logger.error(`${logPrefix} ${errorNoManejado}`, error);
-        
-        try {
-            // Notificar el error al emisor original si es posible
-            if (mensaje?.origen) {
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                    mensajeId: generarIdUnico(),
-                    mensajeOriginalId: mensajeId,
-                    timestamp: Date.now(),
-                    datos: {
-                        codigo: 'ERROR_INTERNO',
-                        mensaje: 'Error interno al procesar la solicitud de modal',
-                        detalles: error.message,
-                        severidad: 'error',
-                        stack: error.stack
-                    }
-                });
-            }
-        } catch (errorNotificacion) {
-            logger.error(`${logPrefix} Error al notificar error: ${errorNotificacion.message}`, errorNotificacion);
-        }
-    }
-});
-
-/**
- * Maneja las interacciones del usuario con los modales.
- * @private
- * @param {Object} interaccion - Datos de la interacción
- * @param {string} interaccion.id - ID del modal
- * @param {string} interaccion.accion - Tipo de interacción ('cerrar', 'confirmar', 'accion')
- * @param {string} [interaccion.accionId] - ID de la acción si aplica
- * @param {Object} [interaccion.datos] - Datos adicionales de la interacción
- */
-async function manejarInteraccionModal(interaccion) {
-    const { id, accion, accionId, datos = {} } = interaccion;
-    const logPrefix = `[UI.MODAL][INTERACCION][${id}]`;
-    
-    try {
-        // Registrar la interacción
-        registrarEvento('INTERACCION_MODAL', {
-            id,
-            accion,
-            accionId,
-            timestamp: Date.now(),
-            datos
-        });
-
-        // Si hay un origen, notificar la interacción
-        if (datos.origen) {
-            await enviarMensaje({
-                destino: datos.origen,
-                tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
-                mensajeId: generarIdUnico(),
-                timestamp: Date.now(),
-                datos: {
-                    tipo: 'MODAL_INTERACCION',
-                    modalId: id,
-                    accion,
-                    accionId,
-                    datos: datos.datosAccion || {}
-                }
-            });
-        }
-
-        logger.debug(`${logPrefix} Interacción registrada`, { accion, accionId });
-    } catch (error) {
-        logger.error(`${logPrefix} Error al procesar interacción: ${error.message}`, error);
-    }
-}
-
-// Exponer helpers críticos en window para compatibilidad con scripts no-modulares
-try {
-    if (typeof window !== 'undefined') {
-        if (typeof window.getPadreId === 'undefined') window.getPadreId = getPadreId;
-        if (typeof window.getLocalHijoId === 'undefined') window.getLocalHijoId = getLocalHijoId;
-    }
-} catch (err) {
-    // Silently ignore environments without window or permission issues
-}
-
-// Mantén solo la limpieza de utilidades propias
-if (typeof window !== 'undefined') {
-    window.addEventListener('pagehide', () => {
-        try {
-            // Limpiar configuración
-            if (window.Config) delete window.Config;
-            
-            logger.info('Limpieza agresiva de globales de utilidades completada');
-        } catch (error) {
-            // Logging mínimo durante pagehide para evitar errores
-            logger.warn('Error en limpieza agresiva de utilidades:', error.message);
-        }
-    });
-}
-
-// ============================================
-// ===== CONTROLADOR UI.ACCION_USUARIO =====
-// ============================================
-
-/**
- * Maneja las interacciones del usuario con las alertas.
- * @private
- * @param {Object} interaccion - Datos de la interacción
- * @param {string} interaccion.id - ID de la alerta
- * @param {string} interaccion.accion - Tipo de interacción
- * @param {string} [interaccion.accionId] - ID de la acción si aplica
- * @param {Object} [interaccion.datos] - Datos adicionales de la interacción
- */
-async function manejarInteraccionAlerta(interaccion) {
-    const { id, accion, accionId, datos = {} } = interaccion;
-    const logPrefix = `[UI.ALERTA][INTERACCION][${id}]`;
-    
-    try {
-        // Registrar la interacción
-        registrarEvento('INTERACCION_ALERTA', {
-            id,
-            accion,
-            accionId,
-            timestamp: Date.now(),
-            datos
-        });
-
-        // Si hay un origen, notificar la interacción
-        if (datos.origen) {
-            await enviarMensaje({
-                destino: datos.origen,
-                tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
-                mensajeId: generarIdUnico(),
-                timestamp: Date.now(),
-                datos: {
-                    tipo: 'ALERTA_INTERACCION',
-                    alertaId: id,
-                    accion,
-                    accionId,
-                    datos: datos.datosAccion || {}
-                }
-            });
-        }
-
-        logger.debug(`${logPrefix} Interacción registrada`, { accion, accionId });
-    } catch (error) {
-        logger.error(`${logPrefix} Error al procesar interacción: ${error.message}`, error);
-    }
-}
-
-/**
- * Maneja las interacciones del usuario con las notificaciones.
- * @private
- * @param {Object} interaccion - Datos de la interacción
- * @param {string} interaccion.id - ID de la notificación
- * @param {string} interaccion.accion - Tipo de interacción ('cerrar', 'click', 'accion')
- * @param {string} [interaccion.accionId] - ID de la acción si aplica
- * @param {Object} [interaccion.datos] - Datos adicionales de la interacción
- */
-async function manejarInteraccionNotificacion(interaccion) {
-    const { id, accion, accionId, datos = {} } = interaccion;
-    const logPrefix = `[UI.NOTIFICACION][INTERACCION][${id}]`;
-    
-    try {
-        // Registrar la interacción
-        registrarEvento('INTERACCION_NOTIFICACION', {
-            id,
-            accion,
-            accionId,
-            timestamp: Date.now()
-        });
-
-        // Si hay una acción específica, notificar al origen original
-        if (accion === 'accion' && datos.origen) {
-            await enviarMensaje({
-                destino: datos.origen,
-                tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
-                mensajeId: generarIdUnico(),
-                timestamp: Date.now(),
-                datos: {
-                    tipo: 'NOTIFICACION_ACCION',
-                    notificacionId: id,
-                    accionId,
-                    datos: datos.datosAccion || {}
-                }
-            });
-        }
-
-        logger.debug(`${logPrefix} Interacción registrada`, { accion, accionId });
-    } catch (error) {
-        logger.error(`${logPrefix} Error al procesar interacción: ${error.message}`, error);
-    }
-}
-
-/**
- * Controlador consolidado para todas las acciones de usuario.
- * Maneja diferentes tipos de interacciones del usuario con la interfaz.
- * @param {Object} mensaje - Mensaje de acción de usuario
- * @param {Object} mensaje.datos - Datos de la acción
- * @param {string} mensaje.datos.tipo - Tipo de acción (MODAL_INTERACCION, ALERTA_INTERACCION, NOTIFICACION_INTERACCION)
- * @param {string} mensaje.datos.accion - Tipo de acción alternativo para compatibilidad (mostrar-imagen, reproducir-video, etc.)
- */
-registrarControlador(TIPOS_MENSAJE.UI.ACCION_USUARIO, async (mensaje) => {
-    const { tipo, accion } = mensaje.datos || {};
-    
-    // Usar tipo primero, luego accion para compatibilidad
-    const tipoAccion = tipo || accion;
-    
-    logger.info('🔥 [UTILS][UI.ACCION_USUARIO] MENSAJE RECIBIDO:', mensaje);
-    logger.info('🔥 [UTILS][UI.ACCION_USUARIO] TIPO/ACCION:', tipoAccion);
-    
-    try {
-        switch (tipoAccion) {
-            case 'MODAL_INTERACCION':
-                await manejarInteraccionModal(mensaje.datos);
-                break;
-            case 'ALERTA_INTERACCION':
-                await manejarInteraccionAlerta(mensaje.datos);
-                break;
-            case 'NOTIFICACION_INTERACCION':
-                await manejarInteraccionNotificacion(mensaje.datos);
-                break;
-            case 'mostrar-imagen':
-                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-imagen');
-                await manejarMostrarImagen(mensaje.datos);
-                break;
-            case 'mostrar-mapa-completo':
-                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-completo');
-                try {
-                    const url = 'Av1_mapa_completo.html';
-                    if (typeof window.mostrarIframeOverlay === 'function') {
-                        window.mostrarIframeOverlay(url, 'Mapa completo');
-                    } else {
-                        logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] window.mostrarIframeOverlay no está disponible');
-                        
-                        // Fallback: notificar al usuario
-                        try {
-                            await enviarMensaje({
-                                tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                                destino: 'broadcast',
-                                datos: {
-                                    mensaje: 'No se puede mostrar el mapa completo: funcionalidad no disponible',
-                                    tipo: 'error',
-                                    duracion: 3000
-                                }
-                            });
-                        } catch (fallbackError) {
-                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error en fallback:', fallbackError);
-                        }
-                    }
-                } catch (err) {
-                    logger.error('🔥 [UTILS][MOSTRAR_MAPA_COMPLETO] Error:', err);
-                }
-                break;
-            case 'mostrar-mapa-jpg':
-                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO mostrar-mapa-jpg');
-                try {
-                    // Accept a dynamic URL from the child. If none provided, fallback to a default JPG.
-                    const url = (mensaje.datos && mensaje.datos.url) || 'mapas/Av1_mapa.jpg';
-                    const titulo = (mensaje.datos && mensaje.datos.titulo) || 'Mapa';
-
-                    // If the URL points to an HTML page, show it in an iframe overlay. Otherwise show as image.
-                    if (typeof url === 'string' && url.trim().toLowerCase().endsWith('.html')) {
-                        if (typeof window.mostrarIframeOverlay === 'function') {
-                            window.mostrarIframeOverlay(url, titulo);
-                        } else {
-                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarIframeOverlay no está disponible');
-                            
-                            // Fallback: notificar al usuario
-                            try {
-                                await enviarMensaje({
-                                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                                    destino: 'broadcast',
-                                    datos: {
-                                        mensaje: 'No se puede mostrar el mapa: funcionalidad no disponible',
-                                        tipo: 'error',
-                                        duracion: 3000
-                                    }
-                                });
-                            } catch (fallbackError) {
-                                logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error en fallback:', fallbackError);
-                            }
-                        }
-                    } else {
-                        if (typeof window.mostrarImagenOverlay === 'function') {
-                            window.mostrarImagenOverlay(url, titulo);
-                            const overlay = document.getElementById('imagen-overlay');
-                            if (overlay) {
-                                const cont = overlay.querySelector('.media-contenedor');
-                                if (cont) { cont.style.width = '85vw'; cont.style.height = '85vh'; }
-                            }
-                        } else {
-                            logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] window.mostrarImagenOverlay no está disponible');
-                            
-                            // Fallback: notificar al usuario
-                            try {
-                                await enviarMensaje({
-                                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                                    destino: 'broadcast',
-                                    datos: {
-                                        mensaje: 'No se puede mostrar la imagen del mapa: funcionalidad no disponible',
-                                        tipo: 'error',
-                                        duracion: 3000
-                                    }
-                                });
-                            } catch (fallbackError) {
-                                logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error en fallback:', fallbackError);
-                            }
-                        }
-                    }
-                } catch (err) {
-                    logger.error('🔥 [UTILS][MOSTRAR_MAPA_JPG] Error:', err);
-                }
-                break;
-            case 'reproducir-video':
-                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO reproducir-video');
-                await manejarReproducirVideo(mensaje.datos);
-                break;
-            case 'backdrop_click':
-                logger.debug('🔥 [UTILS][UI.ACCION_USUARIO] EJECUTANDO backdrop_click');
-                if (typeof window.ocultarHijo4 === 'function') {
-                    window.ocultarHijo4();
-                }
-                break;
-            default:
-                logger.warn(`[UI.ACCION_USUARIO] Tipo de acción desconocido: ${tipoAccion}`);
-        }
-    } catch (error) {
-        logger.error(`[UI.ACCION_USUARIO] Error al procesar acción: ${error.message}`, error);
-    }
-});
-
-/**
- * Maneja la acción de mostrar imagen
- */
-async function manejarMostrarImagen(datos) {
-    const { paradaActual, urlImagen, nombre, sinContenido, mensajeError } = datos || {};
-    
-    logger.debug('🔥 [UTILS][MOSTRAR_IMAGEN] Datos recibidos:', {
-        paradaActual,
-        urlImagen,
-        nombre,
-        sinContenido,
-        mensajeError
-    });
-    
-    try {
-        if (typeof window.mostrarImagenOverlay === 'function') {
-            if (sinContenido) {
-                logger.warn('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con mensaje de error');
-                window.mostrarImagenOverlay(null, nombre || `Imagen ${paradaActual}`, mensajeError);
-            } else {
-                logger.info('🔥 [UTILS][MOSTRAR_IMAGEN] Llamando con imagen:', urlImagen);
-                window.mostrarImagenOverlay(urlImagen, nombre || `Imagen ${paradaActual}`);
-            }
-        } else {
-            logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] window.mostrarImagenOverlay no está disponible');
-            
-            // Fallback: Notificar al usuario que la funcionalidad no está disponible
-            try {
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                    destino: 'broadcast',
-                    datos: {
-                        mensaje: 'No se puede mostrar la imagen: funcionalidad no disponible',
-                        tipo: 'error',
-                        duracion: 3000
-                    }
-                });
-            } catch (fallbackError) {
-                logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error en fallback de notificación:', fallbackError);
-            }
-        }
-    } catch (error) {
-        logger.error('🔥 [UTILS][MOSTRAR_IMAGEN] Error:', error);
-    }
-}
-
-/**
- * Maneja la acción de reproducir video
- */
-async function manejarReproducirVideo(datos) {
-    const { paradaActual, urlVideo, nombre, sinContenido, mensajeError } = datos || {};
-    
-    logger.debug('🔥 [UTILS][REPRODUCIR_VIDEO] Datos recibidos:', {
-        paradaActual,
-        urlVideo,
-        nombre,
-        sinContenido,
-        mensajeError
-    });
-    
-    try {
-        if (typeof window.mostrarVideoOverlay === 'function') {
-            if (sinContenido) {
-                logger.warn('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con mensaje de error');
-                window.mostrarVideoOverlay(null, nombre || `Video ${paradaActual}`, mensajeError);
-            } else {
-                logger.info('🔥 [UTILS][REPRODUCIR_VIDEO] Llamando con video:', urlVideo);
-                window.mostrarVideoOverlay(urlVideo, nombre || `Video ${paradaActual}`);
-            }
-        } else {
-            logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] window.mostrarVideoOverlay no está disponible');
-            
-            // Fallback: notificar al usuario
-            try {
-                await enviarMensaje({
-                    tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
-                    destino: 'broadcast',
-                    datos: {
-                        mensaje: 'No se puede reproducir el video: funcionalidad no disponible',
-                        tipo: 'error',
-                        duracion: 3000
-                    }
-                });
-            } catch (fallbackError) {
-                logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error en fallback:', fallbackError);
-            }
-        }
-    } catch (error) {
-        logger.error('🔥 [UTILS][REPRODUCIR_VIDEO] Error:', error);
-    }
-}
-
-// ============================================
-// ===== CONTROLADOR UI.ALERTA =====
-// ============================================
-
-/**
- * Maneja las alertas del usuario en la interfaz.
- * Este controlador gestiona la visualización de mensajes de alerta al usuario,
- * diseñados para mensajes importantes que requieren atención inmediata.
- * 
- * @param {Object} mensaje - Mensaje recibido
- * @param {string} mensaje.origen - Origen del mensaje
- * @param {Object} mensaje.datos - Datos de la alerta
- * @param {string} mensaje.datos.titulo - Título de la alerta
- * @param {string} mensaje.datos.mensaje - Contenido del mensaje de alerta
- * @param {string} [mensaje.datos.tipo='advertencia'] - Tipo de alerta (exito, informacion, advertencia, error)
- * @param {Array} [mensaje.datos.acciones=['Aceptar']] - Texto de los botones de acción
- * @param {boolean} [mensaje.datos.cerrable=true] - Si la alerta puede ser cerrada por el usuario
- * @param {number} [mensaje.datos.timeout=0] - Tiempo en ms para cierre automático (0 = no se cierra automáticamente)
- * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
- * @returns {Promise<void>}
- */
-registrarControlador(TIPOS_MENSAJE.UI.ALERTA, async (mensaje) => {
-    const logPrefix = `[UI.ALERTA][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    const mensajeId = mensaje.mensajeId || generarIdUnico();
-    const alertaId = `alerta-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    try {
-        // 1. Validación del mensaje
-        if (!mensaje?.origen) {
-            logger.warn(`${logPrefix} Mensaje sin origen, ignorando alerta`);
-            return;
-        }
-
-        const { 
-            titulo = 'Atención',
-            mensaje: contenido = '',
-            tipo = 'advertencia',
-            acciones = ['Aceptar'],
-            cerrable = true,
-            timeout = 0,
-            datos = {}
-        } = mensaje.datos || {};
-
-        // 2. Validar parámetros requeridos
-        if (!contenido) {
-            const errorMsg = 'Falta el contenido del mensaje de alerta';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'PARAMETROS_INVALIDOS',
-                    mensaje: errorMsg,
-                    detalles: {
-                        parametrosRequeridos: ['mensaje'],
-                        parametrosRecibidos: Object.keys(mensaje.datos || {})
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 3. Validar tipo de alerta
-        const tiposValidos = ['exito', 'informacion', 'advertencia', 'error'];
-        if (!tiposValidos.includes(tipo)) {
-            const errorMsg = `Tipo de alerta no válido: ${tipo}`;
-            logger.warn(`${logPrefix} ${errorMsg}`, { tipo, tiposValidos });
-            
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    codigo: 'TIPO_INVALIDO',
-                    mensaje: errorMsg,
-                    detalles: {
-                        tipoRecibido: tipo,
-                        tiposValidos
-                    },
-                    severidad: 'advertencia'
-                }
-            });
-            return;
-        }
-
-        // 4. Validar y formatear acciones
-        const accionesValidadas = [];
-        if (Array.isArray(acciones)) {
-            acciones.forEach((accion, index) => {
-                if (typeof accion === 'string') {
-                    accionesValidadas.push({
-                        id: `accion-${index}`,
-                        texto: accion,
-                        tipo: tipo === 'error' ? 'peligroso' : 'primario',
-                        valorPorDefecto: index === 0
-                    });
-                } else if (accion && typeof accion === 'object') {
-                    accionesValidadas.push({
-                        id: accion.id || `accion-${index}`,
-                        texto: accion.texto || `Acción ${index + 1}`,
-                        tipo: accion.tipo || (tipo === 'error' ? 'peligroso' : 'primario'),
-                        valorPorDefecto: accion.valorPorDefecto !== undefined ? accion.valorPorDefecto : index === 0,
-                        icono: accion.icono,
-                        deshabilitado: accion.deshabilitado || false,
-                        datos: accion.datos || {}
-                    });
-                }
-            });
-        }
-
-        // Si no hay acciones, agregar una por defecto
-        if (accionesValidadas.length === 0) {
-            accionesValidadas.push({
-                id: 'aceptar',
-                texto: 'Aceptar',
-                tipo: 'primario',
-                valorPorDefecto: true
-            });
-        }
-
-        // 5. Crear objeto de alerta
-        const alerta = {
-            id: alertaId,
-            titulo,
-            mensaje: contenido,
-            tipo,
-            acciones: accionesValidadas,
-            cerrable,
-            timeout: Math.max(0, parseInt(timeout, 10) || 0),
-            timestamp,
-            origen: mensaje.origen,
-            metadata: {
-                mensajeOriginalId: mensajeId,
-                ...(datos.metadata || {})
-            },
-            datos: {
-                ...datos,
-                metadata: undefined // No incluir metadata dos veces
-            }
-        };
-
-        // 6. Registrar evento de alerta
-        registrarEvento('MOSTRAR_ALERTA', {
-            id: alertaId,
-            tipo,
-            origen: mensaje.origen,
-            tieneAcciones: accionesValidadas.length > 0,
-            timeout: alerta.timeout
-        });
-
-        // 7. Enviar comando para mostrar la alerta al sistema de UI (resolver dinámico)
-        try {
-            const destinoUiAlerta = resolverUIDestino();
-            const destinoUsableAlerta = esDestinoValido(destinoUiAlerta) ? destinoUiAlerta : 'broadcast';
-            await enviarMensaje({
-                destino: destinoUsableAlerta,
-                tipo: TIPOS_MENSAJE.UI.ALERTA,
-                origen: 'sistema',
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    accion: 'mostrar',
-                    alerta
-                }
-            });
-
-            // 8. Si hay un timeout configurado, programar el cierre automático
-            if (alerta.timeout > 0) {
-                setTimeout(async () => {
-                    try {
-                        await enviarMensaje({
-                            destino: destinoUsableAlerta,
-                            tipo: TIPOS_MENSAJE.UI.ALERTA,
-                            origen: 'sistema',
-                            mensajeId: generarIdUnico(),
-                            timestamp: Date.now(),
-                            datos: {
-                                accion: 'cerrar',
-                                id: alertaId,
-                                razon: 'timeout',
-                                accionSeleccionada: accionesValidadas.find(a => a.valorPorDefecto)?.id
-                            }
-                        });
-
-                        // Notificar al origen que la alerta se cerró por timeout
-                        if (mensaje?.origen) {
-                            await enviarMensaje({
-                                destino: mensaje.origen,
-                                tipo: TIPOS_MENSAJE.UI.ACCION_USUARIO,
-                                mensajeId: generarIdUnico(),
-                                mensajeOriginalId: mensajeId,
-                                timestamp: Date.now(),
-                                datos: {
-                                    tipo: 'ALERTA_CERRADA',
-                                    alertaId,
-                                    accion: 'timeout',
-                                    accionId: accionesValidadas.find(a => a.valorPorDefecto)?.id,
-                                    datos: {
-                                        mensaje: 'La alerta se cerró automáticamente',
-                                        timeout: alerta.timeout
-                                    }
-                                }
-                            });
-                        }
-                    } catch (error) {
-                        logger.error(`${logPrefix} Error al cerrar automáticamente la alerta: ${error.message}`, error);
-                    }
-                }, alerta.timeout);
-            }
-
-            // 9. Confirmación al emisor original
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                datos: {
-                    accion: 'ALERTA_MOSTRADA',
-                    id: alertaId,
-                    tipo,
-                    timestamp,
-                    detalles: {
-                        tieneContenido: !!contenido,
-                        numAcciones: accionesValidadas.length,
-                        timeout: alerta.timeout > 0 ? alerta.timeout : null
-                    }
-                }
-            });
-
-            logger.info(`${logPrefix} Alerta mostrada: ${titulo || 'Sin título'}`, {
-                tipo,
-                id: alertaId,
-                tieneContenido: !!contenido,
-                numAcciones: accionesValidadas.length,
-                timeout: alerta.timeout > 0 ? `${alerta.timeout}ms` : 'ninguno'
-            });
-
-        } catch (error) {
-            const errorProcesamiento = `Error al mostrar la alerta: ${error.message}`;
-            logger.error(`${logPrefix} ${errorProcesamiento}`, error);
-            
-            // Notificar el error al emisor original
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                mensajeId: generarIdUnico(),
-                mensajeOriginalId: mensajeId,
-                timestamp: Date.now(),
-                datos: {
-                    codigo: 'ERROR_MOSTRAR_ALERTA',
-                    mensaje: 'No se pudo mostrar la alerta',
-                    detalles: error.message,
-                    id: alertaId,
-                    severidad: 'error',
-                    stack: error.stack
-                }
-            });
-        }
-
-    } catch (error) {
-        const errorNoManejado = `Error no manejado en UI.ALERTA: ${error.message}`;
-        logger.error(`${logPrefix} ${errorNoManejado}`, error);
-        
-        try {
-            // Notificar el error al emisor original si es posible
-            if (mensaje?.origen) {
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                    mensajeId: generarIdUnico(),
-                    mensajeOriginalId: mensajeId,
-                    timestamp: Date.now(),
-                    datos: {
-                        codigo: 'ERROR_INTERNO',
-                        mensaje: 'Error interno al procesar la solicitud de alerta',
-                        detalles: error.message,
-                        severidad: 'error',
-                        stack: error.stack
-                    }
-                });
-            }
-        } catch (errorNotificacion) {
-            logger.error(`${logPrefix} Error al notificar error: ${errorNotificacion.message}`, errorNotificacion);
-        }
-    }
-});
-
-// ============================================
-// ===== CONTROLADOR UI.CLOSE_MENUS =====
-// ============================================
-
-/**
- * Maneja las solicitudes de cierre de menús en la interfaz de usuario.
- * Este controlador procesa las solicitudes para cerrar menús abiertos,
- * notificando a los componentes de menú correspondientes.
- * 
- * @param {Object} mensaje - Mensaje de cierre de menús
- * @param {string} mensaje.origen - Origen del mensaje (ej: 'sistema', 'hijo1', etc.)
- * @param {Object} [mensaje.datos] - Datos adicionales para el cierre
- * @param {string} [mensaje.datos.except] - Opcional. Nombre del menú que NO debe cerrarse
- * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
- */
-registrarControlador(TIPOS_MENSAJE.UI.CLOSE_MENUS, async (mensaje) => {
-    const logPrefix = `[UI.CLOSE_MENUS][${mensaje?.origen || 'desconocido'}]`;
-
-    try {
-        // Solo registrar que se recibió el mensaje - los iframes se manejan solos
-        logger.debug(`${logPrefix} Mensaje CLOSE_MENUS recibido de ${mensaje?.origen}`);
-
-        // No hacer nada más - los iframes manejan su propio estado
-
-    } catch (error) {
-        logger.error(`${logPrefix} Error procesando CLOSE_MENUS:`, error);
-    }
-});
-
-// ============================================
-// ===== CONTROLADOR UI.ACTUALIZACION =====
-// ============================================
-
-/**
- * Maneja las actualizaciones de la interfaz de usuario.
- * Este controlador procesa las solicitudes de actualización del UI,
- * modificando elementos del DOM, actualizando estilos, o disparando animaciones
- * según el tipo de actualización solicitada.
- * 
- * @param {Object} mensaje - Mensaje de actualización UI
- * @param {string} mensaje.origen - Origen del mensaje (ej: 'hijo2', 'hijo3', 'sistema', etc.)
- * @param {Object} mensaje.datos - Datos de la actualización
- * @param {string} mensaje.datos.tipo - Tipo de actualización ('texto', 'estilo', 'clase', 'atributo', 'visibilidad', 'animacion', etc.)
- * @param {string} [mensaje.datos.selector] - Selector CSS del elemento a actualizar
- * @param {string} [mensaje.datos.elementoId] - ID del elemento a actualizar (alternativa a selector)
- * @param {*} mensaje.datos.valor - Nuevo valor a aplicar (depende del tipo)
- * @param {Object} [mensaje.datos.opciones] - Opciones adicionales según el tipo de actualización
- * @param {boolean} [mensaje.datos.transicion] - Si se debe aplicar transición CSS
- * @param {number} [mensaje.datos.duracion] - Duración de la transición en ms (por defecto 300)
- * @param {string} [mensaje.mensajeId] - ID único del mensaje para seguimiento
- */
-registrarControlador(TIPOS_MENSAJE.UI.ACTUALIZACION, async (mensaje) => {
-    const logPrefix = `[UI.ACTUALIZACION][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    const mensajeId = mensaje?.mensajeId || generarIdUnico();
-    
-    try {
-        // 1. Validación del mensaje
-        if (!mensaje?.origen) {
-            const errorMsg = 'Mensaje sin origen, ignorando solicitud de actualización UI';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            return;
-        }
-
-        if (!mensaje?.datos?.tipo) {
-            const errorMsg = 'Mensaje sin tipo de actualización especificado';
-            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId, mensaje });
-            throw new Error(errorMsg);
-        }
-
-        const { 
-            tipo, 
-            selector, 
-            elementoId, 
-            valor, 
-            opciones = {},
-            transicion = false,
-            duracion = 300
-        } = mensaje.datos;
-
-        logger.info(`${logPrefix} Procesando actualización UI tipo '${tipo}'`, { 
-            mensajeId,
-            origen: mensaje.origen,
-            tipo,
-            selector,
-            elementoId,
-            transicion
-        });
-
-        // 2. Obtener el elemento a actualizar
-        let elemento = null;
-        if (elementoId) {
-            elemento = document.getElementById(elementoId);
-        } else if (selector) {
-            elemento = document.querySelector(selector);
-        }
-
-        if (!elemento) {
-            const errorMsg = `Elemento no encontrado: ${elementoId || selector}`;
-            logger.error(`${logPrefix} ${errorMsg}`, { mensajeId, elementoId, selector });
-            throw new Error(errorMsg);
-        }
-
-        // 3. Aplicar transición si se solicita
-        if (transicion) {
-            elemento.style.transition = `all ${duracion}ms ease-in-out`;
-        }
-
-        // 4. Procesar según el tipo de actualización
-        let resultadoActualizacion = null;
-        
-        switch (tipo) {
-            case 'texto':
-                // Actualizar contenido de texto
-                elemento.textContent = valor;
-                resultadoActualizacion = { accion: 'texto_actualizado', elementoId: elemento.id };
-                break;
-
-            case 'html':
-                // Actualizar contenido HTML (con sanitización básica)
-                if (opciones.sanitizar !== false) {
-                    // Sanitización básica: eliminar scripts
-                    const valorSanitizado = String(valor).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-                    elemento.innerHTML = valorSanitizado;
-                } else {
-                    elemento.innerHTML = valor;
-                }
-                resultadoActualizacion = { accion: 'html_actualizado', elementoId: elemento.id };
-                break;
-
-            case 'estilo':
-                // Actualizar estilos CSS
-                if (typeof valor === 'object') {
-                    Object.entries(valor).forEach(([propiedad, valorEstilo]) => {
-                        elemento.style[propiedad] = valorEstilo;
-                    });
-                } else if (opciones.propiedad) {
-                    elemento.style[opciones.propiedad] = valor;
-                }
-                resultadoActualizacion = { accion: 'estilo_actualizado', elementoId: elemento.id };
-                break;
-
-            case 'clase':
-                // Manipular clases CSS
-                const accion = opciones.accion || 'add'; // 'add', 'remove', 'toggle', 'replace'
-                switch (accion) {
-                    case 'add':
-                        elemento.classList.add(...(Array.isArray(valor) ? valor : [valor]));
-                        break;
-                    case 'remove':
-                        elemento.classList.remove(...(Array.isArray(valor) ? valor : [valor]));
-                        break;
-                    case 'toggle':
-                        elemento.classList.toggle(valor);
-                        break;
-                    case 'replace':
-                        if (opciones.claseAnterior) {
-                            elemento.classList.replace(opciones.claseAnterior, valor);
-                        }
-                        break;
-                }
-                resultadoActualizacion = { accion: `clase_${accion}`, elementoId: elemento.id, clases: Array.from(elemento.classList) };
-                break;
-
-            case 'atributo':
-                // Actualizar atributos del elemento
-                if (typeof valor === 'object') {
-                    Object.entries(valor).forEach(([atributo, valorAtributo]) => {
-                        elemento.setAttribute(atributo, valorAtributo);
-                    });
-                } else if (opciones.nombre) {
-                    if (valor === null || valor === undefined) {
-                        elemento.removeAttribute(opciones.nombre);
-                    } else {
-                        elemento.setAttribute(opciones.nombre, valor);
-                    }
-                }
-                resultadoActualizacion = { accion: 'atributo_actualizado', elementoId: elemento.id };
-                break;
-
-            case 'visibilidad':
-                // Controlar visibilidad del elemento
-                const visibilidadAccion = valor || opciones.accion; // 'mostrar', 'ocultar', 'toggle'
-                switch (visibilidadAccion) {
-                    case 'mostrar':
-                        elemento.style.display = opciones.display || 'block';
-                        elemento.style.visibility = 'visible';
-                        break;
-                    case 'ocultar':
-                        elemento.style.display = 'none';
-                        elemento.style.visibility = 'hidden';
-                        break;
-                    case 'toggle':
-                        elemento.style.display = elemento.style.display === 'none' ? (opciones.display || 'block') : 'none';
-                        break;
-                }
-                resultadoActualizacion = { accion: `visibilidad_${visibilidadAccion}`, elementoId: elemento.id };
-                break;
-
-            case 'animacion':
-                // Aplicar animación CSS
-                elemento.style.animation = valor;
-                if (opciones.claseAnimacion) {
-                    elemento.classList.add(opciones.claseAnimacion);
-                    // Remover clase después de la animación
-                    setTimeout(() => {
-                        elemento.classList.remove(opciones.claseAnimacion);
-                    }, duracion);
-                }
-                resultadoActualizacion = { accion: 'animacion_aplicada', elementoId: elemento.id, animacion: valor };
-                break;
-
-            case 'propiedad':
-                // Actualizar propiedades del elemento
-                if (opciones.nombre) {
-                    elemento[opciones.nombre] = valor;
-                }
-                resultadoActualizacion = { accion: 'propiedad_actualizada', elementoId: elemento.id, propiedad: opciones.nombre };
-                break;
-
-            case 'custom':
-                // Ejecución de función personalizada desde opciones
-                if (typeof opciones.funcion === 'function') {
-                    resultadoActualizacion = await opciones.funcion(elemento, valor, opciones);
-                } else {
-                    logger.warn(`${logPrefix} Tipo 'custom' sin función definida`);
-                }
-                break;
-
-            default:
-                const errorMsg = `Tipo de actualización no soportado: ${tipo}`;
-                logger.error(`${logPrefix} ${errorMsg}`, { mensajeId, tipo });
-                throw new Error(errorMsg);
-        }
-
-        // 5. Remover transición temporal
-        if (transicion) {
-            setTimeout(() => {
-                elemento.style.transition = '';
-            }, duracion);
-        }
-
-        // 6. Actualizar estado global
-        const estadoGlobal = typeof window !== 'undefined' && window.estadoPadre ? window.estadoPadre : {};
-        
-        if (estadoGlobal.ui !== undefined) {
-            if (!estadoGlobal.ui) {
-                estadoGlobal.ui = {};
-            }
-            if (!estadoGlobal.ui.ultimasActualizaciones) {
-                estadoGlobal.ui.ultimasActualizaciones = [];
-            }
-            
-            estadoGlobal.ui.ultimasActualizaciones.unshift({
-                timestamp,
-                origen: mensaje.origen,
-                tipo,
-                elementoId: elemento.id,
-                selector,
-                resultado: resultadoActualizacion
-            });
-
-            // Mantener solo las últimas 50 actualizaciones
-            if (estadoGlobal.ui.ultimasActualizaciones.length > 50) {
-                estadoGlobal.ui.ultimasActualizaciones = estadoGlobal.ui.ultimasActualizaciones.slice(0, 50);
-            }
-        }
-
-        // 7. Enviar confirmación al solicitante
-        await enviarMensaje({
-            destino: mensaje.origen,
-            tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-            origen: 'manejador_ui',
-            mensajeId: generarIdUnico(),
-            datos: {
-                mensajeOriginalId: mensajeId,
-                timestamp,
-                estado: 'procesado',
-                accion: 'ui_actualizada',
-                tipo,
-                elementoId: elemento.id,
-                resultado: resultadoActualizacion
-            }
-        });
-
-        logger.info(`${logPrefix} Actualización UI completada exitosamente`, { 
-            mensajeId,
-            tipo,
-            elementoId: elemento.id,
-            resultado: resultadoActualizacion
-        });
-
-    } catch (error) {
-        const errorNoManejado = `Error no manejado en UI.ACTUALIZACION: ${error.message}`;
-        logger.error(`${logPrefix} ${errorNoManejado}`, error);
-        
-        try {
-            // Notificar error al origen si es posible
-            if (mensaje?.origen) {
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                    origen: 'manejador_ui',
-                    mensajeId: generarIdUnico(),
-                    datos: {
-                        error: errorNoManejado,
-                        mensajeOriginalId: mensajeId,
-                        timestamp: Date.now(),
-                        tipo: 'ERROR_ACTUALIZACION_UI',
-                        detalles: {
-                            tipoActualizacion: mensaje?.datos?.tipo,
-                            selector: mensaje?.datos?.selector,
-                            elementoId: mensaje?.datos?.elementoId
-                        },
-                        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-                    }
-                });
-            }
-        } catch (nestedError) {
-            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
-        }
-        
-        // Relanzar para manejo externo
-        throw error;
-    }
-});
-
-/**
- * Controlador para el mensaje DATOS.RESPUESTA_PARADAS.
- * Maneja las respuestas de datos de múltiples paradas (PUSH NOTIFICATION).
- * Este es un controlador de PUSH (no request/response) que procesa actualizaciones asíncronas.
- */
-registrarControlador(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
-    const logPrefix = `[RESPUESTA_PARADAS][${mensaje?.origen || 'desconocido'}]`;
-    const timestamp = Date.now();
-    const mensajeId = mensaje?.mensajeId || generarIdUnico();
-    
-    try {
-        // 1. Validación del mensaje
-        if (!mensaje?.origen) {
-            const errorMsg = 'Mensaje de respuesta de paradas sin origen';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            return;
-        }
-
-        const { 
-            paradas = [], 
-            metadatos = {}, 
-            estado = 'activo', 
-            mensajeId: mensajeOriginalId, 
-            actualizacionParcial = false,
-            notificarSistema = true,
-            requiereConfirmacion = true
-        } = mensaje.datos || {};
-        
-        // 2. Validación de campos obligatorios
-        if (!Array.isArray(paradas)) {
-            const errorMsg = 'El campo paradas debe ser un array';
-            logger.warn(`${logPrefix} ${errorMsg}`);
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                datos: {
-                    error: errorMsg,
-                    mensajeId: mensaje.mensajeId,
-                    timestamp,
-                    tipo: 'VALIDACION'
-                }
-            });
-            return;
-        }
-
-        logger.info(`${logPrefix} Procesando ${paradas.length} paradas`, {
-            actualizacionParcial,
-            origen: mensaje.origen
-        });
-
-        // 3. Inicializar el estado global si no existe
-        if (!estado.paradas) {
-            estado.paradas = new Map();
-        } else if (!actualizacionParcial) {
-            // Si no es una actualización parcial, limpiamos el estado anterior
-            logger.debug(`${logPrefix} Limpiando estado anterior de paradas`);
-            estado.paradas.clear();
-        }
-
-        // 4. Procesar cada parada
-        const resultados = {
-            total: paradas.length,
-            exitosas: 0,
-            fallidas: 0,
-            errores: []
-        };
-
-        const paradasProcesadas = [];
-        const ahora = Date.now();
-        
-        for (const [index, parada] of paradas.entries()) {
-            try {
-                // 4.1. Validar parada
-                if (!parada?.paradaId) {
-                    throw new Error('Falta el campo obligatorio: paradaId');
-                }
-
-                if (!parada.ubicacion || typeof parada.ubicacion.lat !== 'number' || typeof parada.ubicacion.lng !== 'number') {
-                    throw new Error('Ubicación de parada inválida o faltante');
-                }
-
-                // 4.2. Preparar datos de la parada - usando normalizador para consistencia
-                const n = normalizarParada(parada);
-                const datosParada = {
-                    id: n.id,
-                    paradaId: n.paradaId || n.id,
-                    padreid: n.padreid || `padre-${n.id}`,
-                    nombre: n.nombre || `Parada ${n.id}`,
-                    ubicacion: n.ubicacion || (n.lat !== undefined && n.lng !== undefined ? { lat: n.lat, lng: n.lng } : undefined),
-                    rutas: n.rutas || [],
-                    waypoints: Array.isArray(n.waypoints) ? n.waypoints.map(w => ({ lat: w.lat, lng: w.lng })) : undefined,
-                    metadatos: { ...(n.metadatos || {}) },
-                    estado: n.estado || 'activa',
-                    ultimaActualizacion: ahora,
-                    origen: mensaje.origen
-                };
-
-                // 4.3. Validar y normalizar datos adicionales
-                if (parada.horario) {
-                    datosParada.horario = validarYNormalizarHorario(parada.horario);
-                }
-
-                // 4.4. Almacenar la parada
-                estado.paradas.set(parada.paradaId, datosParada);
-                paradasProcesadas.push(datosParada);
-                resultados.exitosas++;
-
-                // 4.5. Notificar progreso para lotes grandes
-                if (paradas.length > 50 && index > 0 && index % 10 === 0) {
-                    const progreso = Math.round((index / paradas.length) * 100);
-                    logger.debug(`${logPrefix} Progreso: ${progreso}% (${index}/${paradas.length})`);
-                }
-
-            } catch (error) {
-                resultados.fallidas++;
-                const errorInfo = {
-                    indice: index,
-                    paradaId: parada?.paradaId,
-                    error: error.message
-                };
-                resultados.errores.push(errorInfo);
-                
-                logger.warn(`${logPrefix} Error procesando parada ${index}:`, errorInfo);
-            }
-        }
-
-        // 5. Registrar resultados
-        const tiempoProcesamiento = Date.now() - ahora;
-        logger.info(`${logPrefix} Procesamiento completado`, {
-            ...resultados,
-            tiempoProcesamiento: `${tiempoProcesamiento}ms`,
-            paradasPorSegundo: resultados.exitosas / (tiempoProcesamiento / 1000)
-        });
-
-        // 6. Notificar a otros componentes si es necesario
-        if (notificarSistema && paradasProcesadas.length > 0) {
-            try {
-                await enviarMensaje({
-                    origen: 'sistema',
-                    tipo: TIPOS_MENSAJE.DATOS.ACTUALIZACION_PARADAS,
-                    datos: {
-                        total: paradasProcesadas.length,
-                        actualizacionParcial,
-                        timestamp: ahora,
-                        origen: mensaje.origen,
-                        estado: resultados.fallidas === 0 ? 'completo' : 'parcial',
-                        resultados: {
-                            exitosas: resultados.exitosas,
-                            fallidas: resultados.fallidas
-                        }
-                    },
-                    broadcast: true
-                });
-            } catch (error) {
-                logger.error(`${logPrefix} Error al notificar actualización de paradas:`, error);
-            }
-        }
-
-        // 7. Responder con confirmación si se solicitó
-        if (requiereConfirmacion && mensajeOriginalId) {
-            try {
-                await enviarMensaje({
-                    origen: 'sistema',
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.CONFIRMACION,
-                    datos: {
-                        mensajeOriginalId: mensajeOriginalId,
-                        timestamp: ahora,
-                        estado: resultados.fallidas === 0 ? 'completo' : 'parcial',
-                        resultados: {
-                            total: resultados.total,
-                            exitosas: resultados.exitosas,
-                            fallidas: resultados.fallidas,
-                            errores: resultados.errores.slice(0, 10) // Limitar el número de errores en la respuesta
-                        }
-                    }
-                });
-            } catch (error) {
-                logger.error(`${logPrefix} Error al enviar confirmación:`, error);
-            }
-        }
-
-        return resultados;
-
-    } catch (error) {
-        const errorMsg = `Error en manejo de RESPUESTA_PARADAS: ${error.message}`;
-        logger.error(`${logPrefix} ${errorMsg}`, error);
-        
-        try {
-            // Notificar el error de manera segura
-            await enviarMensaje({
-                destino: mensaje?.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-                datos: {
-                    error: errorMsg,
-                    mensajeId: mensaje?.mensajeId,
-                    timestamp: Date.now(),
-                    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-                }
-            });
-        } catch (nestedError) {
-            logger.error(`${logPrefix} Error al notificar error: ${nestedError.message}`);
-        }
-        
-        // Relanzar el error para que pueda ser manejado por otros mecanismos
-        throw error;
-    }
-});
-
-// Controlador DATOS.SOLICITAR_PARADAS en hijo2 (coordenadas-hijo2.html)
-
-/**
- * Calcula un multiplicador de timeout basado en el tipo de conexión de red.
- * Ajusta los timeouts para conexiones lentas para mejorar la experiencia del usuario.
- *
- * @returns {number} Multiplicador de timeout (1.0 = normal, >1.0 = más tiempo)
- */
-export function calcularMultiplicadorTimeoutConexion() {
-    try {
-        // Verificar si navigator.connection está disponible
-        if (!navigator.connection) {
-            logger.debug('[TIMEOUT] navigator.connection no disponible, usando multiplicador por defecto: 1.0');
-            return 1.0;
-        }
-
-        const connection = navigator.connection;
-        const effectiveType = connection.effectiveType || 'unknown';
-
-        // Multiplicadores basados en el tipo de conexión
-        const multiplicadores = {
-            '4g': 1.0,      // Conexión rápida - timeout normal
-            '3g': 1.5,      // Conexión media - 50% más tiempo
-            '2g': 2.0,      // Conexión lenta - doble tiempo
-            'slow-2g': 3.0, // Conexión muy lenta - triple tiempo
-            'unknown': 1.5  // Desconocido - tiempo moderado
-        };
-
-        const multiplicador = multiplicadores[effectiveType] || multiplicadores.unknown;
-
-        logger.debug(`[TIMEOUT] Tipo de conexión: ${effectiveType}, multiplicador: ${multiplicador}x`);
-        return multiplicador;
-
-    } catch (error) {
-        logger.warn('[TIMEOUT] Error al calcular multiplicador de conexión:', error);
-        return 1.5; // Multiplicador conservador por defecto
-    }
-}
-
-/**
- * Ajusta un timeout base según la conexión de red actual.
- * @param {number} timeoutBase - Timeout base en milisegundos
+ * Ajusta el timeout basado en la calidad de la conexión
+ * @param {number} timeoutBase - Timeout base en ms
+ * @param {number} [factor=1] - Factor multiplicador
  * @returns {number} Timeout ajustado
  */
-export function ajustarTimeoutPorConexion(timeoutBase) {
-    const multiplicador = calcularMultiplicadorTimeoutConexion();
-    const timeoutAjustado = Math.round(timeoutBase * multiplicador);
-
-    logger.debug(`[TIMEOUT] Timeout ajustado: ${timeoutBase}ms -> ${timeoutAjustado}ms (${multiplicador}x)`);
-    return timeoutAjustado;
+export function ajustarTimeoutPorConexion(timeoutBase, factor = 1) {
+    const connection = navigator.connection || 
+                       navigator.mozConnection || 
+                       navigator.webkitConnection;
+    
+    if (!connection) {
+        return timeoutBase * factor;
+    }
+    
+    // Ajustar según tipo de conexión
+    const ajustes = {
+        'slow-2g': 4,
+        '2g': 3,
+        '3g': 2,
+        '4g': 1,
+        '5g': 0.8
+    };
+    
+    const ajuste = ajustes[connection.effectiveType] || 1;
+    return Math.round(timeoutBase * factor * ajuste);
 }
 
 /**
- * Función para migrar controladores tempranos (fallback) hacia la mensajería
- * Debe invocarse desde el padre después de `await inicializarMensajeria()`.
+ * Obtiene la función enviarMensaje del contexto global o padre
+ * @returns {Function|null} Función enviarMensaje o null
  */
-export async function registrarControladoresUtils() {
-    try {
-        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
+export function getEnviarMensaje() {
+    // Primero intentar desde window.mensajeria (hijos)
+    if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
+        return window.mensajeria.enviarMensaje;
+    }
+    
+    // Intentar desde parent.mensajeria
+    if (window.parent && window.parent !== window) {
         try {
-            const migrated = migrarManejadoresTempranos();
-            logger.info('[UTILS][registrarControladores] Controladores migrados (si existían):', migrated);
+            if (window.parent.mensajeria && typeof window.parent.mensajeria.enviarMensaje === 'function') {
+                return window.parent.mensajeria.enviarMensaje;
+            }
         } catch (e) {
-            logger.warn('[UTILS][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
+            // Cross-origin, ignorar
         }
-    } catch (error) {
-        logger.warn('[UTILS][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
     }
+    
+    // Fallback: función que usa postMessage
+    return function(tipo, datos, destino) {
+        const mensaje = {
+            tipo,
+            datos,
+            origen: 'utils_fallback',
+            timestamp: Date.now(),
+            id: generarIdUnico('msg')
+        };
+        
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage(mensaje, '*');
+        }
+    };
 }
 
 /**
- * Resolver IDs de parada para normalizar variaciones del payload.
- * Acepta un objeto con `padreId`, `padreid`, `paradaId`, `parada_id`, `id`,
- * o `origen` y devuelve { padreId, paradaId } con ambos valores o nulls.
- * Esto ayuda a que mensajes legacy con `padreid: 'padre-P-0'` o `parada_id: 'P-0'`
- * siguán siendo compatibles.
- * @param {Object} datos
- * @returns {{padreId: string|null, paradaId: string|null}}
+ * Obtiene la función registrarControlador del contexto global o padre
+ * @returns {Function|null} Función registrarControlador o null
  */
-export function resolverIdsParada(datos = {}) {
-    if (!datos || typeof datos !== 'object') return { padreId: null, paradaId: null };
-    const padreId = datos.padreId || datos.padreid || datos.padre || datos.origen || null;
-    const paradaId = datos.paradaId || datos.parada_id || datos.parada || datos.id || null;
-
-    // Derivar paradaId de padreId si es algo como 'padre-P-0'
-    let derivedParadaId = paradaId;
-    if (!derivedParadaId && typeof padreId === 'string' && padreId.startsWith('padre-')) {
-        derivedParadaId = padreId.replace(/^padre-/, '');
+export function getRegistrarControlador() {
+    // Primero intentar desde window.mensajeria
+    if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') {
+        return window.mensajeria.registrarControlador;
     }
-
-    // Derivar padreId de paradaId si solo tenemos 'P-0'
-    let derivedPadreId = padreId;
-    if (!derivedPadreId && typeof derivedParadaId === 'string') {
-        derivedPadreId = `padre-${derivedParadaId}`;
+    
+    // Intentar desde parent.mensajeria
+    if (window.parent && window.parent !== window) {
+        try {
+            if (window.parent.mensajeria && typeof window.parent.mensajeria.registrarControlador === 'function') {
+                return window.parent.mensajeria.registrarControlador;
+            }
+        } catch (e) {
+            // Cross-origin, ignorar
+        }
     }
-
-    return { padreId: derivedPadreId || null, paradaId: derivedParadaId || null };
+    
+    // Fallback: registrar localmente
+    return function(tipo, handler) {
+        if (!window.__vv_handlers) {
+            window.__vv_handlers = new Map();
+        }
+        window.__vv_handlers.set(tipo, handler);
+        console.log(`[utils] Handler registrado localmente para: ${tipo}`);
+    };
 }
-
-// If a legacy global helper is expected, expose getPadreId as window.getPadreIdLocal
-try {
-    if (typeof window !== 'undefined' && typeof window.getPadreIdLocal === 'undefined') {
-        window.getPadreIdLocal = getPadreId;
-    }
-} catch (e) { /* ignore non-browser env */ }
 
 /**
- * Construye la URL completa para una imagen alojada en GitHub
- * @param {string} rutaRelativa - Ruta relativa de la imagen (ej: 'fotos-botones/logo.png')
- * @returns {string} URL completa de la imagen
+ * Obtiene la función enviarMensajeConConfirmacion
+ * @returns {Function|null} Función o null
  */
-export function construirUrlImagen(rutaRelativa) {
-    const { IMAGENES_BASE_URL } = require('./config.js').CONFIG;
-    return IMAGENES_BASE_URL + rutaRelativa;
+export function getEnviarMensajeConConfirmacion() {
+    if (window.mensajeria && typeof window.mensajeria.enviarMensajeConConfirmacion === 'function') {
+        return window.mensajeria.enviarMensajeConConfirmacion;
+    }
+    
+    if (window.parent && window.parent !== window) {
+        try {
+            if (window.parent.mensajeria && typeof window.parent.mensajeria.enviarMensajeConConfirmacion === 'function') {
+                return window.parent.mensajeria.enviarMensajeConConfirmacion;
+            }
+        } catch (e) {
+            // Cross-origin
+        }
+    }
+    
+    // Fallback simple
+    return function(tipo, datos, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            const enviar = getEnviarMensaje();
+            if (enviar) {
+                enviar(tipo, datos);
+                // Sin confirmación real, resolver después de timeout corto
+                setTimeout(() => resolve({ success: true, simulado: true }), 100);
+            } else {
+                reject(new Error('No hay función de envío disponible'));
+            }
+        });
+    };
 }
+
+/**
+ * Reintenta una operación hasta que esté disponible
+ * @param {Function} checkFn - Función que retorna true cuando está listo
+ * @param {Object} [options] - Opciones
+ * @param {number} [options.maxIntentos=10] - Máximo de intentos
+ * @param {number} [options.intervalo=100] - Intervalo entre intentos (ms)
+ * @param {string} [options.mensaje=''] - Mensaje de log
+ * @returns {Promise<boolean>} Promise que resuelve cuando está listo
+ */
+export function retryUntilAvailable(checkFn, options = {}) {
+    const { maxIntentos = 10, intervalo = 100, mensaje = '' } = options;
+    
+    return new Promise((resolve, reject) => {
+        let intentos = 0;
+        
+        const intentar = function() {
+            intentos++;
+            
+            try {
+                if (checkFn()) {
+                    if (mensaje) console.log(`[utils] ${mensaje} - disponible después de ${intentos} intentos`);
+                    resolve(true);
+                    return;
+                }
+            } catch (e) {
+                // Ignorar errores en checkFn
+            }
+            
+            if (intentos >= maxIntentos) {
+                if (mensaje) console.warn(`[utils] ${mensaje} - no disponible después de ${maxIntentos} intentos`);
+                resolve(false);
+                return;
+            }
+            
+            setTimeout(intentar, intervalo);
+        }
+        
+        intentar();
+    });
+}
+
+/**
+ * Debounce de una función
+ * @param {Function} fn - Función a ejecutar
+ * @param {number} espera - Tiempo de espera en ms
+ * @returns {Function} Función con debounce
+ */
+export function debounce(fn, espera) {
+    let timeoutId;
+    
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), espera);
+    };
+}
+
+/**
+ * Throttle de una función
+ * @param {Function} fn - Función a ejecutar
+ * @param {number} limite - Límite de tiempo en ms
+ * @returns {Function} Función con throttle
+ */
+export function throttle(fn, limite) {
+    let ultimaEjecucion = 0;
+    
+    return function(...args) {
+        const ahora = Date.now();
+        if (ahora - ultimaEjecucion >= limite) {
+            ultimaEjecucion = ahora;
+            fn.apply(this, args);
+        }
+    };
+}
+
+/**
+ * Espera un tiempo determinado
+ * @param {number} ms - Milisegundos a esperar
+ * @returns {Promise<void>}
+ */
+export function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Clona un objeto de forma profunda
+ * @param {*} obj - Objeto a clonar
+ * @returns {*} Clon del objeto
+ */
+export function deepClone(obj) {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+    
+    if (obj instanceof Date) {
+        return new Date(obj.getTime());
+    }
+    
+    if (obj instanceof Array) {
+        return obj.map(item => deepClone(item));
+    }
+    
+    if (obj instanceof Map) {
+        const mapClone = new Map();
+        obj.forEach((value, key) => {
+            mapClone.set(deepClone(key), deepClone(value));
+        });
+        return mapClone;
+    }
+    
+    if (obj instanceof Set) {
+        const setClone = new Set();
+        obj.forEach(value => {
+            setClone.add(deepClone(value));
+        });
+        return setClone;
+    }
+    
+    if (typeof obj === 'object') {
+        const clone = {};
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                clone[key] = deepClone(obj[key]);
+            }
+        }
+        return clone;
+    }
+    
+    return obj;
+}
+
+/**
+ * Merge profundo de objetos
+ * @param {Object} target - Objeto destino
+ * @param {...Object} sources - Objetos fuente
+ * @returns {Object} Objeto merged
+ */
+export function deepMerge(target, ...sources) {
+    if (!sources.length) return target;
+    
+    const source = sources.shift();
+    
+    if (isObject(target) && isObject(source)) {
+        for (const key in source) {
+            if (isObject(source[key])) {
+                if (!target[key]) Object.assign(target, { [key]: {} });
+                deepMerge(target[key], source[key]);
+            } else {
+                Object.assign(target, { [key]: source[key] });
+            }
+        }
+    }
+    
+    return deepMerge(target, ...sources);
+}
+
+/**
+ * Verifica si es un objeto plano
+ * @param {*} item - Item a verificar
+ * @returns {boolean} True si es objeto plano
+ */
+function isObject(item) {
+    return item && typeof item === 'object' && !Array.isArray(item);
+}
+
+/**
+ * Formatea bytes a string legible
+ * @param {number} bytes - Bytes a formatear
+ * @param {number} [decimales=2] - Decimales a mostrar
+ * @returns {string} String formateado
+ */
+export function formatearBytes(bytes, decimales = 2) {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(decimales)) + ' ' + sizes[i];
+}
+
+/**
+ * Formatea milisegundos a string legible
+ * @param {number} ms - Milisegundos
+ * @returns {string} String formateado
+ */
+export function formatearTiempo(ms) {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+    return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
+}
+
+/**
+ * Capitaliza la primera letra de un string
+ * @param {string} str - String a capitalizar
+ * @returns {string} String capitalizado
+ */
+export function capitalizar(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+/**
+ * Trunca un string a una longitud máxima
+ * @param {string} str - String a truncar
+ * @param {number} maxLength - Longitud máxima
+ * @param {string} [sufijo='...'] - Sufijo a añadir
+ * @returns {string} String truncado
+ */
+export function truncar(str, maxLength, sufijo = '...') {
+    if (!str || str.length <= maxLength) return str;
+    return str.slice(0, maxLength - sufijo.length) + sufijo;
+}
+
+/**
+ * Obtiene un valor de un objeto por path
+ * @param {Object} obj - Objeto
+ * @param {string} path - Path (ej: 'a.b.c')
+ * @param {*} [defecto] - Valor por defecto
+ * @returns {*} Valor encontrado o defecto
+ */
+export function getByPath(obj, path, defecto = undefined) {
+    const partes = path.split('.');
+    let actual = obj;
+    
+    for (const parte of partes) {
+        if (actual === null || actual === undefined) {
+            return defecto;
+        }
+        actual = actual[parte];
+    }
+    
+    return actual !== undefined ? actual : defecto;
+}
+
+/**
+ * Establece un valor en un objeto por path
+ * @param {Object} obj - Objeto
+ * @param {string} path - Path (ej: 'a.b.c')
+ * @param {*} valor - Valor a establecer
+ */
+export function setByPath(obj, path, valor) {
+    const partes = path.split('.');
+    let actual = obj;
+    
+    for (let i = 0; i < partes.length - 1; i++) {
+        const parte = partes[i];
+        if (!(parte in actual) || typeof actual[parte] !== 'object') {
+            actual[parte] = {};
+        }
+        actual = actual[parte];
+    }
+    
+    actual[partes[partes.length - 1]] = valor;
+}
+
+/**
+ * Verifica si dos valores son iguales (deep equality)
+ * @param {*} a - Primer valor
+ * @param {*} b - Segundo valor
+ * @returns {boolean} True si son iguales
+ */
+export function sonIguales(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== typeof b) return false;
+    
+    if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        return a.every((item, index) => sonIguales(item, b[index]));
+    }
+    
+    if (typeof a === 'object') {
+        const keysA = Object.keys(a);
+        const keysB = Object.keys(b);
+        if (keysA.length !== keysB.length) return false;
+        return keysA.every(key => sonIguales(a[key], b[key]));
+    }
+    
+    return false;
+}
+
+/**
+ * Maneja errores de forma centralizada
+ * @param {Error} error - El error a manejar
+ * @param {Object} [contexto] - Contexto adicional (ej: mensaje que causó el error)
+ * @param {Object} [opciones] - Opciones de manejo
+ * @param {boolean} [opciones.notificar=true] - Si debe notificar al usuario
+ * @param {boolean} [opciones.reenviar=false] - Si debe reenviar el error
+ */
+export function manejarError(error, contexto = null, opciones = {}) {
+    const { notificar = true, reenviar = false } = opciones;
+    
+    // Construir información del error
+    const errorInfo = {
+        mensaje: error?.message || String(error),
+        nombre: error?.name || 'Error',
+        stack: error?.stack || null,
+        timestamp: Date.now(),
+        contexto: contexto ? {
+            tipo: contexto.tipo || null,
+            origen: contexto.origen || null,
+            destino: contexto.destino || null,
+            mensajeId: contexto.mensajeId || contexto.id || null
+        } : null
+    };
+    
+    // Log del error
+    console.error('[ERROR]', errorInfo.mensaje, errorInfo);
+    
+    // Intentar enviar error al padre si estamos en un iframe
+    if (window.parent && window.parent !== window) {
+        try {
+            window.parent.postMessage({
+                tipo: 'ERROR_HIJO',
+                datos: errorInfo,
+                origen: window.name || 'hijo-desconocido',
+                timestamp: Date.now()
+            }, '*');
+        } catch (e) {
+            // Ignorar errores de cross-origin
+        }
+    }
+    
+    // Registrar en historial de errores global si existe
+    if (window.__vv_errores) {
+        window.__vv_errores.push(errorInfo);
+        // Mantener solo los últimos 100 errores
+        if (window.__vv_errores.length > 100) {
+            window.__vv_errores.shift();
+        }
+    } else {
+        window.__vv_errores = [errorInfo];
+    }
+    
+    // Re-lanzar si se solicita
+    if (reenviar) {
+        throw error;
+    }
+}
+
+// Exponer funciones útiles globalmente para debugging
+if (typeof window !== 'undefined') {
+    window.__vv_utils = {
+        generarIdUnico,
+        getPadreId,
+        normalizarParadas,
+        resolverIdsParada,
+        ajustarTimeoutPorConexion,
+        getEnviarMensaje,
+        getRegistrarControlador,
+        retryUntilAvailable,
+        manejarError,
+        canonicalizarModo
+    };
+}
+
+export default {
+    generarIdUnico,
+    getPadreId,
+    normalizarParadas,
+    resolverIdsParada,
+    ajustarTimeoutPorConexion,
+    getEnviarMensaje,
+    getRegistrarControlador,
+    getEnviarMensajeConConfirmacion,
+    retryUntilAvailable,
+    debounce,
+    throttle,
+    sleep,
+    deepClone,
+    deepMerge,
+    formatearBytes,
+    formatearTiempo,
+    capitalizar,
+    truncar,
+    getByPath,
+    setByPath,
+    sonIguales,
+    manejarError,
+    canonicalizarModo
+};
