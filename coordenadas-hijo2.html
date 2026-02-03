@@ -543,11 +543,8 @@ if (typeof window !== 'undefined' && typeof window.messagingAdapter === 'undefin
             const tipo = opciones.tipoMensaje || controladorId;
             
             // El registro real ocurre localmente - el padre sincroniza via HIJO_MANEJADORES
-            // Verificar si ya está registrado localmente
-            if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
-                (window.logger || console).debug && (window.logger || console).debug(`[messagingAdapter] ${tipo} ya registrado localmente`);
-                return false;
-            }
+            // NOTA: No verificar __CONTROLADOR_REGISTRADOS aquí porque ya se hace en registrarControladorSeguro
+            // La verificación duplicada causaba que el listener nunca se añadiera
             
             // Registrar listener local para este tipo de mensaje
             window.addEventListener('message', function adapterListener(event) {
