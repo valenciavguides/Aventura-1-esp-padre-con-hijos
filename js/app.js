@@ -1841,25 +1841,27 @@ function _computeBackoff(attempt) {
 }
 
 registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
+    if (mensaje?.tipo !== TIPOS_MENSAJE.SISTEMA.NACK) return;
+    if (!mensaje?.datos?.esperarPermiso) return;
+    if (!mensaje?.origen) return;
+    
     try {
-        if (mensaje?.tipo === TIPOS_MENSAJE.SISTEMA.NACK && mensaje?.datos?.esperarPermiso && mensaje?.origen) {
-            const hijoId = mensaje.origen;
-            const modoRaw = mensaje.datos?.modoSolicitado || (mensaje.datos?.modo || null);
-            const modo = canonicalizarModo(modoRaw);
+        const hijoId = mensaje.origen;
+        const modoRaw = mensaje.datos?.modoSolicitado || (mensaje.datos?.modo || null);
+        const modo = canonicalizarModo(modoRaw);
 
-            const existing = pendingModeChanges.get(hijoId) || { intentos: 0 };
-            const intentos = Math.min((existing.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
-            const nextAttemptAt = Date.now() + _computeBackoff(intentos);
+        const existing = pendingModeChanges.get(hijoId) || { intentos: 0 };
+        const intentos = Math.min((existing.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
+        const nextAttemptAt = Date.now() + _computeBackoff(intentos);
 
-            pendingModeChanges.set(hijoId, {
-                modo,
-                datos: mensaje.datos,
-                intentos,
-                nextAttemptAt
-            });
+        pendingModeChanges.set(hijoId, {
+            modo,
+            datos: mensaje.datos,
+            intentos,
+            nextAttemptAt
+        });
 
-            logger.info(`[APP][CAMBIO_MODO][RESEND] NACK con esperarPermiso de ${hijoId}, guardado intento=${intentos} nextAt=${new Date(nextAttemptAt).toISOString()}`);
-        }
+        logger.info(`[APP][CAMBIO_MODO][RESEND] NACK con esperarPermiso de ${hijoId}, guardado intento=${intentos} nextAt=${new Date(nextAttemptAt).toISOString()}`);
     } catch (e) {
         logger.warn('[APP][CAMBIO_MODO][RESEND] Error procesando NACK esperarPermiso:', e);
     }
@@ -1874,12 +1876,7 @@ const intervaloReintentoModo = setInterval(async () => {
             if (!pending || typeof pending.nextAttemptAt !== 'number') continue;
             if (now < pending.nextAttemptAt) continue; // not yet
 
-            if ((pending.intentos || 0) >= MODE_RETRY_MAX_INTENTOS) {
-                logger.error(`[APP][CAMBIO_MODO][RESEND] Máximo intentos alcanzado para ${hijoId}, abortando`);
-                registrarEvento && typeof registrarEvento === 'function' && registrarEvento('CAMBIO_MODO_ABORTADO', { hijoId, intentos: pending.intentos, timestamp: now });
-                pendingModeChanges.delete(hijoId);
-                continue;
-            }
+            if ((pending.intentos || 0) >= MODE_RETRY_MAX_INTENTOS) continue;
 
             logger.info(`[APP][CAMBIO_MODO][RESEND] Intentando reenvío programado a ${hijoId} (intento ${pending.intentos + 1})`);
             try {
