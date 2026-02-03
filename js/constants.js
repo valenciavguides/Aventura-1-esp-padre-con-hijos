@@ -84,6 +84,10 @@ export const TIPOS_MENSAJE = {
         HIJO_PREPARADO: 'SISTEMA.HIJO_PREPARADO',
         PADRE_DATOS: 'SISTEMA.PADRE_DATOS',
         PADRE_CONFIRMA_HIJO_LISTO: 'SISTEMA.PADRE_CONFIRMA_HIJO_LISTO',
+        // Migration handshake
+        PADRE_PIDE_MANEJADORES: 'SISTEMA.PADRE_PIDE_MANEJADORES',
+        HIJO_MANEJADORES: 'SISTEMA.HIJO_MANEJADORES',
+        PADRE_APLICA_MANEJADORES: 'SISTEMA.PADRE_APLICA_MANEJADORES',
         HIJO_FALLIDO: 'SISTEMA.HIJO_FALLIDO',
         HEARTBEAT: 'SISTEMA.HEARTBEAT',
         HEARTBEAT_START: 'SISTEMA.HEARTBEAT_START',
@@ -106,7 +110,6 @@ export const TIPOS_MENSAJE = {
     NAVEGACION: {
         CAMBIO_PARADA: 'NAVEGACION.CAMBIO_PARADA',
         ESTABLECER_DESTINO: 'NAVEGACION.ESTABLECER_DESTINO',
-        // ACTUALIZAR_POSICION: Eliminado - legacy code nunca usado (reemplazado por ACTUALIZAR_ESTADO)
         MOSTRAR_RUTA: 'NAVEGACION.MOSTRAR_RUTA',
         ACTUALIZAR_ESTADO: 'NAVEGACION.ACTUALIZAR_ESTADO',
         INICIAR: 'NAVEGACION.INICIAR',
@@ -121,14 +124,13 @@ export const TIPOS_MENSAJE = {
         ESTADO_MAPA_ACTUALIZADO: 'NAVEGACION.ESTADO_MAPA_ACTUALIZADO',
         CENTRAR_EN_UBICACION: 'NAVEGACION.CENTRAR_EN_UBICACION',
         MOSTRAR_UBICACION_POLYLINE: 'NAVEGACION.MOSTRAR_UBICACION_POLYLINE',
-        ACTUALIZAR_MARCADOR_USUARIO: 'NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO', // Actualizar flecha azul del usuario
+        ACTUALIZAR_MARCADOR_USUARIO: 'NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO',
         VALIDAR_RANGO_PARADA: 'NAVEGACION.VALIDAR_RANGO_PARADA',
-        USUARIO_FUERA_RANGO: 'NAVEGACION.USUARIO_FUERA_RANGO', // Usuario >5min fuera de rango (>50m)
+        USUARIO_FUERA_RANGO: 'NAVEGACION.USUARIO_FUERA_RANGO',
         MOSTRAR_MAPA_COMPLETO: 'NAVEGACION.MOSTRAR_MAPA_COMPLETO',
         MOSTRAR_MAPA_JPG: 'NAVEGACION.MOSTRAR_MAPA_JPG',
         ENVIAR_PARADA_COMPLETADA: 'NAVEGACION.ENVIAR_PARADA_COMPLETADA',
         DIBUJAR_POLYLINE: 'NAVEGACION.DIBUJAR_POLYLINE',
-        // GPS - Nuevos tipos para control GPS real
         GPS: {
             ACTIVAR: 'NAVEGACION.GPS.ACTIVAR',
             DESACTIVAR: 'NAVEGACION.GPS.DESACTIVAR',
@@ -140,10 +142,8 @@ export const TIPOS_MENSAJE = {
             RESTRINGIDO: 'NAVEGACION.GPS.RESTRINGIDO'
         },
         PARADA_COMPLETADA: 'NAVEGACION.PARADA_COMPLETADA',
-        // Datos de paradas para funciones-mapa
         SOLICITAR_DATOS_PARADAS: 'NAVEGACION.SOLICITAR_DATOS_PARADAS',
         RESPUESTA_DATOS_PARADAS: 'NAVEGACION.RESPUESTA_DATOS_PARADAS',
-        // Consultas para cambio de parada
         SOLICITAR_COORDENADAS: 'NAVEGACION.SOLICITAR_COORDENADAS',
         RESPUESTA_COORDENADAS: 'NAVEGACION.RESPUESTA_COORDENADAS',
         CAMBIO_PARADA_CONFIRMADO: 'NAVEGACION.CAMBIO_PARADA_CONFIRMADO'
@@ -156,18 +156,16 @@ export const TIPOS_MENSAJE = {
         COORDENADAS_PARADAS_RESPONSE: 'DATOS.COORDENADAS_PARADAS_RESPONSE',
         SOLICITAR_DATOS: 'DATOS.SOLICITAR_DATOS',
         ACTUALIZACION_PARADA: 'DATOS.ACTUALIZACION_PARADA',
-        // Retos - Agregados para hijo4
         SOLICITAR_RETO: 'DATOS.SOLICITAR_RETO',
         RESPUESTA_RETO: 'DATOS.RESPUESTA_RETO',
         SOLICITAR_RETOS: 'DATOS.SOLICITAR_RETOS',
         RESPUESTA_RETOS: 'DATOS.RESPUESTA_RETOS',
-        // Datos de aventura - enviados por padre a hijos al iniciar
-        CARGAR_COORDENADAS: 'DATOS.CARGAR_COORDENADAS',       // Padre → hijo2
-        COORDENADAS_CARGADAS: 'DATOS.COORDENADAS_CARGADAS',   // hijo2 → Padre (confirmación)
-        CARGAR_AUDIOS: 'DATOS.CARGAR_AUDIOS',                 // Padre → hijo3
-        AUDIOS_CARGADOS: 'DATOS.AUDIOS_CARGADOS',             // hijo3 → Padre (confirmación)
-        CARGAR_RETOS: 'DATOS.CARGAR_RETOS',                   // Padre → hijo4
-        RETOS_CARGADOS: 'DATOS.RETOS_CARGADOS'                // hijo4 → Padre (confirmación)
+        CARGAR_COORDENADAS: 'DATOS.CARGAR_COORDENADAS',
+        COORDENADAS_CARGADAS: 'DATOS.COORDENADAS_CARGADAS',
+        CARGAR_AUDIOS: 'DATOS.CARGAR_AUDIOS',
+        AUDIOS_CARGADOS: 'DATOS.AUDIOS_CARGADOS',
+        CARGAR_RETOS: 'DATOS.CARGAR_RETOS',
+        RETOS_CARGADOS: 'DATOS.RETOS_CARGADOS'
     },
     AUDIO: {
         REPRODUCIR_REQUEST: 'AUDIO.REPRODUCIR_REQUEST',
@@ -227,7 +225,6 @@ export const TIPOS_MENSAJE = {
         REMOVE_MARKER: 'MAPA.REMOVE_MARKER',
         CLEAR_LAYERS: 'MAPA.CLEAR_LAYERS'
     },
-    // Tipos de mensaje para la página de selección (En-busca-del-tesoro)
     SELECCION: {
         IDIOMA_SELECCIONADO: 'SELECCION.IDIOMA_SELECCIONADO',
         AVENTURA_SELECCIONADA: 'SELECCION.AVENTURA_SELECCIONADA',
@@ -240,115 +237,37 @@ export const TIPOS_MENSAJE = {
 
 /**
  * Códigos de error estandarizados
- * Organizados por categorías con rangos numéricos específicos
  */
 export const ERRORES = {
-    // Errores de validación (1000-1099)
     VALIDACION: {
-        DATOS_INVALIDOS: {
-            codigo: 1000,
-            mensaje: 'Los datos proporcionados no son válidos',
-            nivel: 'error'
-        },
-        PARAMETROS_FALTANTES: {
-            codigo: 1001,
-            mensaje: 'Faltan parámetros requeridos',
-            nivel: 'error'
-        },
-        TIPO_MENSAJE_INVALIDO: {
-            codigo: 1002,
-            mensaje: 'Tipo de mensaje no válido',
-            nivel: 'warning'
-        },
-        MENSAJE_INVALIDO: {
-            codigo: 1003,
-            mensaje: 'El formato del mensaje no es válido',
-            nivel: 'error'
-        },
-        DESTINO_INVALIDO: {
-            codigo: 1004,
-            mensaje: 'El destino especificado no es válido',
-            nivel: 'error'
-        },
-        IMPORTACION_FALLIDA: {
-            codigo: 1005,
-            mensaje: 'Fallo en la importación de módulo',
-            nivel: 'error'
-        }
+        DATOS_INVALIDOS: { codigo: 1000, mensaje: 'Los datos proporcionados no son válidos', nivel: 'error' },
+        PARAMETROS_FALTANTES: { codigo: 1001, mensaje: 'Faltan parámetros requeridos', nivel: 'error' },
+        TIPO_MENSAJE_INVALIDO: { codigo: 1002, mensaje: 'Tipo de mensaje no válido', nivel: 'warning' },
+        MENSAJE_INVALIDO: { codigo: 1003, mensaje: 'El formato del mensaje no es válido', nivel: 'error' },
+        DESTINO_INVALIDO: { codigo: 1004, mensaje: 'El destino especificado no es válido', nivel: 'error' },
+        IMPORTACION_FALLIDA: { codigo: 1005, mensaje: 'Fallo en la importación de módulo', nivel: 'error' }
     },
-    
-    // Errores de inicialización (1100-1199)
     INICIALIZACION: {
-        MENSAJERIA: {
-            codigo: 1100,
-            mensaje: 'Error al inicializar el sistema de mensajería',
-            nivel: 'error'
-        },
-        MAPA: {
-            codigo: 1101,
-            mensaje: 'Error al inicializar el mapa',
-            nivel: 'error'
-        },
-        COMPONENTE: {
-            codigo: 1102,
-            mensaje: 'Error al inicializar el componente',
-            nivel: 'error'
-        }
+        MENSAJERIA: { codigo: 1100, mensaje: 'Error al inicializar el sistema de mensajería', nivel: 'error' },
+        MAPA: { codigo: 1101, mensaje: 'Error al inicializar el mapa', nivel: 'error' },
+        COMPONENTE: { codigo: 1102, mensaje: 'Error al inicializar el componente', nivel: 'error' }
     },
-    
-    // Errores de red/comunicación (1200-1299)
     COMUNICACION: {
-        TIEMPO_ESPERA: {
-            codigo: 1200,
-            mensaje: 'Tiempo de espera agotado',
-            nivel: 'error'
-        },
-        DESTINO_NO_DISPONIBLE: {
-            codigo: 1201,
-            mensaje: 'El destino no está disponible',
-            nivel: 'warning'
-        },
-        MENSAJE_NO_ENTREGADO: {
-            codigo: 1202,
-            mensaje: 'No se pudo entregar el mensaje',
-            nivel: 'error'
-        }
+        TIEMPO_ESPERA: { codigo: 1200, mensaje: 'Tiempo de espera agotado', nivel: 'error' },
+        DESTINO_NO_DISPONIBLE: { codigo: 1201, mensaje: 'El destino no está disponible', nivel: 'warning' },
+        MENSAJE_NO_ENTREGADO: { codigo: 1202, mensaje: 'No se pudo entregar el mensaje', nivel: 'error' }
     },
-    
-    // Errores de autenticación/autorización (1300-1399)
     AUTENTICACION: {
-        NO_AUTORIZADO: {
-            codigo: 201,
-            mensaje: 'No autorizado para realizar esta acción'
-        }
+        NO_AUTORIZADO: { codigo: 201, mensaje: 'No autorizado para realizar esta acción' }
     },
-    
-    // Errores de recursos (300-399)
     RECURSO: {
-        NO_ENCONTRADO: {
-            codigo: 301,
-            mensaje: 'Recurso no encontrado'
-        },
-        YA_EXISTE: {
-            codigo: 302,
-            mensaje: 'El recurso ya existe'
-        }
+        NO_ENCONTRADO: { codigo: 301, mensaje: 'Recurso no encontrado' },
+        YA_EXISTE: { codigo: 302, mensaje: 'El recurso ya existe' }
     },
-    
-    // Errores del sistema (500-599)
     SISTEMA: {
-        ERROR_INTERNO: {
-            codigo: 500,
-            mensaje: 'Error interno del servidor'
-        },
-        NO_IMPLEMENTADO: {
-            codigo: 501,
-            mensaje: 'Funcionalidad no implementada'
-        },
-        SERVICIO_NO_DISPONIBLE: {
-            codigo: 503,
-            mensaje: 'Servicio no disponible temporalmente'
-        }
+        ERROR_INTERNO: { codigo: 500, mensaje: 'Error interno del servidor' },
+        NO_IMPLEMENTADO: { codigo: 501, mensaje: 'Funcionalidad no implementada' },
+        SERVICIO_NO_DISPONIBLE: { codigo: 503, mensaje: 'Servicio no disponible temporalmente' }
     }
 };
 
@@ -365,13 +284,10 @@ export const ESTADOS = {
  * Códigos de error
  */
 export const CODIGOS_ERROR = {
-    // Errores existentes
     INICIALIZACION: 'ERROR_INICIALIZACION',
     MENSAJERIA: 'ERROR_MENSAJERIA',
     MAPA: 'ERROR_MAPA',
     AUDIO: 'ERROR_AUDIO',
-    
-    // Nuevos códigos de error para monitoreo
     MONITOREO: {
         INICIALIZACION: 'ERROR_MONITOREO_INICIALIZACION',
         EVENTO_INVALIDO: 'ERROR_EVENTO_INVALIDO',
@@ -403,19 +319,13 @@ export const CSS_CLASES = {
     HIJO3_CONTAINER: 'hijo3-container'
 };
 
-// ❌ CONFIG_MENSAJERIA ELIMINADO - OBSOLETO
-// mensajeria.js define su propio estadoMensajeria local para evitar dependencias circulares
-
 /**
  * Construcción programática de la lista de tipos válidos.
- *
- * En lugar de mantener múltiples arrays duplicados, derivamos la
- * lista válida a partir de `TIPOS_MENSAJE` (fuente única de verdad).
  */
 function _flattenTipos(obj) {
     const out = [];
     const seen = new Set();
-    function recurse(v) {
+    const recurse = (v) => {
         if (!v && v !== 0) return;
         if (typeof v === 'string') {
             if (!seen.has(v)) { seen.add(v); out.push(v); }
@@ -439,3 +349,18 @@ export default {
     DESTINOS,
     CSS_CLASES
 };
+
+// Exponer globalmente para compatibilidad con código que espera window.constants
+if (typeof window !== 'undefined') {
+    window.constants = {
+        LOG_LEVELS,
+        MODOS,
+        TIPOS_MENSAJE,
+        ESTADOS,
+        CODIGOS_ERROR,
+        DESTINOS,
+        CSS_CLASES,
+        TIPOS_MENSAJE_VALIDOS
+    };
+    console.log('✅ constants.js loaded, window.constants assigned');
+}
