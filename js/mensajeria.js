@@ -463,7 +463,8 @@ function manejarMensajeEntrante(event) {
     
     if (handler) {
         try {
-            const resultado = handler(mensaje.datos, mensaje, event);
+            // Pass full message as first arg to match state-manager and handler signatures
+            const resultado = handler(mensaje, event);
             
             // Enviar confirmación si se requiere
             if (mensaje.requiereConfirmacion) {
