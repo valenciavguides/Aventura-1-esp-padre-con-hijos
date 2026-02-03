@@ -1919,3 +1919,6 @@ window.manejarCambioModo = window.manejarCambioModo || manejarCambioModo;
 window.actualizarInterfazModo = window.actualizarInterfazModo || actualizarInterfazModo;
 window.notificarCambioModoInminente = window.notificarCambioModoInminente || notificarCambioModoInminente;
 window.notificarCambioModoCompletado = window.notificarCambioModoCompletado || notificarCambioModoCompletado;
+
+// Exportar variables para acceso desde otros módulos
+export { pendingModeChanges, MODE_RETRY_MAX_INTENTOS, _computeBackoff };
