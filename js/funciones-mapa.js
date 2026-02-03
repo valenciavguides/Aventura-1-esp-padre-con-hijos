@@ -24,16 +24,15 @@ function handleGeolocationError(err) {
     logger.error('[GPS] Geolocation error:', err.code, err.message);
 }
 
-// ... existing code ...
+/**
+ * Registra los controladores del módulo de mapa.
+ * NOTA: Esta función ahora es un no-op ya que los controladores se registran
+ * directamente desde otros módulos. Se mantiene por compatibilidad.
+ */
 export async function registrarControladoresMapa() {
-    try {
-        // migrarManejadoresTempranos ya no existe - fue deprecada
-        // Los controladores ahora se registran directamente via registrarControlador
-        // Mantener por compatibilidad pero sin hacer nada
-        logger.debug('[MAPA][registrarControladores] Migración de controladores ya no necesaria (deprecada)');
-    } catch (error) {
-        logger.warn('[MAPA][registrarControladores] Error en registro:', error.message);
-    }
+    // Los controladores se registran directamente en otro lugar
+    // Esta función existe solo por compatibilidad legacy
+    logger.debug('[MAPA][registrarControladores] Registro de controladores ya no necesario (deprecado)');
 }
 
 /**
@@ -882,9 +881,10 @@ function actualizarPosicionUsuario(coordenadas) {
     try {
         validarCoordenadas(coordenadas);
 
-        Promise.resolve(ejecutarOperacionMapa(mapa => {
+        // Usar await adecuadamente en contexto async, o simplemente ejecutar de forma síncrona
+        if (_mapaInstance) {
             if (marcadorUsuario) {
-                mapa.removeLayer(marcadorUsuario);
+                _mapaInstance.removeLayer(marcadorUsuario);
             }
 
             marcadorUsuario = L.circle([coordenadas.lat, coordenadas.lng], {
@@ -892,12 +892,10 @@ function actualizarPosicionUsuario(coordenadas) {
                 color: '#4285F4',
                 fillColor: '#4285F4',
                 fillOpacity: 0.5
-            }).addTo(mapa);
+            }).addTo(_mapaInstance);
 
             console.info('Posición del usuario actualizada');
-        })).catch(error => {
-            logger.error('Error al actualizar la posición del usuario:', error);
-        });
+        }
     } catch (error) {
         logger.error('Error al actualizar la posición del usuario:', error);
     }
@@ -1543,14 +1541,15 @@ async function manejarCambiarParada(mensaje) {
     const mensajeId = mensaje?.mensajeId || generarIdUnico();
     
     try {
-        logger.info(`${logPrefix} Procesando cambio de parada`, { mensajeId, datos: mensaje.datos });
-        logger.debug(`${logPrefix} resolved IDs:`, { padreId, paradaId });
-        
+        // Extraer IDs antes de loguear para evitar ReferenceError
         const { padreId: padreFromDatos, paradaId: paradaFromDatos } = mensaje.datos || {};
-        // Use resolver for compatibility with 'padreid' / 'parada_id' and legacy fields
         const resolved = resolverIdsParada(mensaje.datos || {});
         const padreId = padreFromDatos || resolved.padreId;
         const paradaId = paradaFromDatos || resolved.paradaId;
+        
+        logger.info(`${logPrefix} Procesando cambio de parada`, { mensajeId, datos: mensaje.datos });
+        logger.debug(`${logPrefix} resolved IDs:`, { padreId, paradaId });
+        
         if (!paradaId && !padreId) {
             throw new Error('ID de parada no especificado (paradaId o padreId)');
         }
