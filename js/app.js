@@ -4,6 +4,20 @@
  * @version 1.0.0
  */
 
+// Esperar a que mensajeria esté lista antes de ejecutar lógica crítica
+let mensajeriaReady = false;
+const mensajeriaReadyPromise = new Promise(resolve => {
+    if (window.mensajeria) {
+        mensajeriaReady = true;
+        resolve();
+    } else {
+        window.addEventListener('mensajeriaReady', () => {
+            mensajeriaReady = true;
+            resolve();
+        }, { once: true });
+    }
+});
+
 import { TIPOS_MENSAJE, MODOS } from './constants.js';
 import logger from './logger.js';
 // import { enviarMensaje, registrarControlador } from './mensajeria.js'; // REMOVED: mensajeria.js is a global script, not a module
@@ -15,10 +29,31 @@ import { esMovil } from './device-detection.js';
 import { invalidarTamañoMapa, diagnosticarMapa, isMapInitialized } from './funciones-mapa.js';
 import { DATOS_PADRE } from './aventuras-ID-padre.js';
 
-// Access global mensajeria functions
-const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
-const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
-const enviarMensajeConConfirmacion = window.mensajeria ? window.mensajeria.enviarMensajeConConfirmacion : (msg) => Promise.reject('mensajeria not loaded');
+// Access global mensajeria functions - ahora esperan a que esté lista
+const enviarMensaje = (...args) => {
+    if (mensajeriaReady && window.mensajeria) {
+        return window.mensajeria.enviarMensaje(...args);
+    } else {
+        console.error('mensajeria not loaded', args);
+        return Promise.reject('mensajeria not ready');
+    }
+};
+const registrarControlador = (...args) => {
+    if (mensajeriaReady && window.mensajeria) {
+        return window.mensajeria.registrarControlador(...args);
+    } else {
+        console.error('mensajeria not loaded', args);
+        return Promise.reject('mensajeria not ready');
+    }
+};
+const enviarMensajeConConfirmacion = (...args) => {
+    if (mensajeriaReady && window.mensajeria) {
+        return window.mensajeria.enviarMensajeConConfirmacion(...args);
+    } else {
+        console.error('mensajeria not loaded', args);
+        return Promise.reject('mensajeria not ready');
+    }
+};
 // registrarControladorSeguro is globally defined in codigo-padre.html or utils.js
 
 /**
@@ -28,6 +63,7 @@ const enviarMensajeConConfirmacion = window.mensajeria ? window.mensajeria.envia
  * al Map interno de `mensajeria` llamando a su `registrarControlador`.
  */
 export async function registrarControladoresApp() {
+    await mensajeriaReadyPromise; // Esperar a que mensajeria esté lista
     try {
         // const { migrarManejadoresTempranos } = await import('./mensajeria.js'); // REMOVED
         const migrarManejadoresTempranos = window.mensajeria && window.mensajeria.migrarManejadoresTempranos;
@@ -55,16 +91,16 @@ export async function registrarControladoresApp() {
 
 // Estado global en codigo-padre.html
 
-// Funci�n para limpiar historial de monitoreo
+// Función para limpiar historial de monitoreo
 function limpiarHistorialMonitoreo(estado) {
-    const maxItems = estado.monitoreo.historial.maxItems;
+    const { maxItems } = estado.monitoreo.historial;
     estado.monitoreo.historial.eventos = estado.monitoreo.historial.eventos.slice(-maxItems);
     estado.monitoreo.historial.metricas = estado.monitoreo.historial.metricas.slice(-maxItems);
     estado.monitoreo.historial.errores = estado.monitoreo.historial.errores.slice(-maxItems);
     logger.debug(`Historial de monitoreo limpiado a ${maxItems} elementos`);
 }
 
-// Funci�n para limpiar promesas pendientes expiradas
+// Función para limpiar promesas pendientes expiradas
 function limpiarPromesasPendientes() {
     const ttl = 60000; // Ajustado a 60 segundos
     const now = Date.now();
@@ -76,14 +112,14 @@ function limpiarPromesasPendientes() {
 }
 
 // Intervalo separado para limpiar promesas pendientes cada 30s (sincronizado)
-setInterval(() => {
+const intervaloLimpiezaPromesas = setInterval(() => {
     limpiarPromesasPendientes();
 }, 30000);  // Sincronizado con mensajeria.js
 
 // ==================== FUNCIONES AUXILIARES ====================
 
 /**
- * Calcula la distancia entre dos puntos geogr�ficos usando la f�rmula de Haversine
+ * Calcula la distancia entre dos puntos geográficos usando la fórmula de Haversine
  * @private
  * @param {number} lat1 - Latitud del primer punto
  * @param {number} lon1 - Longitud del primer punto
@@ -107,9 +143,9 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Genera datos hist�ricos de ejemplo para estad�sticas
+ * Genera datos históricos de ejemplo para estadísticas
  * @private
- * @returns {Object} Datos hist�ricos simulados
+ * @returns {Object} Datos históricos simulados
  */
 function generarDatosHistoricos() {
     const datos = [];
@@ -139,19 +175,19 @@ function withTimeout(promise, ms = 5000, desc = 'operation') {
 }
 
 /**
- * Genera estad�sticas para una parada espec�fica
+ * Genera estadísticas para una parada específica
  * @private
  * @param {string} paradaId - ID de la parada
- * @returns {Promise<Object>} Estad�sticas de la parada
+ * @returns {Promise<Object>} Estadísticas de la parada
  */
 async function generarEstadisticasParada(paradaId) {
-    // Esta es una implementaci�n de ejemplo que deber�a ser reemplazada
-    // por una consulta a la base de datos o servicio de an�lisis
+    // Esta es una implementación de ejemplo que debería ser reemplazada
+    // por una consulta a la base de datos o servicio de análisis
     
-    // Simular una peque�a demora de procesamiento
+    // Simular una pequeña demora de procesamiento
     await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
     
-    // Generar algunas estad�sticas de ejemplo
+    // Generar algunas estadísticas de ejemplo
     const ahora = new Date();
     const hora = ahora.getHours();
     const esHoraPunta = (hora >= 7 && hora < 10) || (hora >= 17 && hora < 20);
@@ -178,17 +214,17 @@ async function generarEstadisticasParada(paradaId) {
 }
 
 /**
- * Obtiene las pr�ximas llegadas de transporte para una parada
+ * Obtiene las próximas llegadas de transporte para una parada
  * @private
  * @param {string} paradaId - ID de la parada
- * @param {number} limite - N�mero m�ximo de llegadas a devolver
- * @returns {Promise<Array>} Lista de pr�ximas llegadas
+ * @param {number} limite - Número máximo de llegadas a devolver
+ * @returns {Promise<Array>} Lista de próximas llegadas
  */
 async function obtenerProximasLlegadas(paradaId, limite = 5) {
-    // Esta es una implementaci�n de ejemplo que deber�a ser reemplazada
+    // Esta es una implementación de ejemplo que debería ser reemplazada
     // por una llamada al servicio de tiempos real o base de datos
     
-    // Simular una peque�a demora de red
+    // Simular una pequeña demora de red
     await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
     
     // Generar algunas llegadas de ejemplo
@@ -206,7 +242,7 @@ async function obtenerProximasLlegadas(paradaId, limite = 5) {
         
         llegadas.push({
             rutaId: `R${100 + i}`,
-            nombreRuta: `L�nea ${100 + i}`,
+            nombreRuta: `Línea ${100 + i}`,
             destino: i % 2 === 0 ? 'Centro' : 'Periferia',
             tiempoEstimado: minutosAdelanto,
             horaProgramada: tiempoLlegada.toISOString(),
@@ -221,10 +257,10 @@ async function obtenerProximasLlegadas(paradaId, limite = 5) {
 }
 
 /**
- * Agrupa paradas que est�n dentro de un radio determinado
+ * Agrupa paradas que están dentro de un radio determinado
  * @private
  * @param {Array<Object>} paradas - Lista de paradas a agrupar
- * @param {number} radioMetros - Radio m�ximo en metros para considerar paradas como cercanas
+ * @param {number} radioMetros - Radio máximo en metros para considerar paradas como cercanas
  * @returns {Array<Object>} Lista de paradas agrupadas
  */
 function agruparParadasCercanas(paradas, radioMetros) {
@@ -255,7 +291,7 @@ function agruparParadasCercanas(paradas, radioMetros) {
             }
         }
         
-        // Si solo hay una parada en el grupo, a�adirla tal cual
+        // Si solo hay una parada en el grupo, añadirla tal cual
         if (grupo.length === 1) {
             resultado.push(paradaActual);
         } else {
@@ -274,7 +310,7 @@ function agruparParadasCercanas(paradas, radioMetros) {
             const centroideLat = sumLat / grupo.length;
             const centroideLng = sumLng / grupo.length;
             
-            // Encontrar la parada m�s cercana al centroide para usar sus metadatos
+            // Encontrar la parada más cercana al centroide para usar sus metadatos
             let paradaMasCercana = paradas[grupo[0]];
             let distanciaMinima = calcularDistancia(
                 centroideLat, centroideLng,
@@ -294,7 +330,7 @@ function agruparParadasCercanas(paradas, radioMetros) {
                 }
             }
             
-            // A�adir la parada agrupada al resultado
+            // Añadir la parada agrupada al resultado
             resultado.push({
                 ...paradaMasCercana,
                 id: `grupo_${idsGrupo.join('_')}`,
@@ -306,7 +342,7 @@ function agruparParadasCercanas(paradas, radioMetros) {
                 grupo: {
                     ids: idsGrupo,
                     cantidad: grupo.length,
-                    radio: distanciaMinima * 2 // Di�metro del grupo
+                    radio: distanciaMinima * 2 // Diámetro del grupo
                 },
                 cantidadParadas: grupo.length
             });
@@ -347,12 +383,12 @@ export async function actualizarInterfazModo(estado, modo) {
     const mensajeId = `modo_${Date.now()}`;
 
     // Controladores temporales para las respuestas
-    const controladorEntendido = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO, (msg) => {
+    const controladorEntendido = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_ENTENDIDO, async (msg) => {
         respuestasEntendido.set(msg.origen, { timestamp: Date.now(), datos: msg.datos });
         logger.debug(`[actualizarInterfazModo] ENTENDIDO recibido de ${msg.origen}`);
     });
 
-    const controladorEfectuado = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO, (msg) => {
+    const controladorEfectuado = registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO, async (msg) => {
         respuestasEfectuado.set(msg.origen, { timestamp: Date.now(), datos: msg.datos });
         logger.debug(`[actualizarInterfazModo] EFECTUADO recibido de ${msg.origen}`);
     });
@@ -425,7 +461,7 @@ async function esperarRespuestas(mapaRespuestas, hijosEsperados, timeoutMs, tipo
     logger.warn(`[esperarRespuestas] Timeout esperando ${tipoRespuesta} de: ${noRespondieron.join(', ')}`);
 }
 
-// Agregar función auxiliar para reintentos con confirmación
+// Añadir función auxiliar para reintentos con confirmación
 async function enviarMensajeConReintento(mensaje, maxReintentos = 3) {
     for (let intento = 1; intento <= maxReintentos; intento++) {
         try {
@@ -446,12 +482,12 @@ async function enviarMensajeConReintento(mensaje, maxReintentos = 3) {
 
 /**
  * Notifica un error al sistema.
- * @param {string} codigo - C�digo de error.
+ * @param {string} codigo - Código de error.
  * @param {Error} error - Objeto de error.
  * @param {Object} [contexto] - Contexto adicional del error.
  */
 export function notificarError(codigo, error, contexto = {}) {
-    logger.error('Error cr�tico:', error);
+    logger.error('Error crítico:', error);
     try {
         const r = enviarMensaje({
             destino: getPadreId(),
@@ -474,14 +510,14 @@ export function notificarError(codigo, error, contexto = {}) {
 }
 
 /**
- * Env�a un mensaje para cambiar el modo de la aplicaci�n
+ * Envía un mensaje para cambiar el modo de la aplicación
  * @param {string} nuevoModo - Nuevo modo ('casa' o 'aventura')
  * @param {string} origen - Origen del cambio
- * @returns {Promise<Object>} Resultado de la operaci�n
+ * @returns {Promise<Object>} Resultado de la operación
  */
 export async function enviarCambioModo(nuevoModo, origen = 'app') {
     const modoCanonical = canonicalizarModo(nuevoModo);
-    if (!modoCanonical) throw new Error(`Modo inv�lido: ${nuevoModo}`);
+    if (!modoCanonical) throw new Error(`Modo inválido: ${nuevoModo}`);
 
     return await enviarMensaje({
         destino: CONFIG.IFRAME_ID,
@@ -498,23 +534,23 @@ export async function enviarCambioModo(nuevoModo, origen = 'app') {
 /**
  * Valida el mensaje de cambio de modo.
  * @param {Object} mensaje - Mensaje recibido.
- * @returns {boolean} - True si el mensaje es v�lido, lanza un error si no lo es.
+ * @returns {boolean} - True si el mensaje es válido, lanza un error si no lo es.
  */
 function validarCambioModoMensaje(mensaje) {
     if (!mensaje || typeof mensaje !== 'object') {
-        throw new Error('Mensaje de cambio de modo no v�lido: debe ser un objeto.');
+        throw new Error('Mensaje de cambio de modo no válido: debe ser un objeto.');
     }
 
     const { modo } = mensaje.datos || {};
 
     if (!modo) {
-        throw new Error(`Modo no v�lido: ${modo}`);
+        throw new Error(`Modo no válido: ${modo}`);
     }
     
     // Compara con constantes para mayor compatibilidad
     const modoCanonical = canonicalizarModo(modo);
     if (!modoCanonical) {
-        throw new Error(`Modo no v�lido: ${modo}`);
+        throw new Error(`Modo no válido: ${modo}`);
     }
 
     return true;
@@ -539,8 +575,8 @@ const MODOS_OPERACION = {
         requiereAutenticacion: true
     },
     depuracion: {
-        nombre: 'Depuraci�n',
-        descripcion: 'Modo para depuraci�n con logs detallados',
+        nombre: 'Depuración',
+        descripcion: 'Modo para depuración con logs detallados',
         puedeCambiar: true,
         requiereAutenticacion: true
     },
@@ -553,31 +589,31 @@ const MODOS_OPERACION = {
 };
 
 /**
- * Maneja los cambios de modo en la aplicaci�n.
+ * Maneja los cambios de modo en la aplicación.
  * Este controlador se encarga de:
  * - Procesar solicitudes de cambio de modo
- * - Validar la transici�n de modos
+ * - Validar la transición de modos
  * - Actualizar el estado global
  * - Notificar a los componentes afectados
  * 
  * @param {Object} mensaje - El mensaje de cambio de modo
  * @param {string} mensaje.origen - Origen del mensaje
  * @param {Object} estado - Estado global de la aplicación
- * @param {string} mensaje.mensajeId - ID �nico del mensaje
+ * @param {string} mensaje.mensajeId - ID único del mensaje
  * @param {Object} mensaje.datos - Datos del cambio de modo
  * @param {string} mensaje.datos.modo - Nuevo modo a establecer
  * @param {Object} [mensaje.datos.opciones] - Opciones adicionales para el cambio de modo
- * @param {string} [mensaje.datos.motivo] - Raz�n del cambio de modo
- * @returns {Promise<Object>} Resultado de la operaci�n
+ * @param {string} [mensaje.datos.motivo] - Razón del cambio de modo
+ * @returns {Promise<Object>} Resultado de la operación
  */
 export async function manejarCambioModo(estado, mensaje) {
     const logPrefix = `[SISTEMA.CAMBIO_MODO][${mensaje?.origen || 'desconocido'}]`;
     const timestamp = Date.now();
     const mensajeId = mensaje?.mensajeId || generarIdUnico();
     
-    // 1. Validaci�n inicial del mensaje
+    // 1. Validación inicial del mensaje
     if (!mensaje?.datos) {
-        const errorMsg = 'Mensaje de cambio de modo inv�lido: datos faltantes';
+        const errorMsg = 'Mensaje de cambio de modo inválido: datos faltantes';
         logger.error(`${logPrefix} ${errorMsg}`, { mensajeId });
         return { exito: false, error: errorMsg };
     }
@@ -592,15 +628,15 @@ export async function manejarCambioModo(estado, mensaje) {
     try {
         // 2. Validar modo solicitado (ahora normalizado)
         if (!modoNormalized) {
-            const errorMsg = `Modo inv�lido: '${modo}'. V�lidos: ${modosKeys.join(', ')}`;
+            const errorMsg = `Modo inválido: '${modo}'. Válidos: ${modosKeys.join(', ')}`;
             logger.warn(`${logPrefix} ${errorMsg}`, { modo, mensajeId });
             return { exito: false, error: errorMsg };
         }
 
-        // 3. Validar transici�n de modos
+        // 3. Validar transición de modos
         const modoActual = estado.modo?.actual || MODOS.CASA;
         if (modoNormalized === modoActual) {
-            logger.info(`${logPrefix} El modo ya est� establecido a '${modoNormalized}'`, { mensajeId });
+            logger.info(`${logPrefix} El modo ya está establecido a '${modoNormalized}'`, { mensajeId });
             return { exito: true, cambiado: false, modoActual };
         }
 
@@ -698,7 +734,7 @@ export async function manejarCambioModo(estado, mensaje) {
                             }
                             logger.debug('[APP][CAMBIO_MODO] GPS warmup disabled; skipping GPS prewarm');
                         }
-                    } catch (e) { logger.warn('[APP][CAMBIO_MODO] Error lanzando prewarm inicial:', e); }
+                    } catch (prewarmError) { logger.warn('[APP][CAMBIO_MODO] Error lanzando prewarm inicial:', prewarmError); }
 
                     const hijosPromise = (window.mensajeria && typeof window.mensajeria.esperarHijosListos === 'function')
                         ? window.mensajeria.esperarHijosListos(cfgConfirmTimeout)
@@ -744,7 +780,7 @@ export async function manejarCambioModo(estado, mensaje) {
 
                                 // Establecer parada por defecto "padre-P-0" y solicitar coordenadas a hijo2
                                 try {
-                                    const elementosIDpadre = DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado].elementosIDpadre;
+                                    const { elementosIDpadre } = DATOS_PADRE[window.aventuraSeleccionada][window.idiomaSeleccionado];
                                     if (elementosIDpadre && elementosIDpadre.length > 0) {
                                         const paradaDefecto = elementosIDpadre.find(p => p.padreid === 'padre-P-0') || elementosIDpadre[0];
                                         estado.paradaActual = paradaDefecto.padreid;
@@ -817,7 +853,7 @@ export async function manejarCambioModo(estado, mensaje) {
             // 11. Notificar a los componentes del cambio completado (no bloquear>5s)
             await withTimeout(notificarCambioModoCompletado(modoActual, modoNormalized, motivo), 15000, 'notificarCambioModoCompletado');
 
-            // 12. Registrar �xito
+            // 12. Registrar éxito
             logger.info(`${logPrefix} Cambio de modo completado exitosamente`, {
                 modoAnterior: modoActual,
                 modoNuevo: modoNormalized,
@@ -977,11 +1013,11 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Valida los permisos para cambiar a un modo espec�fico
+ * Valida los permisos para cambiar a un modo específico
  * @private
  */
 async function validarPermisosCambioModo(origen, modo) {
-    // Implementar l�gica de validaci�n de permisos
+    // Implementar lógica de validación de permisos
     return true;
 }
 
@@ -1010,7 +1046,7 @@ async function notificarCambioModoInminente(modoAnterior, modoNuevo, motivo) {
 }
 
 /**
- * Notifica a los componentes que el cambio de modo se complet�
+ * Notifica a los componentes que el cambio de modo se completó
  * @private
  */
 async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
@@ -1034,7 +1070,7 @@ async function notificarCambioModoCompletado(modoAnterior, modoNuevo, motivo) {
 }
 
 /**
- * Limpia recursos espec�ficos seg�n el modo
+ * Limpia recursos específicos según el modo
  * @private
  * @param {Object} estado - Estado global de la aplicación
  */
@@ -1134,7 +1170,7 @@ async function limpiarRecursosPorModo(estado, modo, opciones = {}) {
 }
 
 /**
- * Restaura el estado anterior despu�s de un fallo en el cambio de modo
+ * Restaura el estado anterior después de un fallo en el cambio de modo
  * @private
  * @param {Object} estado - Estado global de la aplicación
  */
@@ -1163,13 +1199,13 @@ async function restaurarEstadoModoAnterior(estado, modoAnterior, modoFallido, mo
     // Actualizar la interfaz
     await actualizarInterfazModo(estado, modoAnterior);
     
-    logger.warn(`Modo restaurado a '${modoAnterior}' despu�s de fallo al cambiar a '${modoFallido}'`, {
+    logger.warn(`Modo restaurado a '${modoAnterior}' después de fallo al cambiar a '${modoFallido}'`, {
         motivo
     });
 }
 
 /**
- * Funci�n para registrar un evento personalizado en el sistema de monitoreo
+ * Función para registrar un evento personalizado en el sistema de monitoreo
  * @param {string} tipo - Tipo de evento
  * @param {Object} datos - Datos del evento
  * @param {string} [nivel='info'] - Nivel de severidad ('debug', 'info', 'warn', 'error')
@@ -1194,10 +1230,10 @@ export function registrarEvento(tipo, datos = {}, nivel = 'info') {
 }
 
 /**
- * Registra una m�trica de rendimiento
+ * Registra una métrica de rendimiento
  * @param {Object} estado - Estado global de la aplicación
- * @param {string} nombre - Nombre de la m�trica
- * @param {number} valor - Valor de la m�trica
+ * @param {string} nombre - Nombre de la métrica
+ * @param {number} valor - Valor de la métrica
  * @param {string} [unidad='ms'] - Unidad de medida
  */
 /**
@@ -1208,7 +1244,7 @@ export function registrarEvento(tipo, datos = {}, nivel = 'info') {
  * Compatibilidad: si se llama con la firma antigua (estado, nombre, valor, unidad)
  * se detecta y se comporta como antes.
  */
-// Reexport registrarMetrica from the central `monitoreo` module for a single canonical implementation
+// Reexportar registrarMetrica desde el módulo central `monitoreo` para una implementación canónica única
 export const registrarMetrica = registrarMetricaMonitoreo;
 
 /**
@@ -1225,11 +1261,11 @@ export function obtenerEstadoMonitoreo(estado) {
     };
 }
 
-// Inicializar monitoreo de memoria si est� disponible (optimized for mobile)
+// Inicializar monitoreo de memoria si está disponible (optimized for mobile)
 if (window.performance && window.performance.memory) {
-    const intervaloMemoria = esMovil ? 300000 : 60000; // 5 min m�vil, 1 min desktop
+    const intervaloMemoria = esMovil ? 300000 : 60000; // 5 min móvil, 1 min desktop
     setInterval(() => {
-        const memory = window.performance.memory;
+        const { memory } = window.performance;
         const usoMemoria = (memory.usedJSHeapSize / memory.totalJSHeapSize) * 100;
         // Preferir `window.registrarMetrica` cuando esté disponible (scripts globales)
         (typeof window !== 'undefined' && typeof window.registrarMetrica === 'function' ? window.registrarMetrica : registrarMetrica)(
@@ -1245,15 +1281,8 @@ if (typeof window !== 'undefined') {
     window.notificarError = notificarError;
     window.obtenerEstadoMonitoreo = obtenerEstadoMonitoreo;
     
-    // Registrar evento de inicializaci�n
-    window.addEventListener('DOMContentLoaded', () => {
-        registrarEvento('app_inicializada', { 
-            version: '1.0.0',
-            userAgent: navigator.userAgent,
-            url: window.location.href,
-            timestamp: new Date().toISOString()
-        }, 'info');
-    });
+    // Evento de inicialización app se registra en el DOMContentLoaded unificado del padre
+    // (eliminado listener duplicado - ver codigo-padre.html línea ~1185)
 }
 
 // Inicializar monitoreo de eventos de navegación usando solo la API moderna
@@ -1269,7 +1298,7 @@ function obtenerTiempoCargaPagina() {
 
 window.addEventListener('load', () => {
     if (window.performance && window.performance.memory) {
-        const memory = window.performance.memory;
+        const { memory } = window.performance;
         const usoMemoria = (memory.usedJSHeapSize / memory.totalJSHeapSize) * 100;
         (typeof window !== 'undefined' && typeof window.registrarMetrica === 'function' ? window.registrarMetrica : registrarMetrica)('uso_memoria', usoMemoria, { unidad: '%' });
     }
@@ -1301,7 +1330,7 @@ export async function enviarConfirmacionAHijo(hijoId, mensajeId) {
             }
         });
     } catch (error) {
-        logger.error('Error enviando confirmaci�n', error);
+        logger.error('Error enviando confirmación', error);
     }
 }
 
@@ -1395,7 +1424,7 @@ export async function enviarEstadoGlobal(estado) {
  */
 function manejarPerdidaConexion(estado) {
     estado.conectado = false;
-    logger.warn('Conexi�n perdida, pausando operaciones');
+    logger.warn('Conexión perdida, pausando operaciones');
     // Pause operations, e.g., stop sending messages
 }
 
@@ -1405,11 +1434,11 @@ function manejarPerdidaConexion(estado) {
  */
 function manejarReconexion(estado) {
     estado.conectado = true;
-    logger.info('Conexi�n restablecida, reanudando operaciones');
+    logger.info('Conexión restablecida, reanudando operaciones');
     // Resume operations
 }
 
-// Detect connection loss (simplified example)
+// Detectar pérdida de conexión (ejemplo simplificado)
 window.addEventListener('offline', () => manejarPerdidaConexion(window.estadoPadre));
 window.addEventListener('online', () => manejarReconexion(window.estadoPadre));
 
@@ -1430,23 +1459,23 @@ if (typeof window !== 'undefined') {
         try {
             // Verificar promesas pendientes antes de limpiar
             if (promesasPendientes.size > 0) {
-                logger.warn(`Hay ${promesasPendientes.size} promesas pendientes al descargar la p�gina`);
+                logger.warn(`Hay ${promesasPendientes.size} promesas pendientes al descargar la página`);
                 // Limpiar promesas pendientes
                 promesasPendientes.clear();
             }
-            // Limpiar globales de la aplicaci�n agresivamente
+            // Limpiar globales de la aplicación agresivamente
             if (window.registrarEvento) delete window.registrarEvento;
             if (window.registrarMetrica) delete window.registrarMetrica;
             if (window.notificarError) delete window.notificarError;
             if (window.obtenerEstadoMonitoreo) delete window.obtenerEstadoMonitoreo;
             
-            // Limpiar estado global de la aplicaci�n
+            // Limpiar estado global de la aplicación
             if (window.estado) delete window.estado;
             
             // Limpiar promesas pendientes
             promesasPendientes.clear();
             
-            // Limpiar estado de coordinaci�n
+            // Limpiar estado de coordinación
             if (window.estadoCoordinacion) {
                 window.estadoCoordinacion.solicitudesPendientes.clear();
                 window.estadoCoordinacion.datosCache.clear();
@@ -1466,36 +1495,39 @@ if (typeof window !== 'undefined') {
                 clearInterval(window.intervaloReconciliacion);
                 delete window.intervaloReconciliacion;
             }
+            clearInterval(intervaloLimpiezaPromesas);
+            clearInterval(idIntervaloCache);
+            clearInterval(intervaloReintentoModo);
             
-            logger.info('Limpieza agresiva de globales de la aplicaci�n completada');
+            logger.info('Limpieza agresiva de globales de la aplicación completada');
         } catch (error) {
-            // Logging m�nimo durante pagehide para evitar errores
+            // Logging mínimo durante pagehide para evitar errores
             logger.warn('Error en limpieza agresiva de la aplicación:', error.message);
         }
     });
 }
 
 /**
- * SISTEMA DE COORDINACI�N CENTRALIZADA
- * Funciones para orquestar la comunicaci�n entre componentes hijos
+ * SISTEMA DE COORDINACIÓN CENTRALIZADA
+ * Funciones para orquestar la comunicación entre componentes hijos
  */
 
 /**
- * Estado de coordinaci�n entre componentes
+ * Estado de coordinación entre componentes
  */
 const estadoCoordinacion = {
     solicitudesPendientes: new Map(), // id_solicitud -> { componente, tipo_datos, timestamp, resolve, reject }
     datosCache: new Map(), // componente_tipo -> { datos, timestamp, ttl }
     coordinacionesActivas: new Set(), // ids de coordinaciones en progreso
-    tiempoEsperaMax: 5000, // 5 segundos m�ximo para respuestas
-    cacheTTL: 30000 // 30 segundos de vida �til del cache
+    tiempoEsperaMax: 5000, // 5 segundos máximo para respuestas
+    cacheTTL: 30000 // 30 segundos de vida útil del cache
 };
 
 /**
- * Solicita datos espec�ficos a un componente hijo
+ * Solicita datos específicos a un componente hijo
  * @param {string} componenteId - ID del componente hijo
  * @param {string} tipoDatos - Tipo de datos solicitados ('coordenadas', 'audio', 'reto', etc.)
- * @param {Object} parametros - Par�metros adicionales para la solicitud
+ * @param {Object} parametros - Parámetros adicionales para la solicitud
  * @returns {Promise<Object>} Datos del componente
  */
 export async function solicitarDatosAHijo(componenteId, tipoDatos, parametros = {}) {
@@ -1503,7 +1535,7 @@ export async function solicitarDatosAHijo(componenteId, tipoDatos, parametros = 
 
     return new Promise(async (resolve, reject) => {
         try {
-            // Verificar si los datos est�n en cache y son v�lidos
+            // Verificar si los datos están en cache y son válidos
             const claveCache = `${componenteId}_${tipoDatos}`;
             const datosCache = estadoCoordinacion.datosCache.get(claveCache);
 
@@ -1547,26 +1579,26 @@ export async function solicitarDatosAHijo(componenteId, tipoDatos, parametros = 
 }
 
 /**
- * Coordina una acci�n entre m�ltiples componentes
- * @param {string} idCoordinacion - ID �nico de la coordinaci�n
+ * Coordina una acción entre múltiples componentes
+ * @param {string} idCoordinacion - ID único de la coordinación
  * @param {Array<Object>} acciones - Array de acciones a coordinar
- * @param {Object} opciones - Opciones de coordinaci�n
- * @returns {Promise<Object>} Resultado de la coordinaci�n
+ * @param {Object} opciones - Opciones de coordinación
+ * @returns {Promise<Object>} Resultado de la coordinación
  */
 export async function coordinarAccion(idCoordinacion, acciones, opciones = {}) {
     if (estadoCoordinacion.coordinacionesActivas.has(idCoordinacion)) {
-        throw new Error(`Coordinaci�n ${idCoordinacion} ya est� activa`);
+        throw new Error(`Coordinación ${idCoordinacion} ya está activa`);
     }
 
     estadoCoordinacion.coordinacionesActivas.add(idCoordinacion);
 
     try {
-        logger.info(`Iniciando coordinaci�n ${idCoordinacion} con ${acciones.length} acciones`);
+        logger.info(`Iniciando coordinación ${idCoordinacion} con ${acciones.length} acciones`);
 
         const resultados = [];
         const errores = [];
 
-        // Ejecutar acciones en secuencia o paralelo seg�n opciones
+        // Ejecutar acciones en secuencia o paralelo según opciones
         const modoEjecucion = opciones.modo || 'paralelo';
 
         if (modoEjecucion === 'secuencial') {
@@ -1604,7 +1636,7 @@ export async function coordinarAccion(idCoordinacion, acciones, opciones = {}) {
             timestamp: new Date().toISOString()
         };
 
-        logger.info(`Coordinaci�n ${idCoordinacion} completada: ${resultados.length} exitosos, ${errores.length} errores`);
+        logger.info(`Coordinación ${idCoordinacion} completada: ${resultados.length} exitosos, ${errores.length} errores`);
         return resultadoFinal;
 
     } finally {
@@ -1662,77 +1694,77 @@ export function limpiarCacheCoordinacion() {
     }
 
     if (eliminados > 0) {
-        logger.debug(`Cache de coordinaci�n limpiado: ${eliminados} entradas expiradas`);
+        logger.debug(`Cache de coordinación limpiado: ${eliminados} entradas expiradas`);
     }
 }
 
-// Limpiar cache peri�dicamente (optimized for mobile)
-const intervaloCache = esMovil ? estadoCoordinacion.cacheTTL * 2 : estadoCoordinacion.cacheTTL / 2; // 1 min m�vil, 15 seg desktop
-setInterval(limpiarCacheCoordinacion, intervaloCache);
+// Limpiar cache periódicamente (optimized for mobile)
+const intervaloCache = esMovil ? estadoCoordinacion.cacheTTL * 2 : estadoCoordinacion.cacheTTL / 2; // 1 min móvil, 15 seg desktop
+const idIntervaloCache = setInterval(limpiarCacheCoordinacion, intervaloCache);
 
 // ===== CONTROLADOR COORDINACION.RESPUESTA_DATOS_HIJO MOVIDO =====
-// Movido a mensajeria.js (FASE 8, ~34 l�neas con funci�n auxiliar procesarRespuestaDatosHijo)
+// Movido a mensajeria.js (FASE 8, ~34 líneas con función auxiliar procesarRespuestaDatosHijo)
 // Procesa respuestas de datos de componentes hijo
 // ================================================================
 
 // ===== CONTROLADOR COORDINACION.ESTADO_COORDINACION MOVIDO =====
-// Movido a mensajeria.js (FASE 8, ~14 l�neas con funci�n auxiliar obtenerEstadoCoordinacion)
-// Consulta estado del sistema de coordinaci�n
+// Movido a mensajeria.js (FASE 8, ~14 líneas con función auxiliar obtenerEstadoCoordinacion)
+// Consulta estado del sistema de coordinación
 // ================================================================
 
 // ===== CONTROLADOR COORDINACION.SOLICITAR_DATOS_HIJO MOVIDO =====
-// Movido a mensajeria.js (FASE 8, ~213 l�neas)
+// Movido a mensajeria.js (FASE 8, ~213 líneas)
 // Maneja solicitudes de datos a componentes hijo
 // Gestiona timeouts, reintentos y respuestas agregadas
 // ================================================================
 
 // ===== CONTROLADOR COORDINACION.COORDINAR_ACCION MOVIDO =====
-// Movido a mensajeria.js (FASE 8, ~234 l�neas)
-// Coordina acciones entre m�ltiples componentes
+// Movido a mensajeria.js (FASE 8, ~234 líneas)
+// Coordina acciones entre múltiples componentes
 // Orquesta acciones sincronizadas con manejo de dependencias y rollback transaccional
 // ================================================================
 
 // ===== CONTROLADOR COORDINACION.SINCRONIZAR_COMPONENTES MOVIDO =====
-// Movido a mensajeria.js (FASE 8, ~221 l�neas)
+// Movido a mensajeria.js (FASE 8, ~221 líneas)
 // Sincroniza estado entre componentes
-// Soporta estrategias: propagaci�n, consolidaci�n y resoluci�n de conflictos
+// Soporta estrategias: propagación, consolidación y resolución de conflictos
 // ================================================================
 
 /**
- * Maneja las respuestas de datos de m�ltiples paradas (PUSH NOTIFICATION).
- * Este controlador procesa la informaci�n de varias paradas recibidas
- * de un componente del sistema, como el m�dulo de datos o un servicio externo.
+ * Maneja las respuestas de datos de múltiples paradas (PUSH NOTIFICATION).
+ * Este controlador procesa la información de varias paradas recibidas
+ * de un componente del sistema, como el módulo de datos o un servicio externo.
  * 
  * ?? IMPORTANTE: Este es un controlador de PUSH (no request/response).
- * Se usa cuando el padre o un servicio ENV�A actualizaciones de paradas de forma
- * as�ncrona (no solicitadas), como notificaciones de cambios.
+ * Se usa cuando el padre o un servicio ENVÍA actualizaciones de paradas de forma
+ * asíncrona (no solicitadas), como notificaciones de cambios.
  * 
  * ?? DIFERENCIA con SOLICITAR_PARADAS:
- * - SOLICITAR_PARADAS: Request/Response s�ncrono (hijo pide ? padre responde con return)
- * - RESPUESTA_PARADAS: Push notification (padre env�a update ? hijos reciben y procesan)
+ * - SOLICITAR_PARADAS: Request/Response síncrono (hijo pide ? padre responde con return)
+ * - RESPUESTA_PARADAS: Push notification (padre envía update ? hijos reciben y procesan)
  * 
  * @param {Object} mensaje - Mensaje con los datos de las paradas
- * @param {string} mensaje.origen - ID del componente que env�a la respuesta
+ * @param {string} mensaje.origen - ID del componente que envía la respuesta
  * @param {Object} mensaje.datos - Datos de las paradas
  * @param {Array<Object>} mensaje.datos.paradas - Lista de objetos de paradas
- * @param {string} mensaje.datos.paradas[].paradaId - Identificador �nico de la parada
+ * @param {string} mensaje.datos.paradas[].paradaId - Identificador único de la parada
  * @param {string} [mensaje.datos.paradas[].nombre] - Nombre de la parada
- * @param {Object} mensaje.datos.paradas[].ubicacion - Coordenadas de ubicaci�n {lat: number, lng: number}
+ * @param {Object} mensaje.datos.paradas[].ubicacion - Coordenadas de ubicación {lat: number, lng: number}
  * @param {Array<Object>} [mensaje.datos.paradas[].rutas] - Rutas que pasan por esta parada
  * @param {Object} [mensaje.datos.paradas[].metadatos] - Metadatos adicionales de la parada
  * @param {string} [mensaje.datos.paradas[].estado] - Estado de la parada
  * @param {Object} [mensaje.datos.metadatos] - Metadatos adicionales del conjunto de paradas
  * @param {string} [mensaje.datos.estado] - Estado general del conjunto de paradas
- * @param {string} [mensaje.datos.mensajeId] - ID del mensaje original que solicit� los datos
- * @param {boolean} [mensaje.datos.actualizacionParcial=false] - Indica si es una actualizaci�n parcial
+ * @param {string} [mensaje.datos.mensajeId] - ID del mensaje original que solicitó los datos
+ * @param {boolean} [mensaje.datos.actualizacionParcial=false] - Indica si es una actualización parcial
  * @param {boolean} [mensaje.datos.notificarSistema=true] - Si se debe notificar a otros componentes
- * @param {boolean} [mensaje.datos.requiereConfirmacion=true] - Si se requiere confirmaci�n de recepci�n
+ * @param {boolean} [mensaje.datos.requiereConfirmacion=true] - Si se requiere confirmación de recepción
  * 
  * @example
- * // USO: Enviar actualizaci�n desde el padre
+ * // USO: Enviar actualización desde el padre
  * enviarMensaje({
  *     tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
- *     destino: 'broadcast', // O un hijo espec�fico
+ *     destino: 'broadcast', // O un hijo específico
  *     datos: {
  *         paradas: [...],
  *         actualizacionParcial: false,
@@ -1744,31 +1776,31 @@ setInterval(limpiarCacheCoordinacion, intervaloCache);
 
 /**
  * Maneja las solicitudes de datos de paradas.
- * Este controlador procesa las solicitudes de datos de paradas y devuelve la informaci�n solicitada
+ * Este controlador procesa las solicitudes de datos de paradas y devuelve la información solicitada
  * según los criterios de filtrado proporcionados.
  * 
- * ?? IMPORTANTE: Este controlador usa patr�n Request/Response DIRECTO (return).
+ * ?? IMPORTANTE: Este controlador usa patrón Request/Response DIRECTO (return).
  * La respuesta NO viene en .datos, viene directamente en el objeto de respuesta.
  * 
  * @param {Object} mensaje - Mensaje de solicitud de paradas
  * @param {string} mensaje.origen - ID del componente que realiza la solicitud
- * @param {Object} mensaje.datos - Par�metros de la solicitud
+ * @param {Object} mensaje.datos - Parámetros de la solicitud
  * @param {string} [mensaje.datos.filtro] - Filtro opcional para buscar paradas por nombre o ID
- * @param {Object} [mensaje.datos.rango] - Rango geogr�fico opcional para filtrar paradas
+ * @param {Object} [mensaje.datos.rango] - Rango geográfico opcional para filtrar paradas
  * @param {number} mensaje.datos.rango.lat - Latitud central
  * @param {number} mensaje.datos.rango.lng - Longitud central
  * @param {number} [mensaje.datos.rango.radio=1000] - Radio en metros (por defecto 1km)
- * @param {Array<string>} [mensaje.datos.campos] - Campos espec�ficos a devolver (por defecto todos)
- * @param {number} [mensaje.datos.limite=100] - N�mero m�ximo de resultados a devolver
+ * @param {Array<string>} [mensaje.datos.campos] - Campos específicos a devolver (por defecto todos)
+ * @param {number} [mensaje.datos.limite=100] - Número máximo de resultados a devolver
  * @param {boolean} [mensaje.datos.soloActivas=true] - Si es true, solo devuelve paradas activas
  * @param {string} [mensaje.datos.ordenPor='nombre'] - Campo por el que ordenar los resultados
- * @param {string} [mensaje.datos.orden='asc'] - Orden de clasificaci�n ('asc' o 'desc')
- * @param {boolean} [mensaje.datos.incluirEstadisticas=false] - Si incluir estad�sticas de los resultados
+ * @param {string} [mensaje.datos.orden='asc'] - Orden de clasificación ('asc' o 'desc')
+ * @param {boolean} [mensaje.datos.incluirEstadisticas=false] - Si incluir estadísticas de los resultados
  * 
  * @returns {Promise<Object>} Objeto con los resultados (DIRECTO, sin .datos)
  * @returns {number} return.total - Total de paradas encontradas
  * @returns {Array<Object>} return.paradas - Array de objetos de paradas
- * @returns {Object} [return.estadisticas] - Estad�sticas si se solicitaron
+ * @returns {Object} [return.estadisticas] - Estadísticas si se solicitaron
  * @returns {Object} return.metadatos - Metadatos de la respuesta
  * 
  * @example
@@ -1777,11 +1809,11 @@ setInterval(limpiarCacheCoordinacion, intervaloCache);
  *     tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS,
  *     datos: {}
  * });
- * // ? CORRECTO: respuesta.paradas
+ * // CORRECTO: respuesta.paradas
  * if (respuesta && respuesta.paradas) {
  *     logger.debug(respuesta.paradas);
  * }
- * // ? INCORRECTO: respuesta.datos.paradas (NO existe)
+ * // INCORRECTO: respuesta.datos.paradas (NO existe)
  */
 // CONTROLADOR DATOS.SOLICITAR_PARADAS movido a utils.js (FASE 10)
 
@@ -1863,7 +1895,7 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
 });
 
 // Background retry loop: periodically attempt to resend pending CAMBIO_MODO
-setInterval(async () => {
+const intervaloReintentoModo = setInterval(async () => {
     try {
         if (pendingModeChanges.size === 0) return;
         const now = Date.now();
@@ -1911,7 +1943,8 @@ setInterval(async () => {
 }, 5000);
 
 // Hacer funciones disponibles globalmente para compatibilidad con carga como script
-window.manejarCambioModo = manejarCambioModo;
-window.actualizarInterfazModo = actualizarInterfazModo;
-window.notificarCambioModoInminente = notificarCambioModoInminente;
-window.notificarCambioModoCompletado = notificarCambioModoCompletado;
+// Note: These are assignments to window properties, not parameter reassignments
+window.manejarCambioModo = window.manejarCambioModo || manejarCambioModo;
+window.actualizarInterfazModo = window.actualizarInterfazModo || actualizarInterfazModo;
+window.notificarCambioModoInminente = window.notificarCambioModoInminente || notificarCambioModoInminente;
+window.notificarCambioModoCompletado = window.notificarCambioModoCompletado || notificarCambioModoCompletado;
