@@ -1,173 +1,364 @@
 /**
- * Configuración global de la aplicación
- * @module Config
+ * @fileoverview Configuración centralizada para ValenciaVGuides
+ * @version 2.0.0
+ * 
+ * Define todas las constantes de configuración del sistema,
+ * incluyendo timeouts, URLs, límites y parámetros de comportamiento.
  */
 
-import { LOG_LEVELS } from './constants.js';
+import { MODOS, LOG_LEVELS } from './constants.js';
 
 /**
- * Configuración de la aplicación
+ * Mapeo de tipos de consulta por hijo
+ * Usado para especificar el tipo de datos esperados en comunicaciones con iframes hijo
+ * @type {Object<string, string>}
+ */
+export const MAPA_TIPOS_HIJO = {
+    hijo2: 'COORDENADAS',
+    hijo3: 'AUDIO',
+    hijo4: 'RETO',
+    hijo5: 'CASA'
+};
+
+/**
+ * Configuración principal del sistema
+ * @type {Object}
  */
 export const CONFIG = {
-    // Configuración general
-    DEBUG: true,
-    LOG_LEVEL: LOG_LEVELS.DEBUG,
-    ID_PADRE: 'padre', // Canonical parent ID used across child messages
-    IFRAME_ID: 'hijo4',
+    /**
+     * Configuración de versión
+     */
+    VERSION: '2.0.0',
+    BUILD_DATE: '2024-01-15',
     
-    // Configuración de iframes
-    HIJOS: {
-        HAMBURGUESA: { id: 'hijo1-hamburguesa', nombre: 'Menú Hamburguesa' },
-        OPCIONES: { id: 'hijo1-opciones', nombre: 'Menú Opciones' },
-        CASA: { id: 'hijo5', nombre: 'Botón Casa' },
-        COORDENADAS: { id: 'hijo2', nombre: 'Coordenadas' },
-        AUDIO: { id: 'hijo3', nombre: 'Audio' },
-        RETOS: { id: 'hijo4', nombre: 'Retos' } // Confirmado: ID coincide con el iframe real
+    /**
+     * Configuración de debugging
+     */
+    DEBUG: {
+        HABILITADO: true,
+        NIVEL_LOG: LOG_LEVELS.DEBUG,
+        MOSTRAR_TIMESTAMPS: true,
+        MOSTRAR_CONTEXTO: true,
+        PERSISTIR_LOGS: false
     },
     
-    // Configuración de mensajería
+    /**
+     * Configuración del sistema de mensajería
+     */
     MENSAJERIA: {
-        // Configuración de reintentos
-        REINTENTOS: {
-            MAXIMOS: 3,
-            TIEMPO_ESPERA: 1000,
-            FACTOR: 2
-        },
+        /** Timeout por defecto para mensajes con confirmación (ms) */
+        TIMEOUT_CONFIRMACION: 5000,
         
-        // Límites de mensajería
-        LIMITES: {
-            MAX_MENSAJES_PADRE: 100,
-            THROTTLE_TIMEOUT: 2000
-        },
+        /** Timeout extendido para operaciones complejas (ms) */
+        TIMEOUT_EXTENDIDO: 10000,
         
-        // Tiempos de espera
+        /** Timeout rápido para operaciones simples (ms) */
+        TIMEOUT_RAPIDO: 2000,
+        
+        /** Número máximo de reintentos para mensajes */
+        MAX_REINTENTOS: 3,
+        
+        /** Intervalo base entre reintentos (ms) */
+        INTERVALO_REINTENTO: 1000,
+        
+        /** Factor de backoff exponencial */
+        BACKOFF_FACTOR: 1.5,
+        
+        /** Tamaño máximo del buffer de mensajes pendientes */
+        MAX_BUFFER_MENSAJES: 100,
+        
+        /** TTL por defecto para mensajes en cola (ms) */
+        TTL_MENSAJE: 30000,
+        
+        /** Intervalo de limpieza de mensajes expirados (ms) */
+        INTERVALO_LIMPIEZA: 10000,
+        
+        /** Alias TIMEOUTS para compatibilidad con codigo-padre.html */
         TIMEOUTS: {
-            CONFIRMACION: 10000,  // Increased from 5000ms to 10000ms for initial messages
-            RESPUESTA: 10000     // 10 segundos para respuesta
-        },
-        // Heartbeat pre-initialization: allow registering listeners and
-        // preparing heartbeat state without starting the periodic pings.
-        HEARTBEAT_PREWARM: {
-            ENABLE: true,
-            TIMEOUT_MS: 8000
+            CONFIRMACION: 5000,
+            EXTENDIDO: 10000,
+            RAPIDO: 2000
         }
-        ,
-        // Cola de mensajería: behavior para reintentos (enqueue)
-        QUEUE: {
-            BASE_DELAY_MS: 3000,  // base backoff 3s
-            MAX_DELAY_MS: 60000,  // máximo de backoff 60s
-            MAX_RETRIES: 10,      // intentos antes de expirar
-            TTL_MS: 15 * 60 * 1000 // TTL: 15 minutos
-        }
-        ,
-        // Orígenes permitidos para mensajes (vacío => usar origin actual)
-        // Configuración crítica de seguridad para postMessage
-        ALLOWED_ORIGINS: [
-            window.location.origin,  // Mismo origen (siempre permitido)
-            'https://valenciavguides.github.io',  // GitHub Pages producción
-            'http://localhost',  // Desarrollo local (cualquier puerto)
-            'http://127.0.0.1'   // Desarrollo local IP
-        ]
     },
     
-    // Configuración del mapa
-    MAPA: {
-        CENTER: [39.4699, -0.3763], // Valencia
-        ZOOM: 13,
-        MIN_ZOOM: 12,
-        MAX_ZOOM: 18,
-        ZOOM_CONTROL: true // Habilitado
-    }
-    ,
-    // Configuración de GPS y tolerancias
+    /**
+     * Configuración del GPS y localización
+     */
     GPS: {
-        ENABLE_HIGH_ACCURACY: true,
-        TIMEOUT_MS: 15000,
-        MAXIMUM_AGE_MS: 0,
-        // REJECT_ACCURACY_M: 5000, // COMENTADO: Regla de 5km que hacía que GPS dejara de funcionar
-        REJECT_ACCURACY_M: 999999, // Temporalmente desactivada - regla de 5km en el tintero
-        IDEAL_ACCURACY_M: 7,
-        IMMEDIATE_ACCURACY_M: 15,
-        SOFT_ACCURACY_M: 300,
-        REQUIRED_CONSECUTIVE_GOOD: 2,
-        BUFFER_SIZE: 3,
-        WEAK_GPS_TIMEOUT_MS: 10000
-        ,
-        // Pre-warm / warmup configuration: when enabled, the parent may start
-        // a low-power watchPosition to prime the geolocation subsystem so
-        // switching to 'aventura' is faster and smoother.
-        PREWARM: {
-            ENABLE: false,
-            TIMEOUT_MS: 15000,
-            // Options used for the warmup watchPosition call (low accuracy / low power)
-            WATCH_OPTIONS: {
-                enableHighAccuracy: false,
-                maximumAge: 300000,
-                timeout: 20000
-            }
-            ,
-            // Number of initial high-accuracy getCurrentPosition attempts to make
-            HIGH_ACC_INIT_ATTEMPTS: 2,
-            // Base timeout (ms) for initial attempts; subsequent attempts use backoff
-            INIT_ATTEMPT_TIMEOUT_MS: 5000
+        /** Habilitar alta precisión */
+        ALTA_PRECISION: true,
+        
+        /** Timeout para obtener posición (ms) */
+        TIMEOUT: 15000,
+        
+        /** Edad máxima de posición en caché (ms) */
+        MAX_EDAD_CACHE: 5000,
+        
+        /** Intervalo de actualización de posición (ms) */
+        INTERVALO_ACTUALIZACION: 3000,
+        
+        /** Distancia mínima para considerar movimiento (metros) */
+        DISTANCIA_MINIMA: 5,
+        
+        /** Radio de proximidad para puntos de interés (metros) */
+        RADIO_PROXIMIDAD: 20,
+        
+        /** Radio extendido para búsqueda amplia (metros) */
+        RADIO_EXTENDIDO: 50,
+        
+        /** Precisión mínima aceptable (metros) */
+        PRECISION_MINIMA: 30,
+        
+        /** Número de muestras para promediar posición */
+        MUESTRAS_PROMEDIO: 3
+    },
+    
+    /**
+     * Configuración de audio
+     */
+    AUDIO: {
+        /** Volumen por defecto (0-1) */
+        VOLUMEN_DEFECTO: 0.8,
+        
+        /** Duración de fade in/out (ms) */
+        DURACION_FADE: 500,
+        
+        /** Intervalo de actualización de progreso (ms) */
+        INTERVALO_PROGRESO: 250,
+        
+        /** Precargar audios al inicio */
+        PRECARGA: true,
+        
+        /** Número máximo de audios en caché */
+        MAX_CACHE: 10,
+        
+        /** Formatos soportados en orden de preferencia */
+        FORMATOS: ['mp3', 'ogg', 'wav']
+    },
+    
+    /**
+     * Configuración de la interfaz de usuario
+     */
+    UI: {
+        /** Duración de animaciones (ms) */
+        DURACION_ANIMACION: 300,
+        
+        /** Debounce para eventos de scroll (ms) */
+        DEBOUNCE_SCROLL: 100,
+        
+        /** Debounce para eventos de resize (ms) */
+        DEBOUNCE_RESIZE: 150,
+        
+        /** Tiempo mínimo de visualización de loading (ms) */
+        MIN_TIEMPO_LOADING: 500,
+        
+        /** Breakpoints responsive */
+        BREAKPOINTS: {
+            MOBILE: 480,
+            TABLET: 768,
+            DESKTOP: 1024,
+            LARGE: 1440
         }
-    }
-    ,
-    // Configuración de gestión de pendings en el padre
-    PENDING: {
-        TTL_MS: 10 * 60 * 1000, // TTL por defecto para pendings (10 minutos)
-        OUT_OF_RANGE_M: 53, // distancia en metros que consideraremos fuera de rango
-        OUT_OF_RANGE_GRACE_MS: 5 * 60 * 1000, // tiempo de gracia (5 minutos) fuera de rango antes de cancelar
-        CLEANUP_INTERVAL_MS: 60 * 1000 // intervalo en ms para limpiar pendings stale (1 minuto)
-    }
-    ,
-    // Configuración específica del sistema de monitoreo/notifications
+    },
+    
+    /**
+     * Configuración de mapa
+     */
+    MAPA: {
+        /** Zoom inicial */
+        ZOOM_INICIAL: 15,
+        
+        /** Zoom mínimo permitido */
+        ZOOM_MIN: 12,
+        
+        /** Zoom máximo permitido */
+        ZOOM_MAX: 19,
+        
+        /** Zoom para centrar en punto */
+        ZOOM_CENTRADO: 17,
+        
+        /** Centro por defecto (Valencia) */
+        CENTRO_DEFECTO: {
+            lat: 39.4699,
+            lng: -0.3763
+        },
+        
+        /** Estilo del mapa */
+        ESTILO: 'mapbox://styles/mapbox/streets-v11',
+        
+        /** Duración de animación de vuelo (ms) */
+        DURACION_VUELO: 1500
+    },
+    
+    /**
+     * Configuración de aventuras
+     */
+    AVENTURAS: {
+        /** Modo por defecto */
+        MODO_DEFECTO: MODOS.MANUAL,
+        
+        /** Tiempo máximo de aventura (ms) */
+        TIEMPO_MAXIMO: 3600000, // 1 hora
+        
+        /** Intervalo de auto-guardado (ms) */
+        INTERVALO_AUTOGUARDADO: 60000,
+        
+        /** Número mínimo de paradas */
+        MIN_PARADAS: 3,
+        
+        /** Número máximo de paradas */
+        MAX_PARADAS: 20
+    },
+    
+    /**
+     * Configuración de retos
+     */
+    RETOS: {
+        /** Tiempo por defecto para completar reto (ms) */
+        TIEMPO_LIMITE: 300000, // 5 minutos
+        
+        /** Puntos por reto completado */
+        PUNTOS_COMPLETADO: 100,
+        
+        /** Bonus por tiempo récord */
+        BONUS_TIEMPO: 50,
+        
+        /** Penalización por pista usada */
+        PENALIZACION_PISTA: 25
+    },
+    
+    /**
+     * Configuración de almacenamiento
+     */
+    STORAGE: {
+        /** Prefijo para claves de localStorage */
+        PREFIJO: 'vvguides_',
+        
+        /** TTL por defecto para datos en caché (ms) */
+        TTL_CACHE: 86400000, // 24 horas
+        
+        /** Límite de tamaño de localStorage (bytes) */
+        LIMITE_TAMANO: 5242880 // 5MB
+    },
+    
+    /**
+     * Configuración de red
+     */
+    RED: {
+        /** Timeout para peticiones HTTP (ms) */
+        TIMEOUT_HTTP: 10000,
+        
+        /** Número de reintentos para peticiones fallidas */
+        REINTENTOS_HTTP: 2,
+        
+        /** Intervalo entre reintentos (ms) */
+        INTERVALO_REINTENTO_HTTP: 1000,
+        
+        /** URL base de la API */
+        API_BASE_URL: '',
+        
+        /** Habilitar modo offline */
+        MODO_OFFLINE: true
+    },
+    
+    /**
+     * Configuración de iframes hijos
+     */
+    HIJOS: {
+        /** Tiempo de espera para inicialización (ms) */
+        TIMEOUT_INIT: 10000,
+        
+        /** Intervalo de heartbeat (ms) */
+        INTERVALO_HEARTBEAT: 5000,
+        
+        /** Número de heartbeats fallidos para considerar desconexión */
+        MAX_HEARTBEATS_FALLIDOS: 3,
+        
+        /** Reintentar conexión automáticamente */
+        AUTO_RECONECTAR: true,
+        
+        /** Intervalo de reconexión (ms) */
+        INTERVALO_RECONEXION: 3000
+    },
+    
+    /**
+     * Configuración de monitoreo
+     */
     MONITOREO: {
-        // Lista preferida (en orden) de IDs de iframes para enviar notificaciones de sistema.
-        // Si ninguno existe, se usará 'broadcast' como fallback.
-        // Se agrega 'sistema-ui' por defecto como destino prioritario centralizado.
-        DESTINATARIOS_NOTIFICACION: ['sistema-ui', 'hijo1-opciones', 'hijo5', 'broadcast']
+        /** Habilitar métricas */
+        METRICAS_HABILITADAS: true,
+        
+        /** Intervalo de recolección de métricas (ms) */
+        INTERVALO_METRICAS: 30000,
+        
+        /** Umbral de memoria para alertas (bytes) */
+        UMBRAL_MEMORIA: 52428800, // 50MB
+        
+        /** Umbral de mensajes pendientes para alertas */
+        UMBRAL_MENSAJES_PENDIENTES: 50
     }
 };
 
-// Cambiar las exportaciones para usar CommonJS si ES6 no es compatible
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CONFIG;
-} else {
-    window.Config = CONFIG;
-}
-
-// === CANONICAL PADRE ALIASING ===
-// Normalize canonical parent ID and keep backward-compatible aliases
-try {
-    if (typeof window !== 'undefined') {
-        // Ensure a canonical object for config on window
-        window.Config = window.Config || CONFIG;
-        // For code that expects an object named CONFIG_PADRE
-        if (typeof window.CONFIG_PADRE === 'undefined') {
-            window.CONFIG_PADRE = { ID: CONFIG.ID_PADRE };
-        } else if (!window.CONFIG_PADRE.ID) {
-            window.CONFIG_PADRE.ID = CONFIG.ID_PADRE;
-        }
-        // Keep CONFIG_PADRE_LOCAL as a strict alias for compatibility
-        if (typeof window.CONFIG_PADRE_LOCAL === 'undefined') {
-            window.CONFIG_PADRE_LOCAL = window.CONFIG_PADRE;
-        } else if (window.CONFIG_PADRE_LOCAL !== window.CONFIG_PADRE) {
-            // Make them identical to avoid divergence
-            window.CONFIG_PADRE_LOCAL = window.CONFIG_PADRE;
+/**
+ * Función para obtener configuración con valor por defecto
+ * @param {string} ruta - Ruta de la configuración (ej: 'GPS.TIMEOUT')
+ * @param {*} defecto - Valor por defecto si no existe
+ * @returns {*} Valor de configuración
+ */
+export function getConfig(ruta, defecto = null) {
+    const partes = ruta.split('.');
+    let valor = CONFIG;
+    
+    for (const parte of partes) {
+        if (valor && typeof valor === 'object' && parte in valor) {
+            valor = valor[parte];
+        } else {
+            return defecto;
         }
     }
-} catch (err) {
-    // Not fatal: continue without throwing in environments without window
+    
+    return valor;
 }
 
-// Export a convenience constant
-export const PADRE_ID = CONFIG.ID_PADRE;
+/**
+ * Función para actualizar configuración en runtime
+ * @param {string} ruta - Ruta de la configuración
+ * @param {*} nuevoValor - Nuevo valor
+ * @returns {boolean} True si se actualizó correctamente
+ */
+export function setConfig(ruta, nuevoValor) {
+    const partes = ruta.split('.');
+    let obj = CONFIG;
+    
+    for (let i = 0; i < partes.length - 1; i++) {
+        if (obj && typeof obj === 'object' && partes[i] in obj) {
+            obj = obj[partes[i]];
+        } else {
+            return false;
+        }
+    }
+    
+    const ultimaParte = partes[partes.length - 1];
+    if (obj && typeof obj === 'object' && ultimaParte in obj) {
+        obj[ultimaParte] = nuevoValor;
+        return true;
+    }
+    
+    return false;
+}
 
-// Mapa centralizado de tipos de datos por hijo para consultas homogéneas
-export const MAPA_TIPOS_HIJO = {
-    'hijo2': 'COORDENADAS',
-    'hijo3': 'AUDIO', 
-    'hijo4': 'RETOS',
-    'hijo5': 'PARADAS'
-};
+/**
+ * Exporta la configuración para depuración
+ * @returns {string} Configuración en formato JSON
+ */
+export function exportarConfig() {
+    return JSON.stringify(CONFIG, null, 2);
+}
+
+// Hacer CONFIG disponible globalmente para debug
+if (typeof window !== 'undefined') {
+    window.__vv_config = CONFIG;
+    window.__vv_getConfig = getConfig;
+}
+
+export default CONFIG;
