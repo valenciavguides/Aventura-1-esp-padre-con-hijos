@@ -1826,6 +1826,11 @@ const MODE_RETRY_BASE_MS = 2000; // base backoff (2s)
 const MODE_RETRY_MAX_MS = 60 * 1000; // max backoff (60s)
 const MODE_RETRY_MAX_INTENTOS = 6; // max attempts before giving up
 
+// Exponer variables globalmente para acceso desde codigo-padre.html
+window.pendingModeChanges = pendingModeChanges;
+window.MODE_RETRY_MAX_INTENTOS = MODE_RETRY_MAX_INTENTOS;
+window._computeBackoff = _computeBackoff;
+
 function _computeBackoff(attempt) {
     // exponential backoff with jitter
     const exp = Math.pow(2, Math.max(0, attempt - 1));
@@ -1857,40 +1862,6 @@ registrarControlador(TIPOS_MENSAJE.SISTEMA.NACK, async (mensaje) => {
         }
     } catch (e) {
         logger.warn('[APP][CAMBIO_MODO][RESEND] Error procesando NACK esperarPermiso:', e);
-    }
-});
-
-registrarControlador(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, async (mensaje) => {
-    try {
-        const hijoId = mensaje?.origen;
-        if (hijoId && pendingModeChanges.has(hijoId)) {
-            const pending = pendingModeChanges.get(hijoId);
-            logger.info(`[APP][CAMBIO_MODO][RESEND] HIJO_LISTO de ${hijoId}, reenviando CAMBIO_MODO pendiente (intentos=${pending.intentos})`);
-            try {
-                await enviarMensaje({
-                    destino: hijoId,
-                    tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO,
-                    origen: getPadreId(),
-                    datos: {
-                        modo: pending.modo,
-                        ...pending.datos,
-                        secuenciaCompleta: true // Forzar bandera
-                    }
-                });
-                pendingModeChanges.delete(hijoId);
-            } catch (sendErr) {
-                logger.warn(`[APP][CAMBIO_MODO][RESEND] Error reenviando CAMBIO_MODO a ${hijoId} tras HIJO_LISTO:`, sendErr);
-                // update nextAttemptAt to retry later
-                const intentos = Math.min((pending.intentos || 0) + 1, MODE_RETRY_MAX_INTENTOS);
-                pendingModeChanges.set(hijoId, {
-                    ...pending,
-                    intentos,
-                    nextAttemptAt: Date.now() + _computeBackoff(intentos)
-                });
-            }
-        }
-    } catch (e) {
-        logger.warn('[APP][CAMBIO_MODO][RESEND] Error reenviando CAMBIO_MODO tras HIJO_LISTO:', e);
     }
 });
 
