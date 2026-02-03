@@ -7,8 +7,6 @@
     <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains; preload">
     <title>retos-hijo4</title>
     <script src="js/suppress-warnings.js"></script>
-    <script src="js/mensajeria.js"></script>
-    <script src="js/monitoreo.js"></script>
     <script>
         // Definir ejecutarValidacion globalmente lo antes posible para evitar errores de "not defined"
         window.ejecutarValidacion = function(reto, respuestaUsuario) {
@@ -114,6 +112,8 @@
             font-weight: bold;
             text-align: center;
             width: 100%;
+
+    
             background-color: rgba(255, 255, 255, 0.9);
             padding: 1em;
             border-radius: 8px;
@@ -209,31 +209,201 @@
     <script type="module">
     /* --- Integración con Sistema de Mensajería --- */
     
-    // Access global mensajeria functions
-    const inicializarMensajeria = window.mensajeria ? window.mensajeria.inicializarMensajeria : () => console.error('mensajeria not loaded');
-    const registrarControlador = window.mensajeria ? window.mensajeria.registrarControlador : (t, c) => console.error('mensajeria not loaded', t);
-    const enviarMensaje = window.mensajeria ? window.mensajeria.enviarMensaje : (msg) => console.error('mensajeria not loaded', msg);
+    import { getEnviarMensaje, getRegistrarControlador, getEnviarMensajeConConfirmacion } from './js/utils.js';
+    import { retryUntilAvailable } from './js/utils.js';
+
+    // Fallbacks que esperan a que window.mensajeria esté disponible
+    const enviarMensaje = async (...args) => {
+        // En hijos, usar postMessage directamente al padre
+        if (window.parent && window.parent !== window) {
+            const mensaje = args[0];
+            try {
+                window.parent.postMessage({
+                    tipo: mensaje.tipo,
+                    origen: mensaje.origen || 'hijo4',
+                    destino: mensaje.destino,
+                    datos: mensaje.datos,
+                    timestamp: Date.now()
+                }, window.location.origin);
+                return Promise.resolve();
+            } catch (e) {
+                console.error('[hijo4] Error enviando mensaje via postMessage:', e);
+                return Promise.reject(e);
+            }
+        } else {
+            // Fallback al método anterior si no estamos en iframe
+            return await retryUntilAvailable(
+                () => window.mensajeria.enviarMensaje(...args),
+                () => window.mensajeria && window.mensajeria.enviarMensaje,
+                10, 500, (...a) => (window.logger || console).error(...a)
+            );
+        }
+    };
+
+    const registrarControlador = async (tipo, callback) => {
+        // En hijos, los controladores se registran localmente para mensajes del padre
+        if (window.parent && window.parent !== window) {
+            // Registrar listener para mensajes del padre
+            const listener = (event) => {
+                if (event.source === window.parent && event.data && event.data.tipo === tipo) {
+                    callback(event.data);
+                }
+            };
+            window.addEventListener('message', listener);
+            return Promise.resolve(() => window.removeEventListener('message', listener));
+        } else {
+            // Fallback al método anterior
+            return await retryUntilAvailable(
+                () => window.mensajeria.registrarControlador(tipo, callback),
+                () => window.mensajeria && window.mensajeria.registrarControlador,
+                10, 500, (...a) => (window.logger || console).error(...a)
+            );
+        }
+    };
+
+    const enviarMensajeConConfirmacion = async (...args) => {
+        // Similar a enviarMensaje pero esperando confirmación
+        if (window.parent && window.parent !== window) {
+            const mensaje = args[0];
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Timeout esperando confirmación')), 
+                    window.ajustarTimeoutPorConexion ? window.ajustarTimeoutPorConexion(5000) : 5000);
+                
+                const confirmListener = (event) => {
+                    if (event.source === window.parent && event.data && event.data.tipo === 'SISTEMA.CONFIRMACION') {
+                        clearTimeout(timeout);
+                        window.removeEventListener('message', confirmListener);
+                        resolve();
+                    }
+                };
+                
+                window.addEventListener('message', confirmListener);
+                
+                try {
+                    window.parent.postMessage({
+                        tipo: mensaje.tipo,
+                        origen: mensaje.origen || 'hijo4',
+                        destino: mensaje.destino,
+                        datos: mensaje.datos,
+                        timestamp: Date.now(),
+                        requiereConfirmacion: true
+                    }, window.location.origin);
+                } catch (e) {
+                    clearTimeout(timeout);
+                    window.removeEventListener('message', confirmListener);
+                    reject(e);
+                }
+            });
+        } else {
+            return await retryUntilAvailable(
+                () => window.mensajeria.enviarMensajeConConfirmacion(...args),
+                () => window.mensajeria && window.mensajeria.enviarMensajeConConfirmacion,
+                10, 500, (...a) => (window.logger || console).error(...a)
+            );
+        }
+    };
+
+    // ==================== MESSAGING ADAPTER PARA COMUNICACIÓN CON PADRE ====================
+    // Este adapter permite a los hijos registrar controladores centralmente en el state-manager del padre
+    if (typeof window !== 'undefined' && typeof window.messagingAdapter === 'undefined') {
+        window.messagingAdapter = {
+            /**
+             * Registra un controlador en el state-manager centralizado del padre
+             * @param {string} controladorId - ID único del controlador
+             * @param {Function} handler - Función manejadora
+             * @param {Object} opciones - Opciones incluyendo tipoMensaje
+             * @returns {Promise<boolean>} - True si se registró, false si ya existía
+             */
+            registrarControladorCentral: async function(controladorId, handler, opciones = {}) {
+                const iframeId = window.name || (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || 'hijo';
+                const tipo = opciones.tipoMensaje || controladorId;
+                
+                // El registro real ocurre localmente - el padre sincroniza via HIJO_MANEJADORES
+                // Verificar si ya está registrado localmente
+                if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
+                    (window.logger || console).debug && (window.logger || console).debug(`[messagingAdapter] ${tipo} ya registrado localmente`);
+                    return false;
+                }
+                
+                // Registrar listener local para este tipo de mensaje
+                window.addEventListener('message', function adapterListener(event) {
+                    if (event.source === window.parent && event.data && event.data.tipo === tipo) {
+                        try {
+                            handler(event.data);
+                        } catch (e) {
+                            (window.logger || console).error && (window.logger || console).error(`[messagingAdapter] Error en handler ${tipo}:`, e && e.message);
+                        }
+                    }
+                });
+                
+                (window.logger || console).info && (window.logger || console).info(`[messagingAdapter] Handler registrado para ${tipo} en ${iframeId}`);
+                return true;
+            },
+            
+            /**
+             * Envía mensaje al padre para que lo procese centralmente
+             */
+            enviarMensajeCentral: async function(mensaje) {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(mensaje, window.location.origin);
+                    return { exito: true, metodo: 'postMessage' };
+                }
+                return { exito: false, error: 'No hay padre disponible' };
+            }
+        };
+        (window.logger || console).info && (window.logger || console).info('[HIJO] messagingAdapter creado para comunicación con padre');
+    }
 
     // Wrapper seguro para evitar doble registro de controladores en hijos
     if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro === 'undefined') {
         window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
-        window.registrarControladorSeguro = function(tipo, handler, opciones) {
+        window.registrarControladorSeguro = async function(tipo, handler, opciones) {
             try {
+                (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControladorSeguro called: ${tipo}`);
                 if (!tipo || typeof handler !== 'function') {
                     (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro parámetros inválidos: tipo=${tipo}`);
                     return;
                 }
                 if (window.__CONTROLADOR_REGISTRADOS.has(tipo)) {
-                    (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] Controlador ya registrado, omitiendo: ${tipo}`);
                     return;
                 }
                 window.__CONTROLADOR_REGISTRADOS.add(tipo);
-                if (typeof registrarControlador === 'function') {
-                    return registrarControlador(tipo, handler, opciones);
+
+                // ALSO keep a local map of handlers so we can respond to direct postMessage calls
+                globalThis.__local_controladores = globalThis.__local_controladores || new Map();
+                try { globalThis.__local_controladores.set(tipo, handler); } catch(_){ }
+
+                // Prefer central registration via messagingAdapter/state-manager when available
+                try {
+                    const iframeId = (window.name || (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || 'hijo');
+                    const controladorId = `${iframeId}:${tipo}`;
+                    if (window.messagingAdapter && typeof window.messagingAdapter.registrarControladorCentral === 'function') {
+                        try {
+                            const centralRes = await window.messagingAdapter.registrarControladorCentral(controladorId, handler, { tipoMensaje: tipo });
+                            if (centralRes === true) {
+                                (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControlador registered centrally: ${controladorId} -> ${tipo}`);
+                                return true;
+                            }
+                        } catch (e) {
+                            (window.logger || console).warn && (window.logger || console).warn(`[HIJO] Central registrar failed for ${tipo}: ${e && e.message}`);
+                        }
+                    }
+                    if (typeof registrarControlador === 'function') {
+                        try {
+                            const res = await safeRegistrar(tipo, handler, opciones);
+                            (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControlador delegated to mensajeria for ${tipo}`);
+                            return res;
+                        } catch (err) {
+                            (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControlador failed for ${tipo}: ${err && err.message}`);
+                            // fall through to queue
+                        }
+                    }
+                } catch (e) {
+                    (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro central attempt error for ${tipo}: ${e && e.message}`);
                 }
-                // Encolar para que el padre/mensajería lo migre cuando esté lista
-                globalThis.__vv_manejadores = globalThis.__vv_manejadores || new Map();
-                globalThis.__vv_manejadores.set(tipo, handler);
+                // Encolar localmente para migración cuando el padre lo solicite
+                (window.logger || console).info && (window.logger || console).info(`[HIJO] Handler queued for migration: ${tipo} (local queue)`);
                 return;
             } catch (e) {
                 (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
@@ -241,9 +411,84 @@
         };
     }
 
+    // Helper: safeRegistrar delegates to registrarControladorSeguro when available
+    if (typeof window !== 'undefined' && typeof window.safeRegistrar === 'undefined') {
+        window.safeRegistrar = async function(tipo, handler, opciones) {
+            try {
+                if (!tipo || typeof handler !== 'function') return;
+                if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.has(tipo)) return;
+                if (typeof window.registrarControladorSeguro === 'function') return window.registrarControladorSeguro(tipo, handler, opciones);
+                if (typeof registrarControlador === 'function') return registrarControlador(tipo, handler, opciones);
+            } catch (e) { (window.logger || console).warn && (window.logger || console).warn('[HIJO] safeRegistrar error', e && e.message); }
+        };
+    }
+
     import { resolverIdsParada, getPadreId } from './js/utils.js';
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
+
+    // RESPALDO: listener para handshake de migración (PADRE_PIDE_MANEJADORES)
+    (function(){
+        async function sendManifest(msg) {
+            try {
+                const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
+                const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
+                const payload = { 
+                    pedidoId: msg?.datos?.pedidoId || ('p_' + Date.now()), 
+                    manejadores: tipos, 
+                    timestamp: Date.now() 
+                };
+                
+                try { 
+                    (window.logger || console).info && (window.logger || console).info(`[hijo4] sendManifest pedidoId=${payload.pedidoId} manejadores=${tipos.length}`, tipos.map(t => t.tipo)); 
+                } catch (e) {}
+                
+                const origen = 'hijo4';
+                
+                // Enviar respuesta al padre
+                const response = {
+                    tipo: 'SISTEMA.HIJO_MANEJADORES',
+                    datos: payload,
+                    origen: origen,
+                    destino: 'padre',
+                    timestamp: Date.now()
+                };
+                
+                try {
+                    if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
+                        await window.mensajeria.enviarMensaje(response);
+                        (window.logger || console).info && (window.logger || console).info('[hijo4] HIJO_MANEJADORES enviado vía mensajeria');
+                    } else {
+                        window.parent.postMessage(response, window.location.origin);
+                        (window.logger || console).info && (window.logger || console).info('[hijo4] HIJO_MANEJADORES enviado vía postMessage');
+                    }
+                } catch (e) { 
+                    try { 
+                        window.parent.postMessage(response, '*');
+                        (window.logger || console).warn && (window.logger || console).warn('[hijo4] HIJO_MANEJADORES enviado con wildcard origin:', e && e.message);
+                    } catch(e2) {
+                        (window.logger || console).error && (window.logger || console).error('[hijo4] Error enviando HIJO_MANEJADORES:', e2 && e2.message);
+                    }
+                }
+            } catch (e) { 
+                (window.logger || console).warn('[hijo4] Error enviando manifest', e && e.message); 
+            }
+        }
+
+        window.addEventListener('message', async (ev) => {
+            try {
+                const m = ev.data || {};
+                if (m && (m.tipo === 'SISTEMA.PADRE_PIDE_MANEJADORES' || (m.tipo && m.tipo.endsWith && m.tipo.endsWith('PADRE_PIDE_MANEJADORES')))) {
+                    try { 
+                        (window.logger || console).info && (window.logger || console).info(`[hijo4] PADRE_PIDE_MANEJADORES recibido pedidoId=${m?.datos?.pedidoId} origen=${m?.origen || 'unknown'}`);
+                        await sendManifest(m);
+                    } catch (e) {
+                        (window.logger || console).error && (window.logger || console).error('[hijo4] Error procesando PADRE_PIDE_MANEJADORES:', e && e.message);
+                    }
+                }
+            } catch (e) {}
+        });
+    })();
 
     const CONFIG_HIJO = {
         id: 'hijo4',
@@ -292,11 +537,13 @@
     /* ═══════════════════════════════════════════════════════════════════════════════
      * ██ BACKUP: Array de retos original - COMENTADO PARA USAR DATOS CENTRALIZADOS
      * ██ Descomentar solo si falla el flujo centralizado y necesitamos fallback
-     * ═══════════════════════════════════════════════════════════════════════════════
+     * ═══════════════════════════════════════════════════════════════════════════════ */
     
     // Array de retos - NO ELIMINAR NI MODIFICAR SIN REVISIÓN: Este array es esencial para mapear retos/puzzles. Cualquier cambio debe coordinarse con el padre.
-    const retosAventura1Es_BACKUP = [
-    ═══════════════════════════════════════════════════════════════════════════════ */
+    // NOTE: El array backup está deliberadamente comentado para evitar declaraciones duplicadas y errores de parseo si se carga la versión centralizada desde el padre.
+    //       Si necesitas reactivar el fallback, descomenta y asegúrate de que su formato coincide con la API esperada y añade pruebas (TODO: añadir test al repositorio).
+    // const retosAventura1Es_BACKUP = [ /* fallback placeholder, commented out */ ]
+    /* ═══════════════════════════════════════════════════════════════════════════════ */
 
     const estadoRetos = {
         retosCompletados: new Set(),
@@ -321,17 +568,8 @@
     let fuegosDiv;
 
     let retoActual = null; // Objeto del reto actual
+        let indiceReto = 0; // Índice del reto actualmente mostrado (inicializado en 0)
 
-    // Helper: ocultar controles comunes de forma segura
-    function ocultarControles() {
-        try {
-            if (btnEnviar) btnEnviar.style.display = 'none';
-            // btnMostrarRespuesta y btnNext permanecen visibles siempre
-            if (divRespuestaCorrecta) { divRespuestaCorrecta.style.display = 'none'; divRespuestaCorrecta.textContent = ''; }
-        } catch (e) {
-            logger && logger.warn && logger.warn('[hijo4] ocultarControles error:', e);
-        }
-    }
 
     /* Función: fuegosArtificiales()
        Muestra una animación de fuegos artificiales en la pantalla.
@@ -427,7 +665,7 @@
         /* Función: mostrarReto(retoId)
            Carga y muestra el reto especificado por ID.
         */
-        function mostrarReto(retoId) {
+        async function mostrarReto(retoId) {
             logger.debug(`[hijo4] mostrarReto llamado con retoId: ${retoId}`);
             // Buscar el reto usando función centralizada
             const retosArray = obtenerRetos();
@@ -441,6 +679,8 @@
             // ✅ CRÍTICO: Asignar retoActual para que verificar() funcione
             retoActual = reto;
             estado.retoActualId = retoId;
+            // Actualizar indiceReto para que la navegación (advance-to-next) funcione correctamente
+            try { indiceReto = retosArray.findIndex(r => r && r.id === retoId); if (indiceReto === -1) indiceReto = 0; } catch (e) { indiceReto = 0; }
 
             // Ocultar todos los botones y mensajes al inicio de un nuevo reto
             ocultarControles();
@@ -552,8 +792,11 @@
                     respuestaUsuario = inputTexto ? inputTexto.value : null;
                 }
 
-                // Llamar a la validación personalizada
-                const validacionPersonalizada = window.ejecutarValidacion(reto, respuestaUsuario);
+                // Llamar a la validación personalizada (soporta async)
+                let validacionPersonalizada = true;
+                if (typeof window.ejecutarValidacion === 'function') {
+                    validacionPersonalizada = await window.ejecutarValidacion(reto, respuestaUsuario);
+                }
                 if (validacionPersonalizada === false) {
                     console.warn(`[hijo4] Validación personalizada falló para reto ${reto?.id || 'desconocido'}`);
                     throw new Error("Validación personalizada falló");
@@ -686,7 +929,7 @@
         /* Event Listener: window.message
            Escucha mensajes provenientes del iframe del puzzle para coordinar el avance.
         */
-        window.addEventListener("message", (event) => {
+        window.addEventListener("message", async (event) => {
             // En un entorno de producción, es MUY RECOMENDABLE verificar event.origin para seguridad
             // if (event.origin !== "https://valenciavguides.github.io") return; // Reemplaza con tu dominio
 
@@ -700,7 +943,7 @@
                 retoDiv.classList.remove("incorrect");
                 fuegosArtificiales();
                 // Enviar mensaje de completado para puzzles
-                enviarMensaje({
+                await enviarMensaje({
                     tipo: TIPOS_MENSAJE.RETO.COMPLETADO,
                     origen: CONFIG_HIJO.IFRAME_ID,
                     destino: getPadreId(),
@@ -727,7 +970,7 @@
                 }
                 const siguiente = retosArray[indiceReto];
                 if (siguiente) {
-                    mostrarReto(siguiente.id);
+                    await mostrarReto(siguiente.id);
                 } else {
                     logger.warn('[hijo4] No hay siguiente reto para índice', indiceReto);
                 }
@@ -798,20 +1041,34 @@
             try { if (document.body) document.body.style.display = 'none'; } catch (e) { /* ignore */ }
             function mostrarUI() { if (!_uiConfirmado) { console.warn('[hijo4] mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO'); return; } try { if (document.body) document.body.style.display = _originalDisplay || 'block'; console.log('[hijo4] UI visible tras PADRE_CONFIRMA_HIJO_LISTO'); } catch (e) {} }
 
-            // Inicializar mensajería con estructura correcta para hijo4
-            await inicializarMensajeria({
-                iframeId: window.frameElement.id,
-                debug: CONFIG_HIJO.DEBUG
-            });
+            // No necesitamos inicializarMensajeria aquí, los fallbacks esperan automáticamente
+
+            // Enviar HIJO_PREPARADO y esperar PADRE_DATOS antes de enviar HIJO_LISTO
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                        version: '1.0.0',
+                        capacidades: ['retos', 'preguntas', 'validacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.debug('[hijo4] HIJO_PREPARADO enviado; esperando PADRE_DATOS');
+            } catch (e) {
+                logger.warn('[hijo4] Error enviando HIJO_PREPARADO:', e);
+            }
 
             // Aplazar envío de HIJO_LISTO hasta registrar controladores críticos
             logger.debug('[hijo4] HIJO_LISTO aplazado hasta post-inicialización de controladores');
 
-            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_LISTO`);
+            logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} registrado el controlador PADRE_DATOS`);
             // Controlador para inicialización del padre
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
-                logger.info(`[hijo4] PADRE_LISTO recibido desde ${mensaje.origen}`);
-                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_LISTO`);
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
+                logger.info(`[hijo4] PADRE_DATOS recibido desde ${mensaje.origen}`);
+                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} recibió PADRE_DATOS`);
 
                 // ✅ PROCESAR DATOS INICIALES DEL PADRE
                 if (mensaje.datos) {
@@ -883,11 +1140,11 @@
             });
 
             // Controlador para mostrar reto específico
-            registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRAR, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRAR, async (mensaje) => {
                 const { retoId } = mensaje.datos;
                 logger.info(`[hijo4] RETO.MOSTRAR recibido para reto: ${retoId}`);
                 console.log(`[hijo4] Mensaje RETO.MOSTRAR completo:`, mensaje);
-                mostrarReto(retoId);
+                await mostrarReto(retoId);
                 estado.retoActualId = retoId;
             });
 
@@ -1091,48 +1348,71 @@
 
             // Controlador para solicitar datos de un reto específico
             registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_RETO, async (mensaje) => {
-                const { retoId } = mensaje.datos;
-                logger.info(`[hijo4] DATOS.SOLICITAR_RETO recibido para reto: ${retoId}`);
+                const logPrefix = `[hijo4][SOLICITAR_RETO]`;
+                try {
+                    const retoId = mensaje?.datos?.retoId;
+                    logger.info(`${logPrefix} DATOS.SOLICITAR_RETO recibido para reto: ${retoId}`);
 
-                // Buscar usando función centralizada
-                const retosArray = obtenerRetos();
-                const reto = retosArray.find(r => r.id === retoId);
-                if (!reto) {
-                    logger.warn(`[hijo4] Reto no encontrado: ${retoId}`);
-                    await enviarMensaje({
-                        destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        datos: {
-                            mensajeOriginal: mensaje.datos.mensajeId,
-                            error: 'Reto no encontrado',
-                            retoId
-                        }
-                    });
-                    return;
-                }
+                    if (!retoId) {
+                        throw new Error('Falta retoId en mensaje.datos');
+                    }
 
-                // Enviar datos del reto
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        mensajeOriginal: mensaje.datos.mensajeId,
+                    // Buscar usando función centralizada
+                    const retosArray = obtenerRetos() || [];
+                    const reto = Array.isArray(retosArray) ? retosArray.find(r => r && r.id === retoId) : null;
+
+                    if (!reto) {
+                        logger.warn(`${logPrefix} Reto no encontrado: ${retoId}`);
+                        await enviarMensaje({
+                            destino: mensaje?.origen || getPadreId(),
+                            tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: {
+                                mensajeOriginal: mensaje?.datos?.mensajeId,
+                                exito: false,
+                                error: 'Reto no encontrado',
+                                retoId
+                            }
+                        });
+                        return;
+                    }
+
+                    // Normalizar y proteger campos del reto
+                    const payload = {
+                        mensajeOriginal: mensaje?.datos?.mensajeId,
                         retoId,
                         reto: {
                             id: reto.id,
                             tipo: reto.tipo,
                             pregunta: reto.pregunta,
-                            opciones: reto.opciones,
-                            multiple: reto.multiple,
-                            correctas: reto.correctas,
-                            puzzleSrc: reto.src
+                            opciones: Array.isArray(reto.opciones) ? reto.opciones : [],
+                            multiple: !!reto.multiple,
+                            correctas: Array.isArray(reto.correctas) ? reto.correctas : [],
+                            puzzleSrc: reto.src || reto.puzzleSrc || null
                         }
-                    }
-                });
+                    };
 
-                logger.info(`[hijo4] Datos del reto enviados: ${retoId}`);
+                    // Enviar datos del reto al origen (padre o quien lo solicitó)
+                    try {
+                        const enviar = (window.getEnviarMensaje && await getEnviarMensaje()) || enviarMensaje || (msg => window.parent.postMessage(msg, window.location.origin));
+                        await enviar({ destino: mensaje?.origen || getPadreId(), tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, origen: CONFIG_HIJO.IFRAME_ID, datos: Object.assign({ exito: true }, payload) });
+                    } catch (err) {
+                        // Fallback: intentar postMessage directo si mensajería no disponible
+                        try { window.parent.postMessage({ tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, datos: Object.assign({ exito: true }, payload), origen: CONFIG_HIJO.IFRAME_ID }, window.location.origin); } catch (_) {}
+                    }
+
+                    logger.info(`${logPrefix} Datos del reto enviados: ${retoId}`);
+                } catch (error) {
+                    logger.error(`[hijo4][SOLICITAR_RETO] Error procesando solicitud:`, error);
+                    try {
+                        await enviarMensaje({
+                            destino: (mensaje && mensaje.origen) || getPadreId(),
+                            tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_RETO,
+                            origen: CONFIG_HIJO.IFRAME_ID,
+                            datos: { mensajeOriginal: mensaje?.datos?.mensajeId, exito: false, error: error && error.message }
+                        });
+                    } catch (_) { /* ignore send failure */ }
+                }
             });
 
             // Controlador para ocultar el reto
@@ -1162,25 +1442,25 @@
             });
 
             // Controlador para habilitar controles
-            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.HABILITAR, async (mensaje) => {
                 logger.debug(`[hijo4] CONTROL.HABILITAR recibido`);
                 // Implementar lógica para habilitar controles si es necesario
             });
 
             // Controlador para deshabilitar controles
-            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.CONTROL.DESHABILITAR, async (mensaje) => {
                 logger.debug(`[hijo4] CONTROL.DESHABILITAR recibido`);
                 // Implementar lógica para deshabilitar controles si es necesario
             });
 
             // Controlador para heartbeat
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT, async (mensaje) => {
                 logger.debug(`[hijo4] HEARTBEAT recibido`);
                 // Responder al heartbeat si es necesario
             });
 
             // Controlador: SISTEMA.HEARTBEAT.START
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_START, async (mensaje) => {
                 try {
                     window.__HEARTBEAT_ACTIVO = true;
                     logger.info(`[hijo4][HEARTBEAT_START] Activado heartbeat local`);
@@ -1218,7 +1498,7 @@
             });
 
             // Controlador: SISTEMA.HEARTBEAT.PAUSE
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, (mensaje) => {
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HEARTBEAT_PAUSE, async (mensaje) => {
                 try {
                     window.__HEARTBEAT_ACTIVO = false;
                     logger.info(`[hijo4][HEARTBEAT_PAUSE] Pausado heartbeat local`);
@@ -1276,23 +1556,6 @@
                 }
             });
 
-            // Enviar HIJO_PREPARADO ahora que todos los controladores críticos han sido registrados
-            try {
-                await enviarMensaje({
-                    destino: getPadreId(),
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        version: '1.0.0',
-                        capacidades: ['retos', 'preguntas', 'validacion'],
-                        timestamp: Date.now()
-                    }
-                });
-                logger.debug('[hijo4] HIJO_PREPARADO enviado; esperando PADRE_LISTO');
-            } catch (e) {
-                logger.warn('[hijo4] Error enviando HIJO_PREPARADO:', e);
-            }
-
             // ============================================================
             // HANDLERS GPS
             // ============================================================
@@ -1337,7 +1600,72 @@
                 return { exito: false, error: e.message };
             }
         });
-            logger.info(`[hijo4] HIJO_LISTO enviado exitosamente tras registrar controladores`);
+            // ============================================================
+            // CONTROLADOR: SISTEMA.PADRE_PIDE_MANEJADORES
+            // ============================================================
+            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, async (mensaje) => {
+                const controladorPrefix = `[hijo4][PADRE_PIDE_MANEJADORES]`;
+                try {
+                    logger.info(`${controladorPrefix} Solicitud de manejadores recibida`);
+                    
+                    // Obtener lista de manejadores registrados
+                    const manejadores = [];
+                    if (window.mensajeria && window.mensajeria.getControladoresRegistrados) {
+                        const registrados = window.mensajeria.getControladoresRegistrados();
+                        for (const [tipo, info] of registrados) {
+                            manejadores.push({ tipo, version: '1' });
+                        }
+                    }
+                    
+                    // Incluir manejadores en cola de migración
+                    if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.size) {
+                        for (const tipo of window.__CONTROLADOR_REGISTRADOS) {
+                            if (!manejadores.find(m => m.tipo === tipo)) {
+                                manejadores.push({ tipo, version: '1' });
+                            }
+                        }
+                    }
+                    
+                    logger.info(`${controladorPrefix} Enviando ${manejadores.length} manejadores`);
+                    
+                    // Enviar respuesta
+                    await enviarMensaje({
+                        destino: mensaje.origen,
+                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES,
+                        origen: CONFIG_HIJO.IFRAME_ID,
+                        datos: {
+                            pedidoId: mensaje.datos.pedidoId,
+                            manejadores,
+                            timestamp: Date.now()
+                        }
+                    });
+                    
+                    logger.info(`${controladorPrefix} Respuesta enviada`);
+                } catch (error) {
+                    logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
+                }
+            });
+
+            // ============================================================
+            // ENVIAR HIJO_LISTO INMEDIATAMENTE TRAS REGISTRAR CONTROLADORES
+            // Esto desbloquea el timeout de handshake sin esperar PADRE_DATOS
+            // ============================================================
+            logger.info(`[hijo4] Enviando HIJO_LISTO tras registros completados`);
+            try {
+                await enviarMensaje({
+                    destino: getPadreId(),
+                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                    origen: CONFIG_HIJO.IFRAME_ID,
+                    datos: {
+                        version: '1.0.0',
+                        capacidades: ['retos', 'preguntas', 'validacion'],
+                        timestamp: Date.now()
+                    }
+                });
+                logger.success(`[hijo4] ✅ HIJO_LISTO enviado exitosamente`);
+            } catch (error) {
+                logger.error(`[hijo4] Error enviando HIJO_LISTO:`, error);
+            }
 
             estado.inicializado = true;
             logger.info(`[hijo4] Inicialización completada exitosamente`);
