@@ -4401,6 +4401,8 @@
                 logger.success(`${logPrefix} ✅ ${hijoId} marcado como preparado`);
 
                 // Enviar ACK confirmando que padre recibió la notificación HIJO_PREPARADO
+                // NOTA: enviarMensaje_S1 podría no estar disponible durante la inicialización temprana,
+                // por lo que usamos verificación defensiva. El ACK no es crítico para la funcionalidad.
                 try {
                     if (typeof enviarMensaje_S1 === 'function') {
                         await enviarMensaje_S1({
@@ -4413,9 +4415,16 @@
                             }
                         });
                         logger.info(`${logPrefix} ACK enviado a ${hijoId}`);
+                    } else {
+                        logger.debug(`${logPrefix} enviarMensaje_S1 no disponible aún para ACK a ${hijoId}`);
                     }
                 } catch (ackError) {
-                    logger.warn(`${logPrefix} Error enviando ACK a ${hijoId}:`, ackError?.message);
+                    logger.warn(`${logPrefix} Error enviando ACK a ${hijoId}:`, {
+                        error: ackError?.message || ackError,
+                        stack: ackError?.stack,
+                        hijoId,
+                        timestamp: Date.now()
+                    });
                 }
 
                 // Solicitar manifest (manejadores) al hijo para migración segura con retries
