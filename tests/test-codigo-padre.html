@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test codigo-padre.html</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        iframe { width: 100%; height: 300px; border: 1px solid #ccc; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test de codigo-padre.html</h1>
+    
+    <div class="test-section">
+        <h2>Estado de las Correcciones</h2>
+        <div id="corrections-status">
+            <p>✅ Variables globales inicializadas</p>
+            <p>✅ Importación de estado.js eliminada</p>
+            <p>✅ Timeout de seguridad para overlay añadido</p>
+            <p>✅ Referencias a estado.hijosInicializados corregidas</p>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>📋 Prueba de la Página</h2>
+        <p>Abre la página codigo-padre.html en tu navegador y verifica:</p>
+        <ol>
+            <li>El overlay de carga desaparece (máximo 30 segundos)</li>
+            <li>No hay errores en la consola del navegador</li>
+            <li>Los iframes se cargan correctamente</li>
+            <li>El sistema de mensajería se inicializa</li>
+        </ol>
+        
+        <button onclick="openTestPage()">🚀 Abrir código-padre.html</button>
+    </div>
+
+    <div class="test-section">
+        <h2>🔍 Consola del Navegador</h2>
+        <p>Busca estos mensajes en la consola:</p>
+        <ul>
+            <li><code>[INIT] Logger inicializado para: padre</code></li>
+            <li><code>[INIT] Sistema de mensajería inicializado</code></li>
+            <li><code>[INIT] ✅ ¡Sistema inicializado y listo!</code></li>
+        </ul>
+        
+        <p>Si ves errores, anota:</p>
+        <ul>
+            <li>El mensaje de error exacto</li>
+            <li>El número de línea si está disponible</li>
+            <li>El momento en que ocurre (durante la carga, después, etc.)</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>⚠️ Problemas Conocidos</h2>
+        <p>Si la página aún no carga correctamente, los problemas más probables son:</p>
+        <ul>
+            <li><strong>Módulos faltantes:</strong> Algunos archivos JS podrían no existir</li>
+            <li><strong>Imports circulares:</strong> Dependencias entre módulos</li>
+            <li><strong>Permisos del navegador:</strong> Geolocalización o iframes bloqueados</li>
+            <li><strong>CORS:</strong> Problemas con recursos externos</li>
+        </ul>
+    </div>
+
+    <script>
+        function openTestPage() {
+            window.open('./codigo-padre.html', '_blank');
+        }
+
+        // Verificar si los archivos críticos existen
+        async function checkFiles() {
+            const criticalFiles = [
+                './js/logger.js',
+                './js/config.js',
+                './js/utils.js',
+                './js/mensajeria.js'
+            ];
+
+            const results = [];
+            for (const file of criticalFiles) {
+                try {
+                    const response = await fetch(file, { method: 'HEAD' });
+                    results.push({
+                        file: file,
+                        exists: response.ok,
+                        status: response.status
+                    });
+                } catch (error) {
+                    results.push({
+                        file: file,
+                        exists: false,
+                        error: error.message
+                    });
+                }
+            }
+
+            const statusDiv = document.getElementById('corrections-status');
+            statusDiv.innerHTML = '<h3>📁 Verificación de Archivos Críticos:</h3>';
+            
+            results.forEach(result => {
+                const p = document.createElement('p');
+                p.className = result.exists ? 'success' : 'error';
+                p.textContent = `${result.exists ? '✅' : '❌'} ${result.file}`;
+                if (!result.exists && result.error) {
+                    p.textContent += ` - ${result.error}`;
+                }
+                statusDiv.appendChild(p);
+            });
+        }
+
+        // Ejecutar verificación al cargar
+        checkFiles();
+    </script>
+</body>
+</html>

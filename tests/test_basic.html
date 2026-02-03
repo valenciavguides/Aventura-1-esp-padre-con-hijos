@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Basic Loading</title>
+</head>
+<body>
+    <h1>Testing Basic Loading</h1>
+    <div id="status">Loading...</div>
+
+    <script>
+        // Very basic test
+        document.getElementById('status').innerHTML = 'Script executed successfully!';
+        
+        setTimeout(() => {
+            document.getElementById('status').innerHTML += '<br>Timeout executed successfully!';
+        }, 1000);
+    </script>
+</body>
+</html>

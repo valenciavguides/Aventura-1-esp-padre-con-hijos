@@ -1,0 +1,180 @@
+{
+  "totalConstants": 139,
+  "totalRegistered": 69,
+  "duplicates": [
+    {
+      "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+      "count": 11
+    },
+    {
+      "tipo": "SISTEMA.PADRE_DATOS",
+      "count": 7
+    },
+    {
+      "tipo": "SISTEMA.PADRE_CONFIRMA_HIJO_LISTO",
+      "count": 7
+    },
+    {
+      "tipo": "SISTEMA.CAMBIO_MODO",
+      "count": 8
+    },
+    {
+      "tipo": "SISTEMA.CAMBIO_MODO_APLICADO",
+      "count": 7
+    },
+    {
+      "tipo": "CONTROL.HABILITAR",
+      "count": 3
+    },
+    {
+      "tipo": "CONTROL.DESHABILITAR",
+      "count": 3
+    },
+    {
+      "tipo": "SISTEMA.HEARTBEAT",
+      "count": 8
+    },
+    {
+      "tipo": "SISTEMA.HEARTBEAT_START",
+      "count": 4
+    },
+    {
+      "tipo": "SISTEMA.HEARTBEAT_PAUSE",
+      "count": 4
+    },
+    {
+      "tipo": "NAVEGACION.CAMBIO_PARADA",
+      "count": 5
+    },
+    {
+      "tipo": "SISTEMA.ACK",
+      "count": 7
+    },
+    {
+      "tipo": "NAVEGACION.GPS.UBICACION_ACTUALIZADA",
+      "count": 6
+    },
+    {
+      "tipo": "NAVEGACION.GPS.ESTADO_ACTUALIZADO",
+      "count": 6
+    },
+    {
+      "tipo": "NAVEGACION.GPS.ERROR",
+      "count": 5
+    },
+    {
+      "tipo": "NAVEGACION.RESPUESTA_DATOS_PARADAS",
+      "count": 2
+    },
+    {
+      "tipo": "NAVEGACION.CAMBIO_PARADA_CONFIRMADO",
+      "count": 2
+    },
+    {
+      "tipo": "SISTEMA.PADRE_LISTO",
+      "count": 3
+    },
+    {
+      "tipo": "UI.CLOSE_MENUS",
+      "count": 2
+    },
+    {
+      "tipo": "SISTEMA.CAMBIO_MODO_ENTENDIDO",
+      "count": 2
+    },
+    {
+      "tipo": "SISTEMA.CAMBIO_MODO_EFECTUADO",
+      "count": 2
+    },
+    {
+      "tipo": "RETO.OCULTAR",
+      "count": 2
+    },
+    {
+      "tipo": "DATOS.SOLICITAR_PARADAS",
+      "count": 2
+    }
+  ],
+  "registeredNotDefined": [],
+  "literalsNotDefined": [
+    "GPS.TIMEOUT",
+    "TEST.MENSAJE_1",
+    "TEST.MENSAJE_2",
+    "TEST.MENSAJE_3",
+    "UNKNOWN.TYPE",
+    "TEST.MIGRACION"
+  ],
+  "definedNotReferenced": [],
+  "perFileDuplicates": {
+    "audio-hijo3.html": [
+      {
+        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+        "count": 2
+      }
+    ],
+    "boton-casa-hijo5.html": [
+      {
+        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+        "count": 2
+      }
+    ],
+    "coordenadas-hijo2.html": [
+      {
+        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+        "count": 2
+      }
+    ],
+    "retos-hijo4.html": [
+      {
+        "tipo": "SISTEMA.PADRE_PIDE_MANEJADORES",
+        "count": 2
+      }
+    ]
+  },
+  "directRegistrations": {
+    "js\\app.js": [
+      "...",
+      "SISTEMA.NACK",
+      "SISTEMA.HIJO_LISTO"
+    ],
+    "js\\funciones-mapa.js": [
+      "NAVEGACION.ESTABLECER_DESTINO",
+      "SISTEMA.CAMBIO_MODO",
+      "NAVEGACION.MOSTRAR_RUTA",
+      "NAVEGACION.CAMBIO_PARADA",
+      "NAVEGACION.ACTUALIZAR_ESTADO",
+      "NAVEGACION.INICIAR",
+      "NAVEGACION.INICIADA",
+      "NAVEGACION.CANCELADA",
+      "NAVEGACION.DESTINO_ESTABLECIDO",
+      "NAVEGACION.LLEGADA_DETECTADA",
+      "NAVEGACION.ERROR",
+      "NAVEGACION.GPS.ACTIVAR",
+      "NAVEGACION.GPS.DESACTIVAR",
+      "NAVEGACION.GPS.UBICACION_ACTUALIZADA",
+      "NAVEGACION.GPS.ESTADO_ACTUALIZADO",
+      "NAVEGACION.GPS.ERROR",
+      "NAVEGACION.RESPUESTA_DATOS_PARADAS",
+      "MAPA.INVALIDAR_TAMA",
+      "MAPA.SET_VIEW",
+      "MAPA.GET_CENTER",
+      "MAPA.ADD_MARKER",
+      "MAPA.REMOVE_MARKER",
+      "MAPA.CLEAR_LAYERS",
+      "DATOS.SOLICITAR_PARADAS",
+      "SISTEMA.ESTADO",
+      "NAVEGACION.VALIDAR_RANGO_PARADA",
+      "NAVEGACION.ENVIAR_PARADA_COMPLETADA",
+      "NAVEGACION.DIBUJAR_POLYLINE",
+      "DATOS.COORDENADAS_PARADAS_RESPONSE",
+      "NAVEGACION.RESPUESTA_COORDENADAS",
+      "AUDIO.RESPUESTA_AUDIO",
+      "DATOS.RESPUESTA_RETO",
+      "NAVEGACION.CENTRAR_EN_UBICACION",
+      "NAVEGACION.GPS.ESTADO_GLOBAL"
+    ],
+    "tests\\analyze_controllers.js": [
+      "..."
+    ]
+  }
+}

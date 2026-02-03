@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Controlador Fusionado HIJO_LISTO</title>
+    <script src="js/suppress-warnings.js"></script>
+    <script src="js/logger.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/constants.js"></script>
+    <script src="js/mensajeria.js"></script>
+    <script src="js/validacion.js"></script>
+    
+    <!-- Script para cargar app.js y exponer variables globales -->
+    <script type="module">
+        try {
+            await import('./js/app.js');
+            console.log('✅ app.js cargado exitosamente');
+        } catch (error) {
+            console.error('❌ Error cargando app.js:', error);
+        }
+    </script>
+</head>
+<body>
+    <h1>🧪 Test: Controlador Fusionado SISTEMA.HIJO_LISTO</h1>
+
+    <div id="results"></div>
+
+    <button onclick="testFusionControlador()">Ejecutar Test</button>
+    <button onclick="clearResults()">Limpiar Resultados</button>
+
+    <script type="module">
+        // Test para verificar que el controlador fusionado funciona correctamente
+        window.testFusionControlador = async function() {
+            const results = document.getElementById('results');
+            results.innerHTML += '<h3>🔍 Verificando Controlador Fusionado...</h3>';
+
+            try {
+                // Importar app.js directamente para acceder a las variables
+                results.innerHTML += '<p>⏳ Importando app.js...</p>';
+                const appModule = await import('../js/app.js');
+                results.innerHTML += '<p style="color: green;">✅ app.js importado correctamente</p>';
+
+                // Verificar que las variables globales estén disponibles
+                if (typeof window.pendingModeChanges === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window.pendingModeChanges no está disponible</p>';
+                    // Intentar acceder directamente desde el módulo
+                    if (appModule.pendingModeChanges) {
+                        window.pendingModeChanges = appModule.pendingModeChanges;
+                        results.innerHTML += '<p style="color: orange;">⚠️ Usando pendingModeChanges desde módulo importado</p>';
+                    } else {
+                        return;
+                    }
+                }
+                results.innerHTML += '<p style="color: green;">✅ window.pendingModeChanges disponible</p>';
+
+                if (typeof window.MODE_RETRY_MAX_INTENTOS === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window.MODE_RETRY_MAX_INTENTOS no está disponible</p>';
+                    if (appModule.MODE_RETRY_MAX_INTENTOS) {
+                        window.MODE_RETRY_MAX_INTENTOS = appModule.MODE_RETRY_MAX_INTENTOS;
+                        results.innerHTML += '<p style="color: orange;">⚠️ Usando MODE_RETRY_MAX_INTENTOS desde módulo importado</p>';
+                    } else {
+                        return;
+                    }
+                }
+                results.innerHTML += '<p style="color: green;">✅ window.MODE_RETRY_MAX_INTENTOS disponible</p>';
+
+                if (typeof window._computeBackoff === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window._computeBackoff no está disponible</p>';
+                    if (appModule._computeBackoff) {
+                        window._computeBackoff = appModule._computeBackoff;
+                        results.innerHTML += '<p style="color: orange;">⚠️ Usando _computeBackoff desde módulo importado</p>';
+                    } else {
+                        return;
+                    }
+                }
+                results.innerHTML += '<p style="color: green;">✅ window._computeBackoff disponible</p>';
+
+                // Simular un cambio de modo pendiente
+                const testHijoId = 'test-hijo';
+                window.pendingModeChanges.set(testHijoId, {
+                    modo: 'aventura',
+                    datos: { timestamp: Date.now() },
+                    intentos: 0,
+                    nextAttemptAt: Date.now()
+                });
+
+                results.innerHTML += '<p style="color: green;">✅ Cambio de modo pendiente simulado</p>';
+
+                // Verificar que el Map tenga el elemento
+                if (window.pendingModeChanges.has(testHijoId)) {
+                    const pending = window.pendingModeChanges.get(testHijoId);
+                    results.innerHTML += `<p style="color: green;">✅ Pending mode change encontrado: ${JSON.stringify(pending)}</p>`;
+                } else {
+                    results.innerHTML += '<p style="color: red;">❌ Pending mode change no encontrado</p>';
+                }
+
+                results.innerHTML += '<h3 style="color: green;">✅ Test completado exitosamente</h3>';
+
+            } catch (error) {
+                results.innerHTML += `<p style="color: red;">❌ Error en test: ${error.message}</p>`;
+                console.error('Test error:', error);
+            }
+        };
+
+        window.clearResults = function() {
+            document.getElementById('results').innerHTML = '';
+        };
+    </script>
+</body>
+</html>

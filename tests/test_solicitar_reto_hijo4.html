@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test DATOS.SOLICITAR_RETO (hijo4)</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif}#log{white-space:pre-wrap;background:#f7f7f7;padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <h3>Test: DATOS.SOLICITAR_RETO en `retos-hijo4.html`</h3>
+  <div id="status">RUNNING</div>
+  <div id="log"></div>
+
+  <iframe id="sut" src="../retos-hijo4.html" style="width:100%;height:240px;border:1px solid #ccc"></iframe>
+
+  <script>
+  (async function(){
+    const logEl = document.getElementById('log');
+    function append(...args){ logEl.textContent += args.join(' ') + '\n'; }
+
+    const sut = document.getElementById('sut');
+    await new Promise(r => { sut.onload = r; setTimeout(r,1000); });
+    append('[test] hijo4 cargado');
+
+    // 1) Inject fake retos into the child and request existing reto
+    const retoMock = { id: 'R-TEST-1', tipo: 'pregunta', pregunta: '¿2+2?', opciones: ['3','4'], multiple: false, correctas: [1], src: null };
+    try {
+      sut.contentWindow.__vv_retosAventura = [ retoMock ];
+      append('[test] Injectado __vv_retosAventura con 1 reto');
+    } catch (e) { append('[ERROR] No se pudo inyectar retos en child:', e && e.message); document.getElementById('status').textContent='FAILED'; return; }
+
+    function esperaRespuesta(pedidoId, timeoutMs = 2000){
+      return new Promise((resolve) => {
+        const onMessage = (ev) => {
+          const m = ev.data || {};
+          if (m && m.tipo === (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.DATOS && sut.contentWindow.TIPOS_MENSAJE.DATOS.RESPUESTA_RETO)) {
+            if ((m.datos && m.datos.mensajeOriginal) === pedidoId) {
+              window.removeEventListener('message', onMessage);
+              resolve({ ok: true, msg: m });
+            }
+          }
+        };
+        window.addEventListener('message', onMessage);
+        setTimeout(() => { window.removeEventListener('message', onMessage); resolve({ ok: false, timeout: true }); }, timeoutMs);
+      });
+    }
+
+    // Test success
+    const pedido1 = 'p-req-1';
+    sut.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.DATOS && sut.contentWindow.TIPOS_MENSAJE.DATOS.SOLICITAR_RETO), datos: { retoId: 'R-TEST-1', mensajeId: pedido1 }, origen: 'test' }, window.location.origin);
+    append('[test] Enviado SOLICITAR_RETO pedido1');
+    const res1 = await esperaRespuesta(pedido1, 2000);
+    if (!res1.ok) { append('[FAIL] No llegó RESPUESTA_RETO para pedido1'); document.getElementById('status').textContent='FAILED'; return; }
+    try { const ok = res1.msg.datos && res1.msg.datos.exito === true && res1.msg.datos.reto && res1.msg.datos.reto.id === 'R-TEST-1'; append(ok ? '[PASS] RESPUESTA_RETO con exito OK' : '[FAIL] RESPUESTA_RETO no contiene datos correctos: ' + JSON.stringify(res1.msg.datos)); } catch(e){ append('[ERROR] Error comprobando respuesta:', e && e.message); }
+
+    // Test missing retoId -> expect exito:false
+    const pedido2 = 'p-req-2';
+    sut.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.DATOS && sut.contentWindow.TIPOS_MENSAJE.DATOS.SOLICITAR_RETO), datos: { /* missing retoId */ mensajeId: pedido2 }, origen: 'test' }, window.location.origin);
+    append('[test] Enviado SOLICITAR_RETO (sin retoId) pedido2');
+    const res2 = await esperaRespuesta(pedido2, 2000);
+    if (!res2.ok) { append('[FAIL] No llegó RESPUESTA_RETO para pedido2'); document.getElementById('status').textContent='FAILED'; return; }
+    try { const ok = res2.msg.datos && res2.msg.datos.exito === false && typeof res2.msg.datos.error === 'string'; append(ok ? '[PASS] RESPUESTA_RETO (error) OK' : '[FAIL] RESPUESTA_RETO (error) no como se esperaba: ' + JSON.stringify(res2.msg.datos)); } catch(e){ append('[ERROR] Error comprobando respuesta2:', e && e.message); }
+
+    append('[test] FINALIZADO');
+    document.getElementById('status').textContent = 'DONE';
+  })();
+  </script>
+</body>
+</html>

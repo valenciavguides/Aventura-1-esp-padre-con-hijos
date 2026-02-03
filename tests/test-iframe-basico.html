@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Básico Iframe</title>
+</head>
+<body>
+    <h1>Test Básico de Iframe</h1>
+    <iframe src="data:text/html,<html><body><script>console.log('Iframe loaded'); window.parent.postMessage('iframe-ready', '*');</script></body></html>" width="400" height="200"></iframe>
+
+    <script>
+        window.addEventListener('message', (e) => {
+            console.log('Mensaje recibido:', e.data);
+        });
+    </script>
+</body>
+</html>

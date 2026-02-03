@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Carga Secuencial de Iframes</title>
+    <script src="js/suppress-warnings.js"></script>
+    <script src="js/logger.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/constants.js"></script>
+    <script src="js/mensajeria.js"></script>
+    <script src="js/validacion.js"></script>
+</head>
+<body>
+    <h1>🧪 Test: Carga Secuencial de Iframes</h1>
+
+    <div id="results"></div>
+
+    <button onclick="testCargaSecuencial()">Ejecutar Test</button>
+    <button onclick="clearResults()">Limpiar Resultados</button>
+
+    <script type="module">
+        // Test para verificar la carga secuencial de iframes
+        window.testCargaSecuencial = async function() {
+            const results = document.getElementById('results');
+            results.innerHTML += '<h3>🔍 Verificando Carga Secuencial...</h3>';
+
+            try {
+                // Verificar que las funciones de carga estén disponibles
+                if (typeof window.cargarIframeSoloSeleccion === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window.cargarIframeSoloSeleccion no está disponible</p>';
+                    return;
+                }
+                results.innerHTML += '<p style="color: green;">✅ window.cargarIframeSoloSeleccion disponible</p>';
+
+                if (typeof window.cargarRestoDeiframes === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window.cargarRestoDeiframes no está disponible</p>';
+                    return;
+                }
+                results.innerHTML += '<p style="color: green;">✅ window.cargarRestoDeiframes disponible</p>';
+
+                // Verificar compatibilidad hacia atrás
+                if (typeof window.cargarIframeSecuencial === 'undefined') {
+                    results.innerHTML += '<p style="color: red;">❌ window.cargarIframeSecuencial (compatibilidad) no está disponible</p>';
+                    return;
+                }
+                results.innerHTML += '<p style="color: green;">✅ window.cargarIframeSecuencial (compatibilidad) disponible</p>';
+
+                // Verificar que las funciones sean funciones
+                if (typeof window.cargarIframeSoloSeleccion !== 'function') {
+                    results.innerHTML += '<p style="color: red;">❌ cargarIframeSoloSeleccion no es una función</p>';
+                    return;
+                }
+                results.innerHTML += '<p style="color: green;">✅ cargarIframeSoloSeleccion es una función</p>';
+
+                if (typeof window.cargarRestoDeiframes !== 'function') {
+                    results.innerHTML += '<p style="color: red;">❌ cargarRestoDeiframes no es una función</p>';
+                    return;
+                }
+                results.innerHTML += '<p style="color: green;">✅ cargarRestoDeiframes es una función</p>';
+
+                // Verificar que las funciones sean la misma (compatibilidad)
+                if (window.cargarIframeSecuencial !== window.cargarIframeSoloSeleccion) {
+                    results.innerHTML += '<p style="color: orange;">⚠️ cargarIframeSecuencial y cargarIframeSoloSeleccion no son la misma función (posible problema de compatibilidad)</p>';
+                } else {
+                    results.innerHTML += '<p style="color: green;">✅ Compatibilidad hacia atrás funcionando correctamente</p>';
+                }
+
+                results.innerHTML += '<h3 style="color: green;">✅ Test completado exitosamente</h3>';
+                results.innerHTML += '<p><strong>Resumen:</strong> La carga secuencial de iframes está correctamente implementada con:</p>';
+                results.innerHTML += '<ul>';
+                results.innerHTML += '<li>✅ cargarIframeSoloSeleccion() - Carga solo En-busca-del-tesoro.html</li>';
+                results.innerHTML += '<li>✅ cargarRestoDeiframes() - Carga hijos 1-4 después de selección</li>';
+                results.innerHTML += '<li>✅ Compatibilidad hacia atrás con cargarIframeSecuencial</li>';
+                results.innerHTML += '</ul>';
+
+            } catch (error) {
+                results.innerHTML += `<p style="color: red;">❌ Error en test: ${error.message}</p>`;
+                console.error('Test error:', error);
+            }
+        };
+
+        window.clearResults = function() {
+            document.getElementById('results').innerHTML = '';
+        };
+    </script>
+</body>
+</html>

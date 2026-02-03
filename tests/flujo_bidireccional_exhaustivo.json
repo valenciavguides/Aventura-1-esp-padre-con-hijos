@@ -1,0 +1,569 @@
+{
+  "titulo": "ANÁLISIS EXHAUSTIVO DE FLUJO DE COMUNICACIÓN BIDIRECCIONAL",
+  "fecha_generacion": "2025-01-08",
+  "proyecto": "ValenciaVGuides",
+  "version_analisis": "2.0.0",
+  
+  "flujos_completos": {
+    "SISTEMA": {
+      "HIJO_PREPARADO": {
+        "descripcion": "El hijo notifica al padre que está preparado y envía sus capacidades",
+        "origen": "hijo2|hijo3|hijo4|hijo5|seleccion|hijo1-hamburguesa|hijo1-opciones",
+        "ruta": "hijo -> padre (postMessage)",
+        "destino": "padre (codigo-padre.html)",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "PADRE_DATOS",
+        "tipo_respuesta": "Envío de datos de aventura según capacidades del hijo",
+        "ruta_retorno": "padre -> hijo (enviarMensaje_S1)",
+        "confirmacion_final": "Hijo recibe datos y procesa, luego envía HIJO_LISTO",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~3850): registrarControladorSeguro HIJO_PREPARADO",
+          "audio-hijo3.html (línea ~1051): envía HIJO_PREPARADO",
+          "coordenadas-hijo2.html: envía HIJO_PREPARADO",
+          "retos-hijo4.html: envía HIJO_PREPARADO",
+          "boton-casa-hijo5.html: envía HIJO_PREPARADO"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "PADRE_DATOS": {
+        "descripcion": "El padre envía datos de aventura al hijo según sus capacidades",
+        "origen": "padre",
+        "ruta": "padre -> hijo (enviarMensaje)",
+        "destino": "hijo solicitante",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "HIJO_LISTO",
+        "tipo_respuesta": "Confirmación de recepción y procesamiento de datos",
+        "ruta_retorno": "hijo -> padre (postMessage)",
+        "confirmacion_final": "PADRE_CONFIRMA_HIJO_LISTO",
+        "archivos_involucrados": [
+          "codigo-padre.html: handler HIJO_PREPARADO envía PADRE_DATOS",
+          "audio-hijo3.html (línea ~1069): registrarControladorSeguro PADRE_DATOS"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "HIJO_LISTO": {
+        "descripcion": "El hijo confirma que está listo para operar",
+        "origen": "hijo2|hijo3|hijo4|hijo5",
+        "ruta": "hijo -> padre (postMessage)",
+        "destino": "padre",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "PADRE_CONFIRMA_HIJO_LISTO",
+        "tipo_respuesta": "ACK de confirmación",
+        "ruta_retorno": "padre -> hijo (enviarMensaje_S1)",
+        "confirmacion_final": "Hijo recibe confirmación y emite CONFIRMACION (UI_VISIBLE)",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~4070): registrarControladorSeguro HIJO_LISTO",
+          "audio-hijo3.html (línea ~1105): envía HIJO_LISTO"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "PADRE_CONFIRMA_HIJO_LISTO": {
+        "descripcion": "El padre confirma recepción de HIJO_LISTO",
+        "origen": "padre",
+        "ruta": "padre -> hijo",
+        "destino": "hijo específico",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (terminal)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "Hijo puede enviar CONFIRMACION opcional",
+        "archivos_involucrados": [
+          "audio-hijo3.html (línea ~1127): registrarControladorSeguro PADRE_CONFIRMA_HIJO_LISTO"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "CAMBIO_MODO": {
+        "descripcion": "Protocolo de 4 pasos para cambio de modo casa/aventura",
+        "origen": "padre (propagación) | hijo5 (botón)",
+        "ruta": "padre -> hijos (broadcast a hijo2,hijo3,hijo4,hijo5)",
+        "destino": "todos los hijos críticos",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "CAMBIO_MODO_ENTENDIDO -> CAMBIO_MODO_EFECTUADO -> CAMBIO_MODO_APLICADO",
+        "tipo_respuesta": "Secuencia de 3 confirmaciones progresivas",
+        "ruta_retorno": "hijo -> padre (cada paso)",
+        "confirmacion_final": "CAMBIO_MODO_APLICADO cierra el ciclo",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~4526): registrarControladorSeguro CAMBIO_MODO",
+          "codigo-padre.html: handlers CAMBIO_MODO_ENTENDIDO, CAMBIO_MODO_EFECTUADO, CAMBIO_MODO_RESPONSE",
+          "audio-hijo3.html (línea ~1361): registrarControladorSeguro CAMBIO_MODO",
+          "audio-hijo3.html (línea ~1478): registrarControladorSeguro CAMBIO_MODO_APLICADO"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "HEARTBEAT": {
+        "descripcion": "Pulso de vida para detectar hijos activos",
+        "origen": "padre (en modo aventura)",
+        "ruta": "padre -> hijos",
+        "destino": "todos los hijos",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "HEARTBEAT_RESPONSE",
+        "tipo_respuesta": "Confirmación de vida con timestamp",
+        "ruta_retorno": "hijo -> padre",
+        "confirmacion_final": "Padre actualiza estadoHijos.ultimoPing",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~4666): registrarControladorSeguro HEARTBEAT",
+          "codigo-padre.html (línea ~4701): registrarControladorSeguro HEARTBEAT_RESPONSE",
+          "audio-hijo3.html (línea ~1538): registrarControladorSeguro HEARTBEAT"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "PADRE_PIDE_MANEJADORES": {
+        "descripcion": "Migración: padre solicita lista de controladores registrados en hijo",
+        "origen": "padre",
+        "ruta": "padre -> hijo (cargarIframeSecuencial -> solicitarManejadoresConRetry)",
+        "destino": "cada hijo durante carga",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "HIJO_MANEJADORES",
+        "tipo_respuesta": "Manifiesto de controladores registrados localmente",
+        "ruta_retorno": "hijo -> padre (postMessage)",
+        "confirmacion_final": "PADRE_APLICA_MANEJADORES (opcional)",
+        "archivos_involucrados": [
+          "codigo-padre.html: solicitarManejadoresConRetry()",
+          "audio-hijo3.html (comentario línea ~554): handler para PADRE_PIDE_MANEJADORES"
+        ],
+        "estado": "⚠️ PARCIAL - Handler comentado en hijos, fallback via listener genérico"
+      },
+      
+      "APLICACION_INICIALIZADA": {
+        "descripcion": "Sistema completamente operativo",
+        "origen": "interno/padre",
+        "ruta": "interno",
+        "destino": "padre",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "NOTIFICACION a todos los hijos",
+        "tipo_respuesta": "Broadcast informativo",
+        "ruta_retorno": "padre -> hijos",
+        "confirmacion_final": "N/A",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~4833): registrarControladorSeguro APLICACION_INICIALIZADA"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    },
+    
+    "NAVEGACION": {
+      "CAMBIO_PARADA": {
+        "descripcion": "Notificación de cambio de parada activa",
+        "origen": "padre (progresión aventura)",
+        "ruta": "padre -> todos | padre -> padre (auto-mensaje)",
+        "destino": "todos los hijos + padre",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "CAMBIO_PARADA_CONFIRMADO",
+        "tipo_respuesta": "Confirmación de recepción",
+        "ruta_retorno": "hijo -> padre",
+        "confirmacion_final": "Actualización de estadoParada en padre",
+        "archivos_involucrados": [
+          "codigo-padre.html: progresarSiguienteElemento() envía CAMBIO_PARADA",
+          "coordenadas-hijo2.html: handler implícito via listener"
+        ],
+        "estado": "⚠️ PARCIAL - No todos los hijos confirman explícitamente"
+      },
+      
+      "GPS.ACTIVAR": {
+        "descripcion": "Activación del GPS del dispositivo",
+        "origen": "padre | hijo5",
+        "ruta": "padre -> hijo2 | interno padre",
+        "destino": "hijo2 (coordenadas)",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "GPS.ESTADO_ACTUALIZADO",
+        "tipo_respuesta": "Estado actual del GPS (activo, permisos, precisión)",
+        "ruta_retorno": "hijo2 -> padre",
+        "confirmacion_final": "N/A",
+        "archivos_involucrados": [
+          "codigo-padre.html: activarGPS(), handler en CAMBIO_MODO",
+          "coordenadas-hijo2.html: estadoComponente.gpsActivo"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "GPS.DESACTIVAR": {
+        "descripcion": "Desactivación del GPS",
+        "origen": "padre | hijo5",
+        "ruta": "padre -> hijo2",
+        "destino": "hijo2",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "GPS.ESTADO_ACTUALIZADO",
+        "tipo_respuesta": "Confirmación de desactivación",
+        "ruta_retorno": "hijo2 -> padre",
+        "confirmacion_final": "N/A",
+        "archivos_involucrados": [
+          "codigo-padre.html: desactivarGPS()",
+          "funciones-mapa.js: manejarGPSDesactivar()"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "GPS.UBICACION_ACTUALIZADA": {
+        "descripcion": "Nueva posición GPS del usuario",
+        "origen": "padre (watchPosition callback)",
+        "ruta": "padre -> hijo2 (y otros interesados)",
+        "destino": "hijo2, mapa",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (evento informativo)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "hijo2 actualiza estadoComponente.posicionActualUsuario",
+        "archivos_involucrados": [
+          "codigo-padre.html: watchPosition callback envía GPS.UBICACION_ACTUALIZADA"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "SOLICITAR_DATOS_PARADAS": {
+        "descripcion": "Hijo solicita datos de paradas al padre",
+        "origen": "hijo5",
+        "ruta": "hijo5 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "RESPUESTA_DATOS_PARADAS",
+        "tipo_respuesta": "Array de paradas normalizadas",
+        "ruta_retorno": "padre -> hijo5",
+        "confirmacion_final": "hijo5 actualiza lista de paradas",
+        "archivos_involucrados": [
+          "codigo-padre.html (línea ~5980): registrarControladorSafe SOLICITAR_DATOS_PARADAS",
+          "boton-casa-hijo5.html: envía solicitud"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    },
+    
+    "DATOS": {
+      "CARGAR_COORDENADAS": {
+        "descripcion": "Padre envía coordenadas de aventura a hijo2",
+        "origen": "padre (distribuirDatosAventura)",
+        "ruta": "padre -> hijo2",
+        "destino": "hijo2",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "COORDENADAS_CARGADAS",
+        "tipo_respuesta": "Confirmación con cantidad de elementos cargados",
+        "ruta_retorno": "hijo2 -> padre",
+        "confirmacion_final": "setCoordenadasCargadas(true) en state-manager",
+        "archivos_involucrados": [
+          "codigo-padre.html: distribuirDatosAventura()",
+          "coordenadas-hijo2.html: handler para CARGAR_COORDENADAS"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "CARGAR_AUDIOS": {
+        "descripcion": "Padre envía lista de audios a hijo3",
+        "origen": "padre (distribuirDatosAventura)",
+        "ruta": "padre -> hijo3",
+        "destino": "hijo3",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "AUDIOS_CARGADOS",
+        "tipo_respuesta": "Confirmación con cantidad de audios cargados",
+        "ruta_retorno": "hijo3 -> padre",
+        "confirmacion_final": "setAudiosCargados(true) en state-manager",
+        "archivos_involucrados": [
+          "codigo-padre.html: distribuirDatosAventura()",
+          "audio-hijo3.html (línea ~1187): registrarControladorSeguro CARGAR_AUDIOS"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "CARGAR_RETOS": {
+        "descripcion": "Padre envía lista de retos a hijo4",
+        "origen": "padre (distribuirDatosAventura)",
+        "ruta": "padre -> hijo4",
+        "destino": "hijo4",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "RETOS_CARGADOS",
+        "tipo_respuesta": "Confirmación con cantidad de retos cargados",
+        "ruta_retorno": "hijo4 -> padre",
+        "confirmacion_final": "setRetosCargados(true) en state-manager",
+        "archivos_involucrados": [
+          "codigo-padre.html: distribuirDatosAventura()",
+          "retos-hijo4.html: handler para CARGAR_RETOS"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "COORDENADAS_PARADAS_REQUEST": {
+        "descripcion": "Solicitud de coordenadas específicas de una parada",
+        "origen": "padre (solicitarCoordenadasAHijo2)",
+        "ruta": "padre -> hijo2",
+        "destino": "hijo2",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "COORDENADAS_PARADAS_RESPONSE",
+        "tipo_respuesta": "Coordenadas de la parada solicitada con pedidoId",
+        "ruta_retorno": "hijo2 -> padre",
+        "confirmacion_final": "padre recibe y actualiza estado.destinoCoords",
+        "archivos_involucrados": [
+          "codigo-padre.html: solicitarCoordenadasAHijo2()",
+          "coordenadas-hijo2.html: handler para COORDENADAS_PARADAS_REQUEST"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    },
+    
+    "RETO": {
+      "SOLICITAR_RETO": {
+        "descripcion": "Usuario solicita mostrar un reto (click en botón)",
+        "origen": "hijo3 (botón retosBtn)",
+        "ruta": "hijo3 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "RETO.MOSTRAR",
+        "tipo_respuesta": "Comando para mostrar reto específico",
+        "ruta_retorno": "padre -> hijo4",
+        "confirmacion_final": "hijo4 muestra el reto",
+        "archivos_involucrados": [
+          "audio-hijo3.html (línea ~699): click retosBtn envía SOLICITAR_RETO",
+          "codigo-padre.html: registrarControlador_S2 RETO.SOLICITAR_RETO"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "MOSTRAR": {
+        "descripcion": "Comando para mostrar un reto en hijo4",
+        "origen": "padre",
+        "ruta": "padre -> hijo4",
+        "destino": "hijo4",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (acción visual)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "hijo4 renderiza el reto, usuario interactúa",
+        "archivos_involucrados": [
+          "codigo-padre.html: handler SOLICITAR_RETO envía RETO.MOSTRAR",
+          "retos-hijo4.html: handler para RETO.MOSTRAR"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "COMPLETADO": {
+        "descripcion": "Usuario completó el reto correctamente",
+        "origen": "hijo4",
+        "ruta": "hijo4 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "CONTROL.HABILITAR (a hijo2, hijo3)",
+        "tipo_respuesta": "Rehabilitación de botones",
+        "ruta_retorno": "padre -> hijo2, hijo3",
+        "confirmacion_final": "estado.retoActual.completado = true, posible progresión",
+        "archivos_involucrados": [
+          "retos-hijo4.html: envía RETO.COMPLETADO al completar",
+          "codigo-padre.html: handler pendiente para RETO.COMPLETADO"
+        ],
+        "estado": "⚠️ PARCIAL - Handler no explícito en código-padre, delegado a pendingCompleciones"
+      },
+      
+      "OCULTAR": {
+        "descripcion": "Ocultar el iframe de retos",
+        "origen": "hijo4 (botón Continuar)",
+        "ruta": "hijo4 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "CONTROL.HABILITAR broadcast",
+        "tipo_respuesta": "Rehabilitación de controles",
+        "ruta_retorno": "padre -> hijo2, hijo3",
+        "confirmacion_final": "iframe hijo4 ocultado",
+        "archivos_involucrados": [
+          "retos-hijo4.html: envía RETO.OCULTAR",
+          "codigo-padre.html: registrarControladorSeguro RETO.OCULTAR"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    },
+    
+    "CONTROL": {
+      "HABILITAR": {
+        "descripcion": "Habilitar controles/botones específicos",
+        "origen": "padre",
+        "ruta": "padre -> hijo específico",
+        "destino": "hijo2 | hijo3 | hijo4",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (acción UI)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "Botón habilitado visualmente",
+        "archivos_involucrados": [
+          "audio-hijo3.html (línea ~1492): registrarControladorSeguro CONTROL.HABILITAR",
+          "coordenadas-hijo2.html: handler para CONTROL.HABILITAR"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "DESHABILITAR": {
+        "descripcion": "Deshabilitar controles/botones específicos",
+        "origen": "padre",
+        "ruta": "padre -> hijo específico",
+        "destino": "hijo2 | hijo3 | hijo4",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (acción UI)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "Botón deshabilitado visualmente",
+        "archivos_involucrados": [
+          "audio-hijo3.html (línea ~1517): registrarControladorSeguro CONTROL.DESHABILITAR"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    },
+    
+    "AUDIO": {
+      "REPRODUCIR_REQUEST": {
+        "descripcion": "Solicitud para reproducir un audio específico",
+        "origen": "padre (solicitarAudioAHijo3)",
+        "ruta": "padre -> hijo3",
+        "destino": "hijo3",
+        "requiere_respuesta": true,
+        "respuesta_enviada": "ESTADO_ACTUALIZADO (estado: 'reproduciendo')",
+        "tipo_respuesta": "Confirmación de inicio de reproducción",
+        "ruta_retorno": "hijo3 -> padre",
+        "confirmacion_final": "Audio reproduciéndose",
+        "archivos_involucrados": [
+          "codigo-padre.html: solicitarAudioAHijo3()",
+          "audio-hijo3.html: cargarYReproducirAudio()"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "ESTADO_ACTUALIZADO": {
+        "descripcion": "Notificación de cambio de estado del audio",
+        "origen": "hijo3",
+        "ruta": "hijo3 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "N/A (evento informativo)",
+        "tipo_respuesta": "N/A",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "padre actualiza estado interno",
+        "archivos_involucrados": [
+          "audio-hijo3.html: addEventListener 'play', 'pause'"
+        ],
+        "estado": "✅ COMPLETO"
+      },
+      
+      "FIN_REPRODUCCION": {
+        "descripcion": "Audio terminó de reproducirse",
+        "origen": "hijo3",
+        "ruta": "hijo3 -> padre",
+        "destino": "padre",
+        "requiere_respuesta": false,
+        "respuesta_enviada": "Actualización de pendingCompleciones.audio = true",
+        "tipo_respuesta": "Interno",
+        "ruta_retorno": "N/A",
+        "confirmacion_final": "Posible trigger de intentarCompletarElemento()",
+        "archivos_involucrados": [
+          "audio-hijo3.html: addEventListener 'ended'",
+          "codigo-padre.html: handler AUDIO.FIN_REPRODUCCION (Script 2)"
+        ],
+        "estado": "✅ COMPLETO"
+      }
+    }
+  },
+  
+  "problemas_criticos": [
+    {
+      "id": "PC-001",
+      "tipo": "RESPUESTA_INCOMPLETA",
+      "descripcion": "RETO.COMPLETADO no tiene handler explícito en codigo-padre.html",
+      "impacto": "El flujo de completar reto depende de pendingCompleciones pero no hay ACK explícito",
+      "ubicacion": "codigo-padre.html",
+      "solucion_propuesta": "Agregar registrarControladorSeguro(TIPOS_MENSAJE.RETO.COMPLETADO, ...) con lógica de ACK y actualización de estado"
+    },
+    {
+      "id": "PC-002",
+      "tipo": "HANDLER_COMENTADO",
+      "descripcion": "PADRE_PIDE_MANEJADORES handler comentado en hijos",
+      "impacto": "Migración de manejadores puede fallar silenciosamente",
+      "ubicacion": "audio-hijo3.html línea ~554 (comentario)",
+      "solucion_propuesta": "Implementar handler explícito o documentar que se usa listener genérico"
+    },
+    {
+      "id": "PC-003",
+      "tipo": "CONFIRMACION_FALTANTE",
+      "descripcion": "CAMBIO_PARADA no siempre recibe CAMBIO_PARADA_CONFIRMADO de todos los hijos",
+      "impacto": "El padre no sabe si todos los hijos procesaron el cambio de parada",
+      "ubicacion": "coordenadas-hijo2.html, otros hijos",
+      "solucion_propuesta": "Implementar handler CAMBIO_PARADA en cada hijo que envíe confirmación explícita"
+    }
+  ],
+  
+  "problemas_menores": [
+    {
+      "id": "PM-001",
+      "tipo": "POSTMESSAGE_DIRECTO",
+      "descripcion": "Hijos usan window.parent.postMessage directamente en lugar de enviarMensaje()",
+      "impacto": "Inconsistencia en trazabilidad de mensajes",
+      "ubicacion": "coordenadas-hijo2.html, audio-hijo3.html (fallback)",
+      "solucion_propuesta": "Unificar usando siempre enviarMensaje() del módulo mensajeria.js"
+    },
+    {
+      "id": "PM-002",
+      "tipo": "TIMEOUT_HARDCODEADO",
+      "descripcion": "Algunos timeouts no usan ajustarTimeoutPorConexion()",
+      "impacto": "Timeouts pueden ser muy cortos en conexiones lentas",
+      "ubicacion": "varios archivos",
+      "solucion_propuesta": "Usar consistentemente ajustarTimeoutPorConexion() para todos los timeouts de mensajería"
+    },
+    {
+      "id": "PM-003",
+      "tipo": "LOG_SILENCIADO",
+      "descripcion": "Algunos logs de HEARTBEAT están silenciados (comentados)",
+      "impacto": "Dificulta debugging en producción",
+      "ubicacion": "codigo-padre.html (handlers HEARTBEAT)",
+      "solucion_propuesta": "Usar nivel logger.debug en lugar de comentar"
+    }
+  ],
+  
+  "controladores_huerfanos": [
+    {
+      "id": "CH-001",
+      "tipo": "SISTEMA.NOTIFICACION",
+      "descripcion": "Se envían muchas NOTIFICACION pero no hay handlers registrados explícitamente",
+      "ubicacion": "codigo-padre.html: múltiples envíos",
+      "impacto": "Los mensajes pueden perderse si el hijo no tiene listener genérico"
+    },
+    {
+      "id": "CH-002",
+      "tipo": "NAVEGACION.ACTUALIZAR_ESTADO",
+      "descripcion": "Se envía a hijo2 pero no hay handler explícito registrado",
+      "ubicacion": "codigo-padre.html: handler SOLICITAR_RETO envía ACTUALIZAR_ESTADO",
+      "impacto": "El mensaje puede no ser procesado correctamente"
+    }
+  ],
+  
+  "mensajes_sin_receptor": [
+    {
+      "id": "MSR-001",
+      "tipo": "NAVEGACION.ENVIAR_PARADA_COMPLETADA",
+      "descripcion": "Se envía a destino 'mapa' que no es un iframe válido",
+      "ubicacion": "codigo-padre.html: marcarParadaCompletada()",
+      "impacto": "Mensaje se pierde, no hay receptor 'mapa'"
+    },
+    {
+      "id": "MSR-002",
+      "tipo": "SISTEMA.HEARTBEAT_START / HEARTBEAT_PAUSE",
+      "descripcion": "Se envía a CONFIG_PADRE.ID (padre a sí mismo)",
+      "ubicacion": "codigo-padre.html: handler CAMBIO_MODO",
+      "impacto": "Auto-mensaje puede no tener handler configurado"
+    }
+  ],
+  
+  "resumen_estadistico": {
+    "total_tipos_mensaje_definidos": 45,
+    "total_flujos_completos": 22,
+    "total_flujos_parciales": 3,
+    "problemas_criticos": 3,
+    "problemas_menores": 3,
+    "controladores_huerfanos": 2,
+    "mensajes_sin_receptor": 2
+  },
+  
+  "recomendaciones_prioritarias": [
+    "1. Implementar handler explícito para RETO.COMPLETADO en codigo-padre.html",
+    "2. Asegurar que todos los hijos respondan CAMBIO_PARADA_CONFIRMADO",
+    "3. Corregir destino 'mapa' en ENVIAR_PARADA_COMPLETADA a un iframe válido o usar broadcast",
+    "4. Unificar comunicación usando siempre el módulo mensajeria.js",
+    "5. Documentar el flujo de migración PADRE_PIDE_MANEJADORES -> HIJO_MANEJADORES"
+  ]
+}

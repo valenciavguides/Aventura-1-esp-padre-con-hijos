@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Mensajeria Loading</title>
+</head>
+<body>
+    <h1>Testing Mensajeria Loading</h1>
+    <div id="status">Loading modules...</div>
+
+    <!-- Load modules using script tags that actually execute the module code -->
+    <script type="module" src="/js/constants.js"></script>
+    <script type="module" src="/js/mensajeria.js"></script>
+    
+    <script type="module">
+        // Wait for modules to be fully loaded and executed
+        async function waitForModules() {
+            console.log('Waiting for modules to be ready...');
+            
+            // Wait for constants to be available
+            while (!window.constants) {
+                console.log('Waiting for constants...');
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            console.log('✅ Constants available on window');
+            
+            // Wait for mensajeria to be available
+            while (!window.mensajeria) {
+                console.log('Waiting for mensajeria...');
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            console.log('✅ Mensajeria available on window');
+            
+            // Now initialize mensajeria
+            console.log('Initializing mensajeria...');
+            if (window.mensajeria.inicializarMensajeria) {
+                await window.mensajeria.inicializarMensajeria({ rol: 'padre', debug: true });
+                console.log('✅ Mensajeria initialized successfully');
+            }
+            
+            // Set ready flag
+            window.mensajeriaReady = true;
+            console.log('✅ mensajeriaReady flag set');
+            
+            // Update status
+            document.getElementById('status').innerHTML = 'Modules loaded and initialized successfully!';
+            console.log('✅ All modules ready!');
+        }
+        
+        // Start waiting immediately
+        waitForModules();
+    </script>
+
+    <script>
+        // Check after modules are loaded and initialized
+        setTimeout(() => {
+            const status = document.getElementById('status');
+            let message = status.innerHTML + '<br><br>Final check:<br>';
+
+            if (window.constants) {
+                message += '✅ window.constants available<br>';
+            } else {
+                message += '❌ window.constants not available<br>';
+            }
+
+            if (window.mensajeria) {
+                message += '✅ window.mensajeria available<br>';
+                
+                // Check if mensajeria is properly initialized
+                if (window.mensajeria.enviarMensaje && window.mensajeria.registrarControlador && window.mensajeria.inicializarMensajeria) {
+                    message += '✅ mensajeria functions available<br>';
+                } else {
+                    message += '❌ mensajeria functions not available<br>';
+                }
+            } else {
+                message += '❌ window.mensajeria not available<br>';
+            }
+
+            status.innerHTML = message;
+        }, 3000);
+    </script>
+</body>
+</html>

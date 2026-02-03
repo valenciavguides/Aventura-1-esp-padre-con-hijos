@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test Handshake HIJO_PREPARADO → PADRE_DATOS → HIJO_LISTO</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif}#log{white-space:pre-wrap;background:#f7f7f7;padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <h3>Test: Handshake HIJO_PREPARADO → PADRE_DATOS</h3>
+  <div id="status">RUNNING</div>
+  <div id="log"></div>
+
+  <iframe id="sut" src="../codigo-padre.html" style="width:100%;height:400px;border:1px solid #ccc"></iframe>
+  <iframe id="test-hijo" src="about:blank" style="width:100%;height:120px;border:1px solid #ccc;margin-top:8px"></iframe>
+
+  <script>
+  (async function(){
+    const logEl = document.getElementById('log');
+    function append(...args){ logEl.textContent += args.join(' ') + '\n'; }
+    const sut = document.getElementById('sut');
+    const child = document.getElementById('test-hijo');
+
+    await new Promise(r=>{ sut.onload = r; });
+    append('[test] sut cargado');
+
+    // prepare child to receive PADRE_DATOS and respond with HIJO_LISTO
+    const childWin = child.contentWindow;
+    let padreDatosReceived = false;
+    let hijoListoSent = false;
+    let padreConfirmaReceived = false;
+    childWin.addEventListener('message', (e) => {
+      try {
+        const m = e.data || {};
+        append('[child] mensaje recibido: ' + (m.tipo || JSON.stringify(m)) );
+
+        // PADRE_DATOS: child should send HIJO_LISTO back to parent
+        if (m && m.tipo === (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.PADRE_DATOS)) {
+          padreDatosReceived = true;
+          append('[PASS] PADRE_DATOS recibido por child');
+          // send HIJO_LISTO to parent (sut)
+          const tipos = sut.contentWindow.TIPOS_MENSAJE;
+          childWin.postMessage({ tipo: tipos.SISTEMA.HIJO_LISTO, origen: 'test-hijo', datos: { componenteId: 'test-child', timestamp: Date.now() } }, window.location.origin);
+          hijoListoSent = true;
+          append('[INFO] HIJO_LISTO enviado por child');
+        }
+
+        // PADRE_CONFIRMA_HIJO_LISTO: parent confirms child readiness
+        if (m && m.tipo === (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO)) {
+          padreConfirmaReceived = true;
+          append('[PASS] PADRE_CONFIRMA_HIJO_LISTO recibido por child');
+        }
+
+        if (padreDatosReceived && hijoListoSent && padreConfirmaReceived) {
+          document.getElementById('status').textContent = 'PASS';
+        }
+
+      } catch (err) { append('[child] error parseando mensaje: ' + err); }
+    });
+
+    // Send HIJO_PREPARADO to sut (parent)
+    const tipos = sut.contentWindow.TIPOS_MENSAJE;
+    append('[test] Enviando HIJO_PREPARADO a sut');
+    sut.contentWindow.postMessage({ tipo: tipos.SISTEMA.HIJO_PREPARADO, origen: 'test-hijo', datos: { capacidades: ['test-cap'] } }, window.location.origin);
+
+    // Wait up to 3s for PADRE_DATOS to arrive at child
+    const waited = await new Promise(r => {
+      const timeout = setTimeout(() => r(false), 3000);
+      const iv = setInterval(() => { if (padreDatosReceived) { clearTimeout(timeout); clearInterval(iv); r(true); } }, 50);
+    });
+
+    if (!waited) {
+      append('[FAIL] PADRE_DATOS no recibido en 3s');
+      document.getElementById('status').textContent = 'FAIL';
+    }
+
+  })();
+  </script>
+</body>
+</html>

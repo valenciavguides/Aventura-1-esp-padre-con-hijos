@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Test Migration Handshake</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif}#log{white-space:pre-wrap;background:#f7f7f7;padding:8px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <h3>Test: PADRE_PIDE_MANEJADORES ↔ HIJO_MANEJADORES ↔ PADRE_APLICA_MANEJADORES</h3>
+  <div id="status">RUNNING</div>
+  <div id="log"></div>
+
+  <iframe id="sut" src="../codigo-padre.html" style="width:100%;height:400px;border:1px solid #ccc"></iframe>
+  <iframe id="test-child" src="about:blank" style="width:100%;height:120px;border:1px solid #ccc;margin-top:8px"></iframe>
+
+  <script>
+  (async function(){
+    const logEl = document.getElementById('log');
+    function append(...args){ logEl.textContent += args.join(' ') + '\n'; }
+
+    const sut = document.getElementById('sut');
+    const child = document.getElementById('test-child');
+
+    await new Promise(r => { sut.onload = r; });
+    append('[test] sut cargado');
+
+    // Prepare child iframe to act as a "hijo" with early handlers in __vv_manejadores
+    const childDoc = child.contentDocument || child.contentWindow.document;
+    childDoc.open();
+    childDoc.write(`<html><body><script>
+      // Simulate early registered handlers — try to register via registrarControlador,
+      // falling back to queuing in the global map and triggering migration.
+      (async function(){
+        try {
+          const ms = await import('/js/mensajeria.js');
+          if (ms && typeof ms.registrarControlador === 'function') {
+            await ms.registrarControlador('TEST.MIGRACION', function(){ /* placeholder */ });
+            return;
+          }
+        } catch (e) {
+          // ignore and fall back
+        }
+        try {
+          window.__CONTROLADOR_REGISTRADOS = window.__CONTROLADOR_REGISTRADOS || new Set();
+          window.__CONTROLADOR_REGISTRADOS.add('TEST.MIGRACION');
+          try { await import('/js/utils.js').then(m => { if (m && m.migrarManejadoresTempranos) return m.migrarManejadoresTempranos(); }).catch(()=>{}); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      })();
+
+      // Count PADRE_PIDE received and only respond on the second attempt (to test retries)
+      let pideCount = 0;
+      window.padreListoReceived = false;
+      window.addEventListener('message', (e) => {
+        const m = e.data || {};
+        if (m && m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES)) {
+          pideCount++;
+          if (pideCount < 2) {
+            // ignore first request
+            return;
+          }
+          // Reply with manifest on second request
+          const payload = { pedidoId: m.datos && m.datos.pedidoId || 'p1', manejadores: [{ tipo: 'TEST.MIGRACION', version: '1' }], timestamp: Date.now() };
+          window.parent.postMessage({ tipo: window.TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES, datos: payload, origen: 'test-child' }, window.location.origin);
+        }
+        if (m && m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_LISTO)) {
+          window.padreListoReceived = true;
+          // Reply with HIJO_LISTO so parent can confirm
+          const respuesta = { origen: 'test-child', datos: { estado: 'listo' } };
+          window.parent.postMessage({ tipo: window.TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, datos: respuesta, origen: 'test-child' }, window.location.origin);
+        }
+      });
+    <\/script></body></html>`);
+    childDoc.close();
+    append('[test] child preparado con __vv_manejadores');
+
+    // TEST A: Child responds to PADRE_PIDE_MANEJADORES when we send it directly (will ignore first -> respond on second)
+    append('[test] Ejecutando TEST A: PADRE_PIDE_MANEJADORES -> HIJO_MANEJADORES (con retry manual)');
+
+    let receivedHIJO = false;
+    function handlerA(ev) {
+      const m = ev.data || {};
+      if (m && m.tipo && m.tipo === (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES)) {
+        append('[PASS] HIJO_MANEJADORES recibido por test (desde child) - datos: ' + JSON.stringify(m.datos));
+        receivedHIJO = true;
+        window.removeEventListener('message', handlerA);
+      }
+    }
+    window.addEventListener('message', handlerA);
+
+    // Send PADRE_PIDE_MANEJADORES twice to simulate retry behavior
+    child.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES), datos: { pedidoId: 'p-test-a' } }, window.location.origin);
+    // second attempt after 300ms
+    setTimeout(() => {
+      child.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES), datos: { pedidoId: 'p-test-a' } }, window.location.origin);
+    }, 300);
+
+    await new Promise(r => setTimeout(r, 1200));
+    if (!receivedHIJO) append('[FAIL] No se recibió HIJO_MANEJADORES en TEST A (esperado tras retry)');
+
+    // TEST B: Parent applies manifest when receives HIJO_MANEJADORES
+    append('[test] Ejecutando TEST B: enviar HIJO_MANEJADORES al padre y verificar registros');
+
+    // Send HIJO_MANEJADORES to parent (sut)
+    const manifest = { pedidoId: 'p-test-b', manejadores: [{ tipo: 'TEST.MIGRACION' }], timestamp: Date.now() };
+    sut.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES), datos: manifest, origen: 'test-child' }, window.location.origin);
+
+    // Wait and then inspect parent state directly (same-origin)
+    await new Promise(r => setTimeout(r, 800));
+    try {
+      const estado = sut.contentWindow.window.estadoPadre;
+      const has = estado && estado.manejadoresRegistrados && estado.manejadoresRegistrados.has('TEST.MIGRACION');
+      if (has) append('[PASS] Padre registró proxy para TEST.MIGRACION'); else append('[FAIL] Padre NO registró proxy para TEST.MIGRACION');
+    } catch (e) { append('[ERROR] No se pudo leer estadoPadre del padre: ' + (e && e.message)); }
+
+    // TEST C: Parent retries requesting manifest when child ignores first PADRE_PIDE
+    append('[test] Ejecutando TEST C: enviar HIJO_PREPARADO y verificar registro tras retries');
+    sut.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO), origen: 'test-child', datos: { capacidades: ['test-cap'] } }, window.location.origin);
+
+    // Wait ample time for retries (timeout * retries + buffer). Defaults ~400ms timeout, 2 attempts -> wait 1200ms
+    await new Promise(r => setTimeout(r, 1400));
+    try {
+      const estado = sut.contentWindow.window.estadoPadre;
+      const has = estado && estado.manejadoresRegistrados && estado.manejadoresRegistrados.has('TEST.MIGRACION');
+      if (has) append('[PASS] Padre registró proxy para TEST.MIGRACION tras retries'); else append('[FAIL] Padre NO registró proxy para TEST.MIGRACION tras retries');
+
+      // Verificar que pendingMigraciones fue limpiado para este hijo
+      try {
+        const pendingMap = estado && estado.pendingMigraciones;
+        let pendingForChild = 0;
+        if (pendingMap && pendingMap.size) {
+          for (const [k,v] of pendingMap.entries()) {
+            if (v && v.hijoId === 'test-child') pendingForChild++;
+          }
+        }
+        if (pendingForChild === 0) append('[PASS] pendingMigraciones limpiado para test-child'); else append('[FAIL] pendingMigraciones contiene ' + pendingForChild + ' entradas para test-child');
+      } catch (ee) { append('[ERROR] No se pudo inspeccionar pendingMigraciones: ' + (ee && ee.message)); }
+
+      // Verificar que el padre envió PADRE_LISTO y el hijo respondió con HIJO_LISTO (padreListoReceived marcado en el child)
+      try {
+        const childReady = child.contentWindow && child.contentWindow.padreListoReceived;
+        if (childReady) append('[PASS] Child recibió PADRE_LISTO y respondió HIJO_LISTO'); else append('[FAIL] Child NO recibió PADRE_LISTO o no respondió');
+      } catch (ee) { append('[ERROR] No se pudo comprobar PADRE_LISTO en el child: ' + (ee && ee.message)); }
+
+    } catch (e) { append('[ERROR] No se pudo leer estadoPadre del padre: ' + (e && e.message)); }
+
+    // TEST D: Idempotencia - enviar manifest duplicado y verificar que no se duplican registros
+    append('[test] Ejecutando TEST D: Enviar manifest duplicado y comprobar idempotencia');
+    try {
+      const beforeCount = sut.contentWindow.window.estadoPadre && sut.contentWindow.window.estadoPadre.manejadoresRegistrados ? sut.contentWindow.window.estadoPadre.manejadoresRegistrados.size : 0;
+      sut.contentWindow.postMessage({ tipo: (sut.contentWindow.TIPOS_MENSAJE && sut.contentWindow.TIPOS_MENSAJE.SISTEMA && sut.contentWindow.TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES), datos: manifest, origen: 'test-child' }, window.location.origin);
+      await new Promise(r => setTimeout(r, 400));
+      const afterCount = sut.contentWindow.window.estadoPadre && sut.contentWindow.window.estadoPadre.manejadoresRegistrados ? sut.contentWindow.window.estadoPadre.manejadoresRegistrados.size : 0;
+      if (afterCount === beforeCount) append('[PASS] Idempotencia OK, no se duplicaron manejadores'); else append('[FAIL] Idempotencia rota, manejadores duplicados');
+    } catch (e) { append('[ERROR] Error comprobando idempotencia: ' + (e && e.message)); }
+
+    append('[test] FINALIZADO');
+    document.getElementById('status').textContent = 'DONE';
+  })();
+  </script>
+</body>
+</html>

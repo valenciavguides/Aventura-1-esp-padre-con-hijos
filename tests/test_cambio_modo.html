@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cambio de Modo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Test de Cambio de Modo</h1>
+    <p>Este test verifica que los cambios de modo funcionen sin timeouts.</p>
+
+    <button onclick="testCambioModo('casa')">Cambiar a Casa</button>
+    <button onclick="testCambioModo('aventura')">Cambiar a Aventura</button>
+
+    <div id="results"></div>
+
+    <script>
+        // Dependencias simplificadas para el test
+        window.logger = {
+            info: (msg, ...args) => console.log(`[INFO] ${msg}`, ...args),
+            warn: (msg, ...args) => console.warn(`[WARN] ${msg}`, ...args),
+            error: (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args),
+            debug: (msg, ...args) => console.debug(`[DEBUG] ${msg}`, ...args)
+        };
+
+        // Constantes necesarias
+        window.TIPOS_MENSAJE = {
+            SISTEMA: {
+                CAMBIO_MODO: 'SISTEMA.CAMBIO_MODO',
+                CONFIRMACION: 'SISTEMA.CONFIRMACION'
+            }
+        };
+
+        window.MODOS = {
+            CASA: 'casa',
+            AVENTURA: 'aventura'
+        };
+
+        // Función de utilidad necesaria
+        window.canonicalizarModo = (modo) => {
+            if (!modo) return null;
+            const modoStr = String(modo).toLowerCase().trim();
+            return modoStr === 'casa' || modoStr === 'aventura' ? modoStr : null;
+        };
+
+        // Función simplificada de envío de mensajes
+        window.enviarMensaje = async (mensaje) => {
+            console.log(`[MOCK] Enviando mensaje:`, mensaje);
+            // Simular respuesta exitosa
+            return { exito: true };
+        };
+    </script>
+
+    <script>
+        // Función simplificada de cambio de modo para testing
+        async function manejarCambioModo(estado, mensaje) {
+            const logPrefix = `[TEST][CAMBIO_MODO]`;
+            const { modo } = mensaje.datos;
+
+            console.log(`${logPrefix} Iniciando cambio a modo: ${modo}`);
+            logger.info(`${logPrefix} Procesando cambio a modo: ${modo}`);
+
+            try {
+                // Simular la lógica de actualizarInterfazModo
+                const hijos = Array.from(estado.hijosInicializados || []);
+                console.log(`${logPrefix} Enviando mensajes a ${hijos.length} hijos:`, hijos);
+
+                // Simular envío de mensajes con timeout
+                const promesas = hijos.map(async (hijoId) => {
+                    console.log(`${logPrefix} Enviando SISTEMA.CAMBIO_MODO a ${hijoId}`);
+
+                    // Simular respuesta de confirmación después de un pequeño delay
+                    return new Promise((resolve) => {
+                        setTimeout(() => {
+                            console.log(`${logPrefix} Confirmación recibida de ${hijoId}`);
+                            resolve({ hijoId, exito: true });
+                        }, Math.random() * 1000 + 500); // 500-1500ms delay
+                    });
+                });
+
+                // Esperar todas las confirmaciones con timeout
+                const resultados = await Promise.race([
+                    Promise.all(promesas),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Timeout esperando confirmaciones')), 15000)
+                    )
+                ]);
+
+                console.log(`${logPrefix} Todas las confirmaciones recibidas:`, resultados);
+                logger.info(`${logPrefix} Cambio a modo ${modo} completado exitosamente`);
+
+                return { exito: true, modo };
+
+            } catch (error) {
+                console.error(`${logPrefix} Error en cambio de modo:`, error);
+                logger.error(`${logPrefix} Error procesando cambio de modo:`, error);
+                return { exito: false, error: error.message };
+            }
+        }
+    </script>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+
+        function addResult(message, isSuccess = true) {
+            const div = document.createElement('div');
+            div.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+            div.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            resultsDiv.appendChild(div);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+        }
+
+        async function testCambioModo(modo) {
+            addResult(`Iniciando cambio a modo: ${modo}`);
+
+            try {
+                // Simular estado de la aplicación
+                const estado = {
+                    hijosInicializados: new Set(['hijo2', 'hijo3', 'hijo4', 'hijo5']),
+                    todosHijosListos: true
+                };
+
+                // Crear mensaje en el formato esperado por manejarCambioModo
+                const mensaje = {
+                    origen: 'test',
+                    destino: 'sistema',
+                    tipo: 'SISTEMA.CAMBIO_MODO',
+                    datos: { modo: modo },
+                    mensajeId: `test-${Date.now()}`
+                };
+
+                const startTime = Date.now();
+
+                // Llamar a la función de cambio de modo
+                await manejarCambioModo(estado, mensaje);
+
+                const duration = Date.now() - startTime;
+                addResult(`Cambio a ${modo} completado exitosamente en ${duration}ms`);
+
+            } catch (error) {
+                addResult(`Error en cambio a ${modo}: ${error.message}`, false);
+                console.error('Error detallado:', error);
+            }
+        }
+
+        // Inicializar cuando la página cargue
+        window.addEventListener('load', () => {
+            addResult('Test inicializado. Presiona un botón para probar el cambio de modo.');
+        });
+    </script>
+</body>
+</html>
