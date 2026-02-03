@@ -174,149 +174,6 @@ export function ajustarTimeoutPorConexion(timeoutBase, factor = 1) {
 }
 
 /**
- * Obtiene la función enviarMensaje del contexto global o padre
- * @returns {Function|null} Función enviarMensaje o null
- */
-export function getEnviarMensaje() {
-    // Primero intentar desde window.mensajeria (hijos)
-    if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
-        return window.mensajeria.enviarMensaje;
-    }
-    
-    // Intentar desde parent.mensajeria
-    if (window.parent && window.parent !== window) {
-        try {
-            if (window.parent.mensajeria && typeof window.parent.mensajeria.enviarMensaje === 'function') {
-                return window.parent.mensajeria.enviarMensaje;
-            }
-        } catch (e) {
-            // Cross-origin, ignorar
-        }
-    }
-    
-    // Fallback: función que usa postMessage
-    return function(tipo, datos, destino) {
-        const mensaje = {
-            tipo,
-            datos,
-            origen: 'utils_fallback',
-            timestamp: Date.now(),
-            id: generarIdUnico('msg')
-        };
-        
-        if (window.parent && window.parent !== window) {
-            window.parent.postMessage(mensaje, '*');
-        }
-    };
-}
-
-/**
- * Obtiene la función registrarControlador del contexto global o padre
- * @returns {Function|null} Función registrarControlador o null
- */
-export function getRegistrarControlador() {
-    // Primero intentar desde window.mensajeria
-    if (window.mensajeria && typeof window.mensajeria.registrarControlador === 'function') {
-        return window.mensajeria.registrarControlador;
-    }
-    
-    // Intentar desde parent.mensajeria
-    if (window.parent && window.parent !== window) {
-        try {
-            if (window.parent.mensajeria && typeof window.parent.mensajeria.registrarControlador === 'function') {
-                return window.parent.mensajeria.registrarControlador;
-            }
-        } catch (e) {
-            // Cross-origin, ignorar
-        }
-    }
-    
-    // Fallback: registrar localmente
-    return function(tipo, handler) {
-        if (!window.__vv_handlers) {
-            window.__vv_handlers = new Map();
-        }
-        window.__vv_handlers.set(tipo, handler);
-        console.log(`[utils] Handler registrado localmente para: ${tipo}`);
-    };
-}
-
-/**
- * Obtiene la función enviarMensajeConConfirmacion
- * @returns {Function|null} Función o null
- */
-export function getEnviarMensajeConConfirmacion() {
-    if (window.mensajeria && typeof window.mensajeria.enviarMensajeConConfirmacion === 'function') {
-        return window.mensajeria.enviarMensajeConConfirmacion;
-    }
-    
-    if (window.parent && window.parent !== window) {
-        try {
-            if (window.parent.mensajeria && typeof window.parent.mensajeria.enviarMensajeConConfirmacion === 'function') {
-                return window.parent.mensajeria.enviarMensajeConConfirmacion;
-            }
-        } catch (e) {
-            // Cross-origin
-        }
-    }
-    
-    // Fallback simple
-    return function(tipo, datos, timeout = 5000) {
-        return new Promise((resolve, reject) => {
-            const enviar = getEnviarMensaje();
-            if (enviar) {
-                enviar(tipo, datos);
-                // Sin confirmación real, resolver después de timeout corto
-                setTimeout(() => resolve({ success: true, simulado: true }), 100);
-            } else {
-                reject(new Error('No hay función de envío disponible'));
-            }
-        });
-    };
-}
-
-/**
- * Reintenta una operación hasta que esté disponible
- * @param {Function} checkFn - Función que retorna true cuando está listo
- * @param {Object} [options] - Opciones
- * @param {number} [options.maxIntentos=10] - Máximo de intentos
- * @param {number} [options.intervalo=100] - Intervalo entre intentos (ms)
- * @param {string} [options.mensaje=''] - Mensaje de log
- * @returns {Promise<boolean>} Promise que resuelve cuando está listo
- */
-export function retryUntilAvailable(checkFn, options = {}) {
-    const { maxIntentos = 10, intervalo = 100, mensaje = '' } = options;
-    
-    return new Promise((resolve, reject) => {
-        let intentos = 0;
-        
-        const intentar = function() {
-            intentos++;
-            
-            try {
-                if (checkFn()) {
-                    if (mensaje) console.log(`[utils] ${mensaje} - disponible después de ${intentos} intentos`);
-                    resolve(true);
-                    return;
-                }
-            } catch (e) {
-                // Ignorar errores en checkFn
-            }
-            
-            if (intentos >= maxIntentos) {
-                if (mensaje) console.warn(`[utils] ${mensaje} - no disponible después de ${maxIntentos} intentos`);
-                resolve(false);
-                return;
-            }
-            
-            setTimeout(intentar, intervalo);
-        }
-        
-        intentar();
-    });
-}
-
-/**
  * Debounce de una función
  * @param {Function} fn - Función a ejecutar
  * @param {number} espera - Tiempo de espera en ms
@@ -586,7 +443,7 @@ export function manejarError(error, contexto = null, opciones = {}) {
     console.error('[ERROR]', errorInfo.mensaje, errorInfo);
     
     // Intentar enviar error al padre si estamos en un iframe
-    if (window.parent && window.parent !== window) {
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
         try {
             window.parent.postMessage({
                 tipo: 'ERROR_HIJO',
@@ -599,37 +456,10 @@ export function manejarError(error, contexto = null, opciones = {}) {
         }
     }
     
-    // Registrar en historial de errores global si existe
-    if (window.__vv_errores) {
-        window.__vv_errores.push(errorInfo);
-        // Mantener solo los últimos 100 errores
-        if (window.__vv_errores.length > 100) {
-            window.__vv_errores.shift();
-        }
-    } else {
-        window.__vv_errores = [errorInfo];
-    }
-    
     // Re-lanzar si se solicita
     if (reenviar) {
         throw error;
     }
-}
-
-// Exponer funciones útiles globalmente para debugging
-if (typeof window !== 'undefined') {
-    window.__vv_utils = {
-        generarIdUnico,
-        getPadreId,
-        normalizarParadas,
-        resolverIdsParada,
-        ajustarTimeoutPorConexion,
-        getEnviarMensaje,
-        getRegistrarControlador,
-        retryUntilAvailable,
-        manejarError,
-        canonicalizarModo
-    };
 }
 
 export default {
@@ -638,10 +468,6 @@ export default {
     normalizarParadas,
     resolverIdsParada,
     ajustarTimeoutPorConexion,
-    getEnviarMensaje,
-    getRegistrarControlador,
-    getEnviarMensajeConConfirmacion,
-    retryUntilAvailable,
     debounce,
     throttle,
     sleep,

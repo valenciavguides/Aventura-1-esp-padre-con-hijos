@@ -646,56 +646,49 @@ export function createEstadoPadreProxy() {
 export async function inicializarStateManager() {
   console.log('✅ [STATE-MANAGER] Inicializado correctamente');
   
-  if (typeof window !== 'undefined') {
-    // Objeto API completo del state-manager
-    const stateManagerAPI = {
-      // Funciones de controladores
-      registrarControladorCentral,
-      registrarManejador: registrarControladorCentral, // Alias para compatibilidad con mensajeria.js
-      getControladoresRegistrados,
-      getControladoresPorTipo,
-      getMapaControladores,
-      getMapaControladoresSync,
-      getManejadores: getMapaControladoresSync, // Alias SÍNCRONO para compatibilidad con mensajeria.js
-      removerControladorCentral,
-      limpiarControladoresAntiguos,
-      
-      // Funciones de mensajes
-      enviarMensajeCentral,
-      validarMensaje,
-      limpiarMensajesAntiguos,
-      
-      // Funciones de estado
-      getEstadoPadre,
-      setEstadoPadre,
-      getFlag,
-      setFlag,
-      
-      // Diagnóstico
-      diagnosticar: diagnosticarStateManager,
-      diagnosticarStateManager,
-      
-      // Utilidad
-      getEstado: () => ({
-        controladores: state.controladores.size,
-        mensajesEnviados: state.mensajesEnviados.size,
-        estadoPadre: state.estadoPadre,
-        flags: {
-          heartbeatPrewarmed: state.heartbeatPrewarmed,
-          procesandoCola: state.procesandoCola,
-          script2Listo: state.script2Listo,
-          listenerRegistrado: state.listenerRegistrado,
-          mensajeriaReady: state.mensajeriaReady
-        }
-      })
-    };
+  // Return the API object for direct use instead of exposing globally
+  return {
+    // Funciones de controladores
+    registrarControladorCentral,
+    registrarManejador: registrarControladorCentral,
+    getControladoresRegistrados,
+    getControladoresPorTipo,
+    getMapaControladores,
+    getMapaControladoresSync,
+    getManejadores: getMapaControladoresSync,
+    removerControladorCentral,
+    limpiarControladoresAntiguos,
     
-    // Exponer en ambos nombres para compatibilidad
-    window.__stateManager = stateManagerAPI;
-    window.__vv_stateManager = stateManagerAPI; // Nombre esperado por mensajeria.js
+    // Funciones de mensajes
+    enviarMensajeCentral,
+    validarMensaje,
+    limpiarMensajesAntiguos,
     
-    console.log('[STATE-MANAGER] API expuesta en window.__stateManager y window.__vv_stateManager');
-  }
+    // Funciones de estado
+    getEstadoPadre,
+    setEstadoPadre,
+    getFlag,
+    setFlag,
+    updateEstadoPadre,
+    
+    // Diagnóstico
+    diagnosticar: diagnosticarStateManager,
+    diagnosticarStateManager,
+    
+    // Utilidad
+    getEstado: () => ({
+      controladores: state.controladores.size,
+      mensajesEnviados: state.mensajesEnviados.size,
+      estadoPadre: state.estadoPadre,
+      flags: {
+        heartbeatPrewarmed: state.heartbeatPrewarmed,
+        procesandoCola: state.procesandoCola,
+        script2Listo: state.script2Listo,
+        listenerRegistrado: state.listenerRegistrado,
+        mensajeriaReady: state.mensajeriaReady
+      }
+    })
+  };
 }
 
 /**

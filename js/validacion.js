@@ -360,20 +360,6 @@ export function registrarValidador(nombre, fn) {
     validadores[nombre] = fn;
 }
 
-// Exponer para debugging
-if (typeof window !== 'undefined') {
-    window.__vv_validacion = {
-        validarDato,
-        validarMensaje,
-        validarCoordenadas,
-        validarParada,
-        validarSchema,
-        sanitizarString,
-        sanitizarObjeto,
-        registrarValidador
-    };
-}
-
 export default {
     validarDato,
     validarMensaje,

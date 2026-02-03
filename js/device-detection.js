@@ -338,9 +338,6 @@ if (typeof window !== 'undefined') {
         cache.esTelefonoMovil = null;
         cache.esTablet = null;
     });
-    
-    // Exponer para debugging
-    window.__vv_deviceInfo = getInfoDispositivo;
 }
 
 export default {

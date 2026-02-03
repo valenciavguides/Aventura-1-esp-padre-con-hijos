@@ -96,7 +96,7 @@ export async function inicializarMensajeria(opciones = {}) {
     
     tipoComponente = tipo;
     componenteId = id;
-    stateManager = sm || (typeof window !== 'undefined' ? window.__vv_stateManager : null);
+    stateManager = sm || null;
     
     logger.info(`[mensajeria] Inicializando como ${tipo} con ID: ${id}`);
     
@@ -112,54 +112,8 @@ export async function inicializarMensajeria(opciones = {}) {
     
     inicializado = true;
     
-    // Exponer API global
-    exponerAPIGlobal();
-    
     logger.info(`[mensajeria] Inicialización completada`);
     return true;
-}
-
-/**
- * Expone la API de mensajería en window.mensajeria
- */
-function exponerAPIGlobal() {
-    if (typeof window === 'undefined') return;
-    
-    window.mensajeria = {
-        // Funciones principales
-        inicializarMensajeria,
-        registrarControlador,
-        enviarMensaje,
-        enviarMensajeConConfirmacion,
-        broadcastToCapability,
-        hijosConCapability,
-        marcarScript2Listo,
-        
-        // Funciones de consulta
-        getControladoresRegistrados,
-        getControladoresPorTipo,
-        estaInicializado: () => inicializado,
-        getComponenteId: () => componenteId,
-        getTipoComponente: () => tipoComponente,
-        
-        // Funciones de iframe (solo padre)
-        registrarIframe,
-        obtenerIframe,
-        getIframesRegistrados: () => new Map(iframesRegistrados),
-        
-        // Funciones centralizadas (delegan a state-manager)
-        registrarControladorCentral,
-        enviarMensajeCentral,
-        
-        // Utilidades
-        generarIdMensaje: () => generarIdUnico('msg'),
-        
-        // Diagnóstico
-        getDiagnostico
-    };
-    
-    // Alias para compatibilidad
-    window.__vv_mensajeria = window.mensajeria;
 }
 
 // =====================================================
@@ -171,12 +125,8 @@ function exponerAPIGlobal() {
  * @returns {Object|null} State manager o null
  */
 function obtenerStateManager() {
-    // Prioridad: variable local -> window global
-    if (stateManager) return stateManager;
-    if (typeof window !== 'undefined' && window.__vv_stateManager) {
-        return window.__vv_stateManager;
-    }
-    return null;
+    // Solo usar la variable local
+    return stateManager;
 }
 
 /**
@@ -227,30 +177,24 @@ export async function registrarControladorCentral(tipo, handler) {
 }
 
 /**
+ * Mapa local de manejadores (fallback cuando no hay state-manager)
+ * @type {Map<string, Function>}
+ */
+const manejadoresLocales = new Map();
+
+/**
  * Obtiene el mapa de manejadores (local o del state-manager)
  * @returns {Map} Mapa de manejadores
  */
 function obtenerMapaManejadores() {
-    // Intentar obtener del state-manager (buscar dinámicamente)
+    // Intentar obtener del state-manager
     const sm = obtenerStateManager();
     if (sm && typeof sm.getManejadores === 'function') {
         return sm.getManejadores();
     }
     
-    // Usar __vv_getManejadores si está definido
-    if (typeof window !== 'undefined' && typeof window.__vv_getManejadores === 'function') {
-        return window.__vv_getManejadores();
-    }
-    
-    // Crear mapa local como último recurso
-    if (typeof window !== 'undefined') {
-        if (!window.__vv_manejadoresLocales) {
-            window.__vv_manejadoresLocales = new Map();
-        }
-        return window.__vv_manejadoresLocales;
-    }
-    
-    return new Map();
+    // Usar mapa local como fallback
+    return manejadoresLocales;
 }
 
 /**
@@ -722,13 +666,10 @@ export default {
     obtenerIframe,
     registrarCapacidades,
     getDiagnostico,
-    limpiar
+    limpiar,
+    estaInicializado: () => inicializado,
+    getComponenteId: () => componenteId,
+    getTipoComponente: () => tipoComponente,
+    getIframesRegistrados: () => new Map(iframesRegistrados),
+    generarIdMensaje: () => generarIdUnico('msg')
 };
-
-// =====================================================
-// EXPOSICIÓN INMEDIATA DE API GLOBAL
-// Ejecutar exponerAPIGlobal() inmediatamente al cargar el módulo
-// para que window.mensajeria esté disponible antes de inicializar
-// =====================================================
-exponerAPIGlobal();
-console.log('[mensajeria] API expuesta globalmente (pre-inicialización)');

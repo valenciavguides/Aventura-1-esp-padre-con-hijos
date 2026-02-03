@@ -58,10 +58,7 @@ export const TTL_LIMPIEZA = {
     }
 };
 
-// Make TTL_LIMPIEZA available to legacy scripts that expect a global variable
-if (typeof window !== 'undefined') {
-    try { window.TTL_LIMPIEZA = TTL_LIMPIEZA; } catch (e) { /* ignore in restricted environments */ }
-}
+// TTL_LIMPIEZA is exported as ES Module - no global assignment needed
 
 /**
  * Tipos de mensajes para la comunicación entre iframes
@@ -347,20 +344,8 @@ export default {
     ESTADOS,
     CODIGOS_ERROR,
     DESTINOS,
-    CSS_CLASES
+    CSS_CLASES,
+    TIPOS_MENSAJE_VALIDOS,
+    ERRORES,
+    TTL_LIMPIEZA
 };
-
-// Exponer globalmente para compatibilidad con código que espera window.constants
-if (typeof window !== 'undefined') {
-    window.constants = {
-        LOG_LEVELS,
-        MODOS,
-        TIPOS_MENSAJE,
-        ESTADOS,
-        CODIGOS_ERROR,
-        DESTINOS,
-        CSS_CLASES,
-        TIPOS_MENSAJE_VALIDOS
-    };
-    console.log('✅ constants.js loaded, window.constants assigned');
-}

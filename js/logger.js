@@ -362,9 +362,4 @@ const logger = {
     }
 };
 
-// Hacer logger disponible globalmente para debug
-if (typeof window !== 'undefined') {
-    window.__vv_logger = logger;
-}
-
 export default logger;

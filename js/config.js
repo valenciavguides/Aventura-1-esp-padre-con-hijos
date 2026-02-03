@@ -355,10 +355,4 @@ export function exportarConfig() {
     return JSON.stringify(CONFIG, null, 2);
 }
 
-// Hacer CONFIG disponible globalmente para debug
-if (typeof window !== 'undefined') {
-    window.__vv_config = CONFIG;
-    window.__vv_getConfig = getConfig;
-}
-
 export default CONFIG;
