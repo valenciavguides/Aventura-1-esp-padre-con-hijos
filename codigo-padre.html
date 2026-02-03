@@ -2178,9 +2178,8 @@
         try {
             // Pasar referencia al stateManager para conexión directa
             await window.mensajeria.inicializarMensajeria({ 
-                rol: 'padre', 
-                componenteId: 'padre', 
-                debug: false,
+                tipo: 'padre', 
+                id: 'padre', 
                 stateManager: window.__vv_stateManager  // Conexión directa con state-manager
             });
             console.info('[PADRE] Mensajería inicializada como padre con conexión a state-manager');

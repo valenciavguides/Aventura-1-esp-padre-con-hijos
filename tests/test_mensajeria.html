@@ -33,7 +33,7 @@
             // Now initialize mensajeria
             console.log('Initializing mensajeria...');
             if (window.mensajeria.inicializarMensajeria) {
-                await window.mensajeria.inicializarMensajeria({ rol: 'padre', debug: true });
+                await window.mensajeria.inicializarMensajeria({ tipo: 'padre' });
                 console.log('✅ Mensajeria initialized successfully');
             }
             
