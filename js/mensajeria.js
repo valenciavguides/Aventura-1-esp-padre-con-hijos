@@ -9,6 +9,7 @@
 import { TIPOS_MENSAJE, TTL_LIMPIEZA, ERRORES, ESTADOS } from './constants.js';
 import logger from './logger.js';
 import { generarIdUnico } from './utils.js';
+import { esMovil } from './device-detection.js';
 
 // =====================================================
 // ESTADO LOCAL (mínimo, delegamos al state-manager)
@@ -692,18 +693,21 @@ export function limpiar() {
 
 // Configurar limpieza periódica
 if (typeof window !== 'undefined') {
+    // Determinar TTL según dispositivo
+    const ttlMensajeria = esMovil() ? TTL_LIMPIEZA.MENSAJERIA.MOVIL : TTL_LIMPIEZA.MENSAJERIA.DESKTOP;
+    
     setInterval(() => {
         const ahora = Date.now();
         
         // Limpiar confirmaciones expiradas
         for (const [id, pendiente] of confirmacionesPendientes) {
-            if (ahora - pendiente.timestamp > TTL_LIMPIEZA) {
+            if (ahora - pendiente.timestamp > ttlMensajeria) {
                 clearTimeout(pendiente.timeoutId);
                 confirmacionesPendientes.delete(id);
                 pendiente.reject(new Error('Confirmación expirada'));
             }
         }
-    }, TTL_LIMPIEZA / 2);
+    }, ttlMensajeria / 2);
 }
 
 export default {
@@ -732,3 +736,9 @@ export default {
 // =====================================================
 exponerAPIGlobal();
 console.log('[mensajeria] API expuesta globalmente (pre-inicialización)');
+
+// Dispatch mensajeriaReady event to signal that the API is available
+if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('mensajeriaReady'));
+    console.log('[mensajeria] mensajeriaReady event dispatched');
+}

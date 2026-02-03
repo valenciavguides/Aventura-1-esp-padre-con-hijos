@@ -2178,9 +2178,8 @@
         try {
             // Pasar referencia al stateManager para conexión directa
             await window.mensajeria.inicializarMensajeria({ 
-                rol: 'padre', 
-                componenteId: 'padre', 
-                debug: false,
+                tipo: 'padre', 
+                id: 'padre', 
                 stateManager: window.__vv_stateManager  // Conexión directa con state-manager
             });
             console.info('[PADRE] Mensajería inicializada como padre con conexión a state-manager');
@@ -2808,6 +2807,10 @@
                 }
             };
         }
+        
+        // Create local alias for easier access
+        const registrarControladorSeguro = window.registrarControladorSeguro;
+        
         // ============================================================
         // FUNCIONES AUXILIARES LOCALES (compartidas con Script 2)
         // ============================================================
@@ -6695,10 +6698,16 @@
         });
 
         // ============================================================
+        // ADDITIONAL CONTROLLER REGISTRATIONS (wait for DOM ready)
+        // These use window.registrarControladorSeguro which is defined 
+        // in Script 1's DOMContentLoaded, so we must wait for it
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+        // ============================================================
         // CONTROLADOR: RETO.OCULTAR
         // Oculta el iframe de retos cuando el usuario hace click en "Continuar"
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.RETO.OCULTAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.OCULTAR]`;
             
             try {
@@ -6751,7 +6760,7 @@
         // CONTROLADOR 9: DATOS.SOLICITAR_PARADAS (DIRECTO)
         // Responde directamente con datos de elementosIDpadre + datos dinámicos
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.SOLICITAR_PARADAS][DIRECTO]`;
 
             try {
@@ -6897,7 +6906,7 @@
         // CONTROLADOR 10: DATOS.RESPUESTA_PARADAS (PROXY RESPONSE)
         // Recibe respuestas de hijo2 y las reenvía al solicitante original
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_PARADAS][PROXY]`;
 
             try {
@@ -6995,7 +7004,7 @@
          * Origen esperado: cualquier componente (hijo5, otros)
          * Respuesta: Reenvía respuesta al solicitante
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ACTIVAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7053,7 +7062,7 @@
          * Origen esperado: cualquier componente
          * Respuesta: Reenvía respuesta al solicitante
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.DESACTIVAR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.DESACTIVAR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7106,7 +7115,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía a todos los hijos activos
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.UBICACION_ACTUALIZADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.UBICACION_ACTUALIZADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7160,7 +7169,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía al solicitante original usando correlación
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ESTADO_ACTUALIZADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ESTADO_ACTUALIZADO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7208,7 +7217,7 @@
          * Origen esperado: funciones-mapa
          * Respuesta: Reenvía al solicitante original
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.ERROR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.ERROR][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7254,7 +7263,7 @@
          * Origen esperado: hijo2
          * Respuesta: Muestra feedback visual al usuario (telemetría ACTIVA)
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.GPS.RESTRINGIDO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[GPS.RESTRINGIDO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7276,7 +7285,7 @@
         // CONTROLADOR 9.5: NAVEGACION.CENTRAR_EN_UBICACION
         // Centra el mapa en una ubicación específica llamando directamente a funciones-mapa.js
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CENTRAR_EN_UBICACION, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[CENTRAR_EN_UBICACION][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7460,7 +7469,7 @@
         // CONTROLADOR 9.5: NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO
         // Actualiza la flecha azul del usuario en el mapa (estilo Google Maps)
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.ACTUALIZAR_MARCADOR_USUARIO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[ACTUALIZAR_MARCADOR_USUARIO]`;
             
             try {
@@ -7495,7 +7504,7 @@
         // CONTROLADOR 9.6: NAVEGACION.MOSTRAR_UBICACION_POLYLINE
         // Muestra ubicación del usuario y polyline hasta próximo destino
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.MOSTRAR_UBICACION_POLYLINE, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[MOSTRAR_UBICACION_POLYLINE][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -7647,7 +7656,7 @@
         // CONTROLADOR 10: NAVEGACION.CAMBIO_PARADA
         // Coordina cambios de parada solicitando datos a hijos expertos
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA]`;
             
             try {
@@ -8061,7 +8070,7 @@
         // CONTROLADOR (nuevo): NAVEGACION.CAMBIO_PARADA_CONFIRMADO
         // Maneja confirmaciones desde hijos que aceptaron/cambiaron correctamente
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA_CONFIRMADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.CAMBIO_PARADA_CONFIRMADO]`;
             try {
                 logger.info(`${logPrefix} Confirmación recibida de ${mensaje.origen}`, { datos: mensaje.datos || {} });
@@ -8089,7 +8098,7 @@
         // CONTROLADOR 10.5: NAVEGACION.LLEGADA_DETECTADA
         // Maneja detección de llegada GPS a paradas desde hijo2
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.LLEGADA_DETECTADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.LLEGADA_DETECTADA]`;
             
             try {
@@ -8178,7 +8187,7 @@
         // Recibido desde hijo2 cuando usuario está >5min fuera de rango (>50m)
         // Acción: Limpiar polylines y preparar para reactivación
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.USUARIO_FUERA_RANGO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.USUARIO_FUERA_RANGO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[USUARIO_FUERA_RANGO][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -8216,7 +8225,7 @@
         // CONTROLADOR: NAVEGACION.PARADA_COMPLETADA
         // Recibido usualmente desde hijo2 (botón ubicación o lógica local)
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.PARADA_COMPLETADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[NAVEGACION.PARADA_COMPLETADA][${mensaje?.origen || 'desconocido'}]`;
 
             try {
@@ -8288,7 +8297,7 @@
         // ============================================================
 
         // CONTROLADOR 11: RETO.COMPLETADO (Recibe de hijo4)
-        registrarControladorSeguro(TIPOS_MENSAJE.RETO.COMPLETADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.RETO.COMPLETADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.COMPLETADO]`;
             const timestamp = Date.now();
             
@@ -8451,7 +8460,7 @@
         }
 
         // CONTROLADOR 11.5: RETO.MOSTRADO (Recibe de hijo4 cuando muestra un reto)
-        registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.RETO.MOSTRADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETO.MOSTRADO]`;
             
             try {
@@ -8479,7 +8488,7 @@
         });
 
         // CONTROLADOR 12: AUDIO.ESTADO_ACTUALIZADO (Recibe de hijo3)
-        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ESTADO_ACTUALIZADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ESTADO_ACTUALIZADO]`;
             
             try {
@@ -8521,7 +8530,7 @@
 
         // CONTROLADOR 13: AUDIO.FIN_REPRODUCCION (Recibe de hijo3)
         // NOTA: Fusionado con lógica de Script 1 para evitar duplicados
-        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.FIN_REPRODUCCION, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.FIN_REPRODUCCION]`;
             
             try {
@@ -8651,7 +8660,7 @@
         });
 
         // CONTROLADOR 14: AUDIO.ERROR (Recibe de hijo3)
-        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ERROR, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.ERROR, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.ERROR]`;
             
             try {
@@ -8696,7 +8705,7 @@
         // El sistema usa RESPUESTA_PARADAS (plural) y COORDENADAS_PARADAS_RESPONSE
 
         // CONTROLADOR ADICIONAL: AUDIO.REPRODUCIR_RESPONSE (Respuesta a REPRODUCIR_REQUEST)
-        registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.AUDIO.REPRODUCIR_RESPONSE, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIO.REPRODUCIR_RESPONSE]`;
             
             try {
@@ -8738,7 +8747,7 @@
         });
 
         // CONTROLADOR ADICIONAL: DATOS.RESPUESTA_RETO (Respuesta a SOLICITAR_RETO)
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RESPUESTA_RETO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[DATOS.RESPUESTA_RETO]`;
             
             try {
@@ -8782,7 +8791,7 @@
          * Controlador: DATOS.COORDENADAS_CARGADAS
          * Descripción: Confirmación de hijo2 de que recibió las coordenadas
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_CARGADAS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_CARGADAS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[COORDENADAS_CARGADAS]`;
             
             try {
@@ -8806,7 +8815,7 @@
          * Controlador: DATOS.AUDIOS_CARGADOS
          * Descripción: Confirmación de hijo3 de que recibió los audios
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.AUDIOS_CARGADOS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.AUDIOS_CARGADOS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AUDIOS_CARGADOS]`;
             
             try {
@@ -8830,7 +8839,7 @@
          * Controlador: DATOS.RETOS_CARGADOS
          * Descripción: Confirmación de hijo4 de que recibió los retos
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RETOS_CARGADOS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.DATOS.RETOS_CARGADOS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[RETOS_CARGADOS]`;
             
             try {
@@ -8860,7 +8869,7 @@
          * Descripción: Recibe el idioma seleccionado por el usuario
          * Origen: seleccion (En-busca-del-tesoro.html)
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.IDIOMA_SELECCIONADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.IDIOMA_SELECCIONADO, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.IDIOMA]`;
             
             try {
@@ -8888,7 +8897,7 @@
          * Descripción: Recibe la aventura seleccionada por el usuario
          * Origen: seleccion (En-busca-del-tesoro.html)
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.AVENTURA_SELECCIONADA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.AVENTURA_SELECCIONADA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.AVENTURA]`;
             
             try {
@@ -9140,7 +9149,7 @@
          * Descripción: El usuario está listo para iniciar la aventura
          * Origen: seleccion (En-busca-del-tesoro.html)
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.INICIAR_AVENTURA, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.INICIAR_AVENTURA, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.INICIAR]`;
             
             console.log('🎯 [PADRE] INICIAR_AVENTURA RECIBIDO:', mensaje);
@@ -9299,7 +9308,7 @@
          * Descripción: El usuario aceptó los términos y condiciones
          * Origen: seleccion (En-busca-del-tesoro.html)
          */
-        registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.TERMINOS_ACEPTADOS, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.SELECCION.TERMINOS_ACEPTADOS, async (mensaje) => {
             const logPrefix = `${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[SELECCION.TERMINOS]`;
             
             try {
@@ -9321,7 +9330,7 @@
         // CONTROLADOR: SISTEMA.HIJO_PREPARADO
         // Recibe notificación de que un hijo completó inicialización local
         // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO, async (mensaje) => {
+        window.registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO, async (mensaje) => {
             const logPrefix = `[PADRE][HIJO_PREPARADO]`;
             try {
                 const origen = mensaje.origen || 'desconocido';
@@ -9342,6 +9351,8 @@
                 logger.error(`${logPrefix} Error procesando HIJO_PREPARADO:`, error);
             }
         });
+
+        }); // End DOMContentLoaded for additional controller registrations
 
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores Script 2 registrados`);
 
