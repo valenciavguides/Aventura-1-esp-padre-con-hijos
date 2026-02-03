@@ -27,15 +27,12 @@ function handleGeolocationError(err) {
 // ... existing code ...
 export async function registrarControladoresMapa() {
     try {
-        const { migrarManejadoresTempranos } = await import('./mensajeria.js');
-        try {
-            const migrated = migrarManejadoresTempranos();
-            logger.info('[MAPA][registrarControladores] Controladores migrados (si existían):', migrated);
-        } catch (e) {
-            logger.warn('[MAPA][registrarControladores] Error migrando manejadores tempranos:', e && e.message);
-        }
+        // migrarManejadoresTempranos ya no existe - fue deprecada
+        // Los controladores ahora se registran directamente via registrarControlador
+        // Mantener por compatibilidad pero sin hacer nada
+        logger.debug('[MAPA][registrarControladores] Migración de controladores ya no necesaria (deprecada)');
     } catch (error) {
-        logger.warn('[MAPA][registrarControladores] No se pudo migrar controladores (import failed):', error.message);
+        logger.warn('[MAPA][registrarControladores] Error en registro:', error.message);
     }
 }
 
@@ -146,12 +143,12 @@ function verificarLlegadaADestino(posicionUsuario, elementoActual) {
     let coordenadasDestino;
     if (elementoActual.tipo === 'parada') {
         const c = _getLatLng(elementoActual.ubicacion || elementoActual);
-        coordenadasDestino = c ? c : { lat: elementoActual.lat, lng: elementoActual.lng };
+        coordenadasDestino = c || { lat: elementoActual.lat, lng: elementoActual.lng };
     } else if (elementoActual.waypoints && elementoActual.waypoints.length > 0) {
         // Para tramos, usar el último waypoint como destino
         const ultimoWaypoint = elementoActual.waypoints[elementoActual.waypoints.length - 1];
         const c = _getLatLng(ultimoWaypoint);
-        coordenadasDestino = c ? c : { lat: ultimoWaypoint.lat, lng: ultimoWaypoint.lng };
+        coordenadasDestino = c || { lat: ultimoWaypoint.lat, lng: ultimoWaypoint.lng };
     } else {
         logger.error('❌ verificarLlegadaADestino: elemento sin coordenadas válidas', elementoActual);
         return false;
@@ -227,7 +224,7 @@ const estadoMapa = {
 // Variable de control para navigator.geolocation.watchPosition
 // (necesaria para clearWatch pero el estado real está en estadoMapa)
 let gpsWatchId = null;
-// NOTE: GPS warmup implementation removed — main GPS will be started on demand
+// NOTA: Implementación de precalentamiento GPS eliminada — el GPS principal se iniciará bajo demanda
 
 /**
  * Sincroniza el estado GPS local (estadoMapa) con el estado global del padre
@@ -653,7 +650,7 @@ export async function inicializarMapa(config = {}) {
         throw new Error(`No se pudo verificar/reparar el contenedor #${containerId}`);
     }
 
-    // Check if map is already initialized via the service
+    // Verificar si el mapa ya está inicializado a través del servicio
     if (estaInicializado()) {
         logger.info('Usando instancia existente del mapa');
         return await ejecutarOperacionMapa(mapa => mapa);
@@ -719,7 +716,7 @@ async function esperarElementoVisible(selector, timeout = 5000) {
                 element.style.height = element.style.height || '400px';
                 element.style.width = element.style.width || '100%';
                 
-                // Give a short delay to apply styles then resolve
+                // Dar un breve retraso para aplicar estilos y luego resolver
                 setTimeout(() => resolve(element), 100);
                 return;
             }
@@ -807,11 +804,8 @@ export function limpiarRecursos() {
 
         // Limpiar todas las capas adicionales del mapa (excepto la base)
         _mapaInstance.eachLayer((layer) => {
-            if (layer !== _mapaInstance.getPane('tilePane') && layer !== _mapaInstance.getPane('overlayPane')) {
-                // Solo remover capas que no sean la base del mapa
-                if (layer.options && !layer.options.attribution) {
-                    _mapaInstance.removeLayer(layer);
-                }
+            if (layer !== _mapaInstance.getPane('tilePane') && layer !== _mapaInstance.getPane('overlayPane') && layer.options && !layer.options.attribution) {
+                _mapaInstance.removeLayer(layer);
             }
         });
 
@@ -3707,7 +3701,7 @@ try {
 
 // Integration tests removed from production code (was: probarFlujosError)
 
-// Call tests in initialization if in test environment
+// Llamar pruebas en inicialización si está en entorno de prueba
 /**
  * Standardize error handling using centralized logger
  * Replace console.error with logger.error throughout
@@ -3778,7 +3772,7 @@ async function iniciarGPSAventura() {
         logger.info(`${logPrefix} Activando GPS centralizado del padre para modo aventura`);
 
         // Always start GPS via the parent's central activation flow; do not reuse any
-        // low-power warmup watches — we removed the warmup implementation.
+        // observaciones de precalentamiento de baja potencia — eliminamos la implementación de precalentamiento.
 
         // Actualizar estado GPS directamente (estadoMapa es la única fuente de verdad)
         estadoMapa.gpsActivo = true;
@@ -3800,7 +3794,7 @@ async function iniciarGPSAventura() {
  * Inicia un watchPosition de bajo coste para 'precalentar' el GPS (no marca gpsActivo)
  * @returns {Promise<{started:boolean, watchId:number|null}>}
  */
-// GPS warmup removed: implementation intentionally omitted
+// Precalentamiento GPS eliminado: implementación omitida intencionalmente
 
 /**
  * Pausa (sin destruir) el warmup GPS: detiene el watch pero marca el warmup
