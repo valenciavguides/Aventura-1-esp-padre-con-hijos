@@ -248,8 +248,8 @@ codigo-padre.html:
   4. Inicializa mapa
   5. Carga iframe selección
 
-HANDSHAKE CON SELECCIÓN:
-========================
+HANDSHAKE CON SELECCIÓN (PATRÓN ESTANDARIZADO):
+================================================
 seleccion                                    padre
     │                                           │
     │──── SISTEMA.HIJO_PREPARADO ──────────────▶│
@@ -257,11 +257,14 @@ seleccion                                    padre
     │◀─── SISTEMA.PADRE_PIDE_MANEJADORES ──────│
     │──── SISTEMA.HIJO_MANEJADORES ────────────▶│
     │◀─── SISTEMA.PADRE_APLICA_MANEJADORES ────│
-    │◀─── SISTEMA.PADRE_LISTO ─────────────────│
+    │◀─── SISTEMA.PADRE_DATOS ─────────────────│  ← Mensaje estandarizado (antes era PADRE_LISTO)
     │──── SISTEMA.HIJO_LISTO ──────────────────▶│
     │◀─── SISTEMA.PADRE_CONFIRMA_HIJO_LISTO ───│
     │                                           │
     [Usuario ve pantalla de selección]          │
+
+NOTA: PADRE_LISTO se mantiene para compatibilidad pero HIJO_LISTO
+      solo se envía en respuesta a PADRE_DATOS para evitar duplicados.
 
 SELECCIÓN DE AVENTURA:
 ======================
@@ -272,13 +275,13 @@ seleccion                                    padre
     │                                           │
     │                    [padre carga hijos 1-5]│
 
-HANDSHAKE CON CADA HIJO (x5):
-=============================
+HANDSHAKE CON CADA HIJO (x5) - PATRÓN ESTANDARIZADO:
+====================================================
 hijo(N)                                      padre
     │                                           │
     │──── SISTEMA.HIJO_PREPARADO ──────────────▶│
     │◀─── SISTEMA.ACK ─────────────────────────│
-    │◀─── SISTEMA.PADRE_DATOS ─────────────────│
+    │◀─── SISTEMA.PADRE_DATOS ─────────────────│  ← Envía HIJO_LISTO SOLO aquí
     │──── SISTEMA.HIJO_LISTO ──────────────────▶│
     │◀─── SISTEMA.PADRE_CONFIRMA_HIJO_LISTO ───│
     │                                           │
@@ -314,3 +317,5 @@ padre                                        hijos
 5. **Carga diferida de hijos**: Los hijos funcionales (1-5) solo se cargan DESPUÉS de que el usuario selecciona aventura, optimizando el tiempo de carga inicial.
 
 6. **UI bloqueada hasta confirmación**: Cada hijo oculta su UI con `mostrarUI()` hasta recibir `PADRE_CONFIRMA_HIJO_LISTO`, evitando que el usuario vea elementos parcialmente cargados.
+
+7. **Patrón estandarizado PADRE_DATOS → HIJO_LISTO**: Todos los hijos envían `HIJO_LISTO` únicamente en respuesta a `PADRE_DATOS` (no `PADRE_LISTO`). Esto crea consistencia y evita mensajes duplicados. Cada hijo tiene un flag `hijoListoEnviado` para garantizar un solo envío.

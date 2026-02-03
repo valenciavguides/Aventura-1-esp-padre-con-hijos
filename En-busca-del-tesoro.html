@@ -584,8 +584,9 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             logger.debug(`${logPrefix} Registrando controladores...`);
 
             // ============================================================
-            // CONTROLADOR 1: SISTEMA.PADRE_LISTO
+            // CONTROLADOR 1: SISTEMA.PADRE_LISTO (mantenido para compatibilidad)
             // ============================================================
+            // NOTA: HIJO_LISTO ahora se envía en PADRE_DATOS para consistencia con otros hijos
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
                 const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
                 
@@ -611,27 +612,8 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                         }
                     }
 
-                    // Enviar HIJO_LISTO al padre (solo si no se ha enviado antes)
-                    if (!estadoComponente.hijoListoEnviado) {
-                        try {
-                            await enviarMensaje({
-                                destino: getPadreId(),
-                                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                                origen: CONFIG_HIJO.IFRAME_ID,
-                                datos: {
-                                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                                    capacidades: ['seleccion', 'idioma', 'aventura'],
-                                    timestamp: Date.now()
-                                }
-                            });
-                            estadoComponente.hijoListoEnviado = true;
-                            logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
-                        } catch (error) {
-                            logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
-                        }
-                    } else {
-                        logger.debug(`${controladorPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
-                    }
+                    // HIJO_LISTO se envía en PADRE_DATOS para consistencia
+                    logger.debug(`${controladorPrefix} Datos procesados (HIJO_LISTO se envía en PADRE_DATOS)`);
 
                 } catch (error) {
                     logger.error(`${controladorPrefix} Error procesando PADRE_LISTO:`, error);
@@ -641,8 +623,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             // ============================================================
             // CONTROLADOR: SISTEMA.PADRE_DATOS
             // ============================================================
-            // NOTA: NO enviar HIJO_LISTO aquí - ya se envía en PADRE_LISTO
-            // Este controlador solo procesa los datos adicionales del padre
+            // Este es el punto de envío estandarizado de HIJO_LISTO para todos los hijos
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
                 const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_DATOS]`;
                 
@@ -667,9 +648,28 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                         }
                     }
 
-                    // HIJO_LISTO ya se envía en el controlador PADRE_LISTO
-                    // No enviar duplicado aquí para evitar mensajes redundantes
-                    logger.debug(`${controladorPrefix} Datos procesados (HIJO_LISTO ya enviado por PADRE_LISTO)`);
+                    // Enviar HIJO_LISTO al padre (solo si no se ha enviado antes)
+                    // Este es el punto de envío estandarizado para todos los hijos
+                    if (!estadoComponente.hijoListoEnviado) {
+                        try {
+                            await enviarMensaje({
+                                destino: getPadreId(),
+                                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
+                                origen: CONFIG_HIJO.IFRAME_ID,
+                                datos: {
+                                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                                    capacidades: ['seleccion', 'idioma', 'aventura'],
+                                    timestamp: Date.now()
+                                }
+                            });
+                            estadoComponente.hijoListoEnviado = true;
+                            logger.info(`${controladorPrefix} HIJO_LISTO enviado al padre`);
+                        } catch (error) {
+                            logger.error(`${controladorPrefix} Error enviando HIJO_LISTO:`, error);
+                        }
+                    } else {
+                        logger.debug(`${controladorPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
+                    }
 
                 } catch (error) {
                     logger.error(`${controladorPrefix} Error procesando PADRE_DATOS:`, error);
