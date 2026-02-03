@@ -1,261 +1,386 @@
 /**
- * Módulo para validación centralizada en la aplicación
- * @module Validacion
+ * @fileoverview Sistema de validación para ValenciaVGuides
  * @version 2.0.0
- * @description Proporciona funciones de validación reutilizables
- * para formularios, entradas de usuario y estructuras de datos.
+ * 
+ * Proporciona funciones de validación para datos, mensajes y parámetros.
  */
 
-import logger from './logger.js';
-import { TIPOS_MENSAJE } from './constants.js';
-
-/**
- * Errores de validación estándar
- * @readonly
- * @enum {string}
- */
-export const ERRORES_VALIDACION = {
-    CAMPO_REQUERIDO: 'Este campo es obligatorio',
-    FORMATO_INVALIDO: 'El formato no es válido',
-    LONGITUD_MINIMA: 'El texto es demasiado corto',
-    LONGITUD_MAXIMA: 'El texto es demasiado largo',
-    VALOR_MINIMO: 'El valor es menor que el mínimo permitido',
-    VALOR_MAXIMO: 'El valor es mayor que el máximo permitido',
-    EMAIL_INVALIDO: 'El correo electrónico no es válido',
-    URL_INVALIDA: 'La URL no es válida',
-    FECHA_INVALIDA: 'La fecha no es válida',
-    PATRON_NO_COINCIDE: 'El valor no cumple con el formato requerido'
-};
+import { TIPOS_MENSAJE, ERRORES } from './constants.js';
 
 /**
- * Expresiones regulares comunes
+ * Validadores disponibles por tipo
+ * @type {Object<string, Function>}
  */
-export const PATRONES = {
-    EMAIL: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    TELEFONO: /^\+?[\d\s-]{6,15}$/,
-    CODIGO_POSTAL: /^\d{5}(-\d{4})?$/, // Código postal español
-    URL: /^(https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w- .\/?%&=]*)?$/,
-    SOLO_TEXTO: /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/
-};
-
-/**
- * Valida un campo de texto contra una expresión regular
- * @param {HTMLInputElement} campo - Elemento de entrada a validar
- * @param {Object} opciones - Opciones de validación
- * @param {RegExp} [opciones.patron] - Expresión regular para validar
- * @param {boolean} [opciones.requerido=true] - Si el campo es obligatorio
- * @param {number} [opciones.minLongitud] - Longitud mínima permitida
- * @param {number} [opciones.maxLongitud] - Longitud máxima permitida
- * @param {string} [opciones.mensajeError] - Mensaje de error personalizado
- * @returns {{valido: boolean, error?: string}} Resultado de la validación
- */
-export function validarCampoTexto(campo, { 
-    patron, 
-    requerido = true, 
-    minLongitud, 
-    maxLongitud, 
-    mensajeError 
-} = {}) {
-    try {
-        // Validar parámetros
-        if (!(campo instanceof HTMLInputElement) && !(campo instanceof HTMLTextAreaElement)) {
-            throw new Error('El campo debe ser un elemento de entrada de texto');
+const validadores = {
+    string: (valor) => typeof valor === 'string',
+    number: (valor) => typeof valor === 'number' && !isNaN(valor),
+    boolean: (valor) => typeof valor === 'boolean',
+    array: (valor) => Array.isArray(valor),
+    object: (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor),
+    function: (valor) => typeof valor === 'function',
+    
+    // Validadores específicos
+    email: (valor) => typeof valor === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor),
+    url: (valor) => {
+        try {
+            new URL(valor);
+            return true;
+        } catch {
+            return false;
         }
+    },
+    coordenadas: (valor) => {
+        if (!valor || typeof valor !== 'object') return false;
+        const { lat, lng, latitude, longitude } = valor;
+        const latVal = lat !== undefined ? lat : latitude;
+        const lngVal = lng !== undefined ? lng : longitude;
+        return typeof latVal === 'number' && typeof lngVal === 'number' &&
+               latVal >= -90 && latVal <= 90 &&
+               lngVal >= -180 && lngVal <= 180;
+    },
+    tipoMensaje: (valor) => typeof valor === 'string' && Object.values(TIPOS_MENSAJE).includes(valor),
+    idUnico: (valor) => typeof valor === 'string' && valor.length > 0 && /^[a-zA-Z0-9_-]+$/.test(valor),
+    positivo: (valor) => typeof valor === 'number' && valor > 0,
+    noNegativo: (valor) => typeof valor === 'number' && valor >= 0,
+    noVacio: (valor) => {
+        if (typeof valor === 'string') return valor.trim().length > 0;
+        if (Array.isArray(valor)) return valor.length > 0;
+        if (typeof valor === 'object' && valor !== null) return Object.keys(valor).length > 0;
+        return valor !== null && valor !== undefined;
+    }
+};
 
-        const valor = campo.value.trim();
+/**
+ * Valida un dato según su tipo esperado
+ * @param {*} valor - Valor a validar
+ * @param {string} tipo - Tipo esperado
+ * @param {Object} [opciones] - Opciones adicionales
+ * @param {boolean} [opciones.requerido=true] - Si el valor es requerido
+ * @param {*} [opciones.defecto] - Valor por defecto si no pasa validación
+ * @param {Function} [opciones.transformar] - Función para transformar el valor
+ * @param {number} [opciones.min] - Valor mínimo (para números/strings/arrays)
+ * @param {number} [opciones.max] - Valor máximo
+ * @returns {Object} Resultado de validación { valido, valor, error }
+ */
+export function validarDato(valor, tipo, opciones = {}) {
+    const { requerido = true, defecto, transformar, min, max } = opciones;
+    
+    // Verificar si está vacío
+    const estaVacio = valor === null || valor === undefined || 
+                      (typeof valor === 'string' && valor.trim() === '');
+    
+    if (estaVacio) {
+        if (!requerido) {
+            return {
+                valido: true,
+                valor: defecto !== undefined ? defecto : valor,
+                error: null
+            };
+        }
+        return {
+            valido: false,
+            valor,
+            error: `El valor es requerido`
+        };
+    }
+    
+    // Obtener validador
+    const validador = validadores[tipo];
+    if (!validador) {
+        return {
+            valido: false,
+            valor,
+            error: `Tipo de validación desconocido: ${tipo}`
+        };
+    }
+    
+    // Validar tipo
+    if (!validador(valor)) {
+        return {
+            valido: false,
+            valor,
+            error: `Se esperaba tipo "${tipo}"`
+        };
+    }
+    
+    // Validar min/max
+    if (min !== undefined || max !== undefined) {
+        let longitudValor;
+        if (typeof valor === 'number') {
+            longitudValor = valor;
+        } else if (typeof valor === 'string' || Array.isArray(valor)) {
+            longitudValor = valor.length;
+        }
         
-        // Validar campo requerido
-        if (requerido && !valor) {
-            return {
-                valido: false,
-                error: mensajeError || ERRORES_VALIDACION.CAMPO_REQUERIDO
-            };
-        }
-
-        // Validar longitud mínima
-        if (minLongitud !== undefined && valor.length < minLongitud) {
-            return {
-                valido: false,
-                error: mensajeError || `${ERRORES_VALIDACION.LONGITUD_MINIMA} (mínimo ${minLongitud} caracteres)`
-            };
-        }
-
-        // Validar longitud máxima
-        if (maxLongitud !== undefined && valor.length > maxLongitud) {
-            return {
-                valido: false,
-                error: mensajeError || `${ERRORES_VALIDACION.LONGITUD_MAXIMA} (máximo ${maxLongitud} caracteres)`
-            };
-        }
-
-        // Validar patrón
-        if (patron && valor && !patron.test(valor)) {
-            return {
-                valido: false,
-                error: mensajeError || ERRORES_VALIDACION.PATRON_NO_COINCIDE
-            };
-        }
-
-        return { valido: true };
-    } catch (error) {
-        logger.error('Error en validarCampoTexto', { error, campo });
-        return {
-            valido: false,
-            error: 'Error al validar el campo'
-        };
-    }
-}
-
-/**
- * Valida un formulario completo
- * @param {HTMLFormElement} formulario - Formulario a validar
- * @param {Object} validaciones - Objeto con las validaciones por campo
- * @returns {{valido: boolean, errores: Object.<string, string>}} Resultado de la validación
- */
-export function validarFormulario(formulario, validaciones) {
-    const errores = {};
-    let esValido = true;
-
-    try {
-        if (!(formulario instanceof HTMLFormElement)) {
-            throw new Error('El formulario debe ser un elemento HTMLFormElement');
-        }
-
-        // Validar cada campo del formulario
-        Object.entries(validaciones).forEach(([nombreCampo, opciones]) => {
-            const campo = formulario.elements[nombreCampo];
-            
-            if (!campo) {
-                logger.warn(`Campo no encontrado: ${nombreCampo}`);
-                return;
+        if (longitudValor !== undefined) {
+            if (min !== undefined && longitudValor < min) {
+                return {
+                    valido: false,
+                    valor,
+                    error: `El valor debe ser al menos ${min}`
+                };
             }
-
-            const resultado = validarCampoTexto(campo, opciones);
-            
-            if (!resultado.valido) {
-                esValido = false;
-                errores[nombreCampo] = resultado.error;
-                
-                // Establecer mensaje de validación personalizado
-                campo.setCustomValidity(resultado.error);
-                campo.reportValidity();
-            } else {
-                // Limpiar mensaje de validación si el campo es válido
-                campo.setCustomValidity('');
+            if (max !== undefined && longitudValor > max) {
+                return {
+                    valido: false,
+                    valor,
+                    error: `El valor debe ser como máximo ${max}`
+                };
             }
-        });
-
-        return { valido: esValido, errores };
-    } catch (error) {
-        logger.error('Error en validarFormulario', { error, formulario });
-        return {
-            valido: false,
-            errores: { _error: 'Error al validar el formulario' }
-        };
-    }
-}
-
-/**
- * Registra validaciones en un formulario existente.
- * @param {HTMLFormElement} formulario - Formulario a validar.
- * @param {Array<{ campoId: string, regex: RegExp, mensajeError: string }>} validaciones - Reglas de validación.
- * @returns {boolean} - True si las validaciones se registraron correctamente, false en caso contrario.
- */
-export function registrarValidacionesFormulario(formulario, validaciones) {
-    if (!formulario || !(formulario instanceof HTMLFormElement)) {
-        logger.error('El formulario proporcionado no es válido.');
-        return false;
-    }
-
-    if (!Array.isArray(validaciones)) {
-        logger.error('Las validaciones deben ser un array.');
-        return false;
-    }
-
-    validaciones.forEach(({ campoId, regex, mensajeError }) => {
-        const campo = formulario.querySelector(`#${campoId}`);
-        if (campo) {
-            campo.addEventListener('input', () => validarCampoTexto(campo, { patron: regex, mensajeError }));
-        } else {
-            logger.warn(`Campo con ID "${campoId}" no encontrado en el formulario.`);
         }
-    });
-
-    return true;
+    }
+    
+    // Transformar si es necesario
+    let valorFinal = valor;
+    if (transformar && typeof transformar === 'function') {
+        try {
+            valorFinal = transformar(valor);
+        } catch (e) {
+            return {
+                valido: false,
+                valor,
+                error: `Error al transformar valor: ${e.message}`
+            };
+        }
+    }
+    
+    return {
+        valido: true,
+        valor: valorFinal,
+        error: null
+    };
 }
 
 /**
- * Valida coordenadas geográficas (latitud y longitud)
- * @param {Object} coordenadas - Objeto con latitud y longitud
- * @param {number} coordenadas.lat - Latitud en grados decimales
- * @param {number} coordenadas.lng - Longitud en grados decimales (también acepta 'lon')
- * @returns {boolean} True si las coordenadas son válidas
+ * Valida un mensaje del sistema
+ * @param {Object} mensaje - Mensaje a validar
+ * @returns {Object} Resultado { valido, errores }
  */
-export function validarCoordenadas(coordenadas) {
-    if (!coordenadas || typeof coordenadas !== 'object') {
-        return false;
+export function validarMensaje(mensaje) {
+    const errores = [];
+    
+    if (!mensaje || typeof mensaje !== 'object') {
+        return { valido: false, errores: ['El mensaje debe ser un objeto'] };
     }
+    
+    // Validar tipo
+    if (!mensaje.tipo) {
+        errores.push('El mensaje debe tener un tipo');
+    } else if (!validadores.tipoMensaje(mensaje.tipo)) {
+        // Permitir tipos custom que empiecen con ciertos prefijos
+        const prefijosPermitidos = ['CUSTOM_', 'TEST_', 'DEBUG_'];
+        const esCustom = prefijosPermitidos.some(p => mensaje.tipo.startsWith(p));
+        if (!esCustom) {
+            errores.push(`Tipo de mensaje no reconocido: ${mensaje.tipo}`);
+        }
+    }
+    
+    // Validar timestamp
+    if (mensaje.timestamp && typeof mensaje.timestamp !== 'number') {
+        errores.push('El timestamp debe ser un número');
+    }
+    
+    // Validar id si existe
+    if (mensaje.id && typeof mensaje.id !== 'string') {
+        errores.push('El id del mensaje debe ser un string');
+    }
+    
+    return {
+        valido: errores.length === 0,
+        errores
+    };
+}
 
-    const lat = coordenadas.lat;
-    const lng = coordenadas.lng || coordenadas.lon;
-
-    // Verificar que lat y lng sean números
+/**
+ * Valida coordenadas geográficas
+ * @param {Object} coords - Coordenadas a validar
+ * @returns {Object} Resultado { valido, error, coordenadas }
+ */
+export function validarCoordenadas(coords) {
+    if (!coords || typeof coords !== 'object') {
+        return { valido: false, error: 'Coordenadas inválidas', coordenadas: null };
+    }
+    
+    const lat = coords.lat !== undefined ? coords.lat : coords.latitude;
+    const lng = coords.lng !== undefined ? coords.lng : coords.longitude;
+    
     if (typeof lat !== 'number' || typeof lng !== 'number') {
-        return false;
+        return { valido: false, error: 'Latitud y longitud deben ser números', coordenadas: null };
     }
-
-    // Verificar que no sean NaN
-    if (isNaN(lat) || isNaN(lng)) {
-        return false;
-    }
-
-    // Verificar rangos geográficos
-    // Latitud: -90 a 90 grados
+    
     if (lat < -90 || lat > 90) {
-        return false;
+        return { valido: false, error: 'Latitud fuera de rango (-90 a 90)', coordenadas: null };
     }
-
-    // Longitud: -180 a 180 grados
+    
     if (lng < -180 || lng > 180) {
-        return false;
+        return { valido: false, error: 'Longitud fuera de rango (-180 a 180)', coordenadas: null };
     }
-
-    return true;
+    
+    // Verificar que no sean coordenadas nulas (0,0)
+    if (lat === 0 && lng === 0) {
+        return { valido: false, error: 'Coordenadas en origen (posible error)', coordenadas: null };
+    }
+    
+    return {
+        valido: true,
+        error: null,
+        coordenadas: { lat, lng }
+    };
 }
 
 /**
- * Normaliza distintos formatos de coordenadas a { lat, lng } o devuelve null si no válidas
- * Acepta: [lat, lng], {lat, lng}, {lat, lon}, strings numéricas
- * @param {Array|Object|string} input
- * @returns {{lat:number,lng:number}|null}
+ * Valida los datos de una parada
+ * @param {Object} parada - Parada a validar
+ * @returns {Object} Resultado { valido, errores, parada }
  */
-export function normalizarCoordenadas(input) {
-    if (input == null) return null;
-    try {
-        if (Array.isArray(input) && input.length >= 2) {
-            const lat = Number(input[0]);
-            const lng = Number(input[1]);
-            if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-            return null;
-        }
-        if (typeof input === 'object') {
-            const lat = input.lat !== undefined ? Number(input.lat) : undefined;
-            const lng = input.lng !== undefined ? Number(input.lng) : (input.lon !== undefined ? Number(input.lon) : undefined);
-            if (lat !== undefined && lng !== undefined && Number.isFinite(lat) && Number.isFinite(lng)) {
-                return { lat, lng };
-            }
-            return null;
-        }
-        if (typeof input === 'string') {
-            const parts = input.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-            if (parts.length >= 2) {
-                const lat = Number(parts[0]);
-                const lng = Number(parts[1]);
-                if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-            }
-        }
-    } catch (e) {
-        // ignore
+export function validarParada(parada) {
+    const errores = [];
+    
+    if (!parada || typeof parada !== 'object') {
+        return { valido: false, errores: ['La parada debe ser un objeto'], parada: null };
     }
-    return null;
+    
+    // ID es requerido
+    if (!parada.id && !parada.ID && !parada.parada_id) {
+        errores.push('La parada debe tener un ID');
+    }
+    
+    // Coordenadas opcionales pero si existen deben ser válidas
+    if (parada.coordenadas || parada.coords) {
+        const validacionCoords = validarCoordenadas(parada.coordenadas || parada.coords);
+        if (!validacionCoords.valido) {
+            errores.push(`Coordenadas inválidas: ${validacionCoords.error}`);
+        }
+    }
+    
+    return {
+        valido: errores.length === 0,
+        errores,
+        parada: errores.length === 0 ? parada : null
+    };
 }
+
+/**
+ * Valida un objeto según un schema
+ * @param {Object} objeto - Objeto a validar
+ * @param {Object} schema - Schema de validación
+ * @returns {Object} Resultado { valido, errores, datos }
+ */
+export function validarSchema(objeto, schema) {
+    const errores = [];
+    const datos = {};
+    
+    if (!objeto || typeof objeto !== 'object') {
+        return { valido: false, errores: ['Se esperaba un objeto'], datos: null };
+    }
+    
+    for (const [campo, reglas] of Object.entries(schema)) {
+        const valor = objeto[campo];
+        const { tipo, requerido = true, defecto, min, max, validar: validadorCustom } = reglas;
+        
+        // Validación básica
+        const resultado = validarDato(valor, tipo, { requerido, defecto, min, max });
+        
+        if (!resultado.valido) {
+            errores.push(`${campo}: ${resultado.error}`);
+        } else if (validadorCustom && typeof validadorCustom === 'function') {
+            // Validador custom adicional
+            const errorCustom = validadorCustom(resultado.valor);
+            if (errorCustom) {
+                errores.push(`${campo}: ${errorCustom}`);
+            } else {
+                datos[campo] = resultado.valor;
+            }
+        } else {
+            datos[campo] = resultado.valor;
+        }
+    }
+    
+    return {
+        valido: errores.length === 0,
+        errores,
+        datos: errores.length === 0 ? datos : null
+    };
+}
+
+/**
+ * Sanitiza un string para prevenir XSS
+ * @param {string} str - String a sanitizar
+ * @returns {string} String sanitizado
+ */
+export function sanitizarString(str) {
+    if (typeof str !== 'string') return '';
+    
+    const mapa = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '/': '&#x2F;'
+    };
+    
+    return str.replace(/[&<>"'/]/g, char => mapa[char]);
+}
+
+/**
+ * Sanitiza un objeto recursivamente
+ * @param {Object} obj - Objeto a sanitizar
+ * @returns {Object} Objeto sanitizado
+ */
+export function sanitizarObjeto(obj) {
+    if (typeof obj === 'string') {
+        return sanitizarString(obj);
+    }
+    
+    if (Array.isArray(obj)) {
+        return obj.map(item => sanitizarObjeto(item));
+    }
+    
+    if (obj !== null && typeof obj === 'object') {
+        const resultado = {};
+        for (const [key, value] of Object.entries(obj)) {
+            resultado[sanitizarString(key)] = sanitizarObjeto(value);
+        }
+        return resultado;
+    }
+    
+    return obj;
+}
+
+/**
+ * Registra un validador personalizado
+ * @param {string} nombre - Nombre del validador
+ * @param {Function} fn - Función validadora
+ */
+export function registrarValidador(nombre, fn) {
+    if (typeof nombre !== 'string' || typeof fn !== 'function') {
+        throw new Error('Nombre debe ser string y fn debe ser función');
+    }
+    validadores[nombre] = fn;
+}
+
+// Exponer para debugging
+if (typeof window !== 'undefined') {
+    window.__vv_validacion = {
+        validarDato,
+        validarMensaje,
+        validarCoordenadas,
+        validarParada,
+        validarSchema,
+        sanitizarString,
+        sanitizarObjeto,
+        registrarValidador
+    };
+}
+
+export default {
+    validarDato,
+    validarMensaje,
+    validarCoordenadas,
+    validarParada,
+    validarSchema,
+    sanitizarString,
+    sanitizarObjeto,
+    registrarValidador
+};
