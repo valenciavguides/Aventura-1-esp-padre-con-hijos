@@ -4589,6 +4589,44 @@
                     }
                 }
                 
+                // 🔥 REENVÍO DE CAMBIOS DE MODO PENDIENTES
+                // Si hay cambios de modo pendientes para este hijo, reenviarlos
+                try {
+                    if (typeof window.pendingModeChanges !== 'undefined' && window.pendingModeChanges.has(hijoId)) {
+                        const pending = window.pendingModeChanges.get(hijoId);
+                        logger.info(`${logPrefix} [CAMBIO_MODO][RESEND] HIJO_LISTO de ${hijoId}, reenviando CAMBIO_MODO pendiente (intentos=${pending.intentos})`);
+                        try {
+                            if (typeof enviarMensaje_S1 === 'function') {
+                                await enviarMensaje_S1({
+                                    destino: hijoId,
+                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
+                                    origen: getPadreId(),
+                                    datos: {
+                                        modo: pending.modo,
+                                        ...pending.datos,
+                                        secuenciaCompleta: true // Forzar bandera
+                                    }
+                                });
+                                window.pendingModeChanges.delete(hijoId);
+                                logger.success(`${logPrefix} [CAMBIO_MODO][RESEND] CAMBIO_MODO pendiente reenviado exitosamente a ${hijoId}`);
+                            } else {
+                                logger.warn(`${logPrefix} [CAMBIO_MODO][RESEND] enviarMensaje_S1 no disponible para reenviar CAMBIO_MODO pendiente`);
+                            }
+                        } catch (sendErr) {
+                            logger.warn(`${logPrefix} [CAMBIO_MODO][RESEND] Error reenviando CAMBIO_MODO a ${hijoId} tras HIJO_LISTO:`, sendErr);
+                            // update nextAttemptAt to retry later
+                            const intentos = Math.min((pending.intentos || 0) + 1, (window.MODE_RETRY_MAX_INTENTOS || 5));
+                            window.pendingModeChanges.set(hijoId, {
+                                ...pending,
+                                intentos,
+                                nextAttemptAt: Date.now() + (window._computeBackoff ? window._computeBackoff(intentos) : (intentos * 1000))
+                            });
+                        }
+                    }
+                } catch (reenvioError) {
+                    logger.warn(`${logPrefix} [CAMBIO_MODO][RESEND] Error procesando reenvío de CAMBIO_MODO tras HIJO_LISTO:`, reenvioError);
+                }
+                
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando hijo listo:`, error);
             }
