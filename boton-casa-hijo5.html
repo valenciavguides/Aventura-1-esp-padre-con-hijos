@@ -968,23 +968,12 @@
 
         // No necesitamos inicializarMensajeria aquí, los fallbacks esperan automáticamente
 
-        // Enviar HIJO_PREPARADO para iniciar handshake
-        logger.info(`Hijo hijo5 enviando HIJO_PREPARADO`);
-        await enviarMensaje({
-            destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            datos: {
-                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                version: '1.0.0',
-                capacidades: ['modo-selector', 'gps', 'paradas-list'],
-                timestamp: Date.now()
-            }
-        });
-        console.log(`✅ [hijo5] HIJO_PREPARADO enviado`);
+        // NOTA: HIJO_PREPARADO se envía MÁS ABAJO, DESPUÉS de registrar todos los controladores críticos.
+        // Esto garantiza que el padre no envíe PADRE_DATOS antes de que los controladores estén listos.
+        // Ver: "// Enviar HIJO_PREPARADO y esperar PADRE_DATOS antes de enviar HIJO_LISTO"
 
         // INICIALIZACIÓN ASÍNCRONA: Esperar datos del padre antes de activar UI
-        console.log(`🏠 [hijo5] ESPERANDO DATOS DEL PADRE PARA INICIALIZACIÓN`);
+        console.log(`🏠 [hijo5] REGISTRANDO CONTROLADORES ANTES DE ENVIAR HIJO_PREPARADO`);
         // No activar modo ni generar botones hasta recibir RESPUESTA_DATOS_PARADAS
 
         // ============================================

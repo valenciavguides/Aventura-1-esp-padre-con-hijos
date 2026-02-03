@@ -1613,23 +1613,9 @@ try {
 
     // No necesitamos inicializarMensajeria aquí, los fallbacks esperan automáticamente
 
-    // Enviar HIJO_PREPARADO y esperar PADRE_DATOS antes de enviar HIJO_LISTO
-    try {
-        await enviarMensaje({
-            destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.HIJO_PREPARADO,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            datos: {
-                componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                version: '1.0.0',
-                capacidades: ['navegacion', 'coordenadas'],
-                timestamp: Date.now()
-            }
-        });
-        logger.debug('[hijo2] HIJO_PREPARADO enviado; esperando PADRE_DATOS');
-    } catch (e) {
-        logger.warn('[hijo2] Error enviando HIJO_PREPARADO:', e);
-    }
+    // NOTA: HIJO_PREPARADO se envía MÁS ABAJO, DESPUÉS de registrar todos los controladores críticos.
+    // Esto garantiza que el padre no envíe PADRE_DATOS antes de que los controladores estén listos.
+    // Ver: "// Enviar HIJO_PREPARADO para indicar que estamos listos para recibir datos del padre"
 
     // ==================== CONTROLADORES DE DATOS (hijo2 es el experto en coordenadas) ====================
     
