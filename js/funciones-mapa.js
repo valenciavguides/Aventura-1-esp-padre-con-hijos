@@ -1,6 +1,12 @@
 /**
  * Módulo que maneja la visualización del mapa y la interacción con las paradas
  * Se comunica con el padre a través del sistema de mensajería
+ * 
+ * DEPENDENCIAS CRÍTICAS (deben cargarse ANTES):
+ * - constants.js
+ * - logger.js  
+ * - utils.js
+ * - mensajeria.js (OBLIGATORIO - sin esto el módulo no puede comunicarse)
  */
 
 // Importar mensajería y configuración
@@ -3410,74 +3416,7 @@ export function registrarManejadoresMensajes() {
         registrarControlador(TIPOS_MENSAJE.MAPA.CLEAR_LAYERS, manejarClearLayers);
         
         // Controlador para solicitar paradas con proximidad avanzada
-        registrarControlador(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
-            const logPrefix = `[funciones-mapa][SOLICITAR_PARADAS][${mensaje?.origen || 'desconocido'}]`;
-
-            try {
-                logger.debug(`${logPrefix} Solicitud de paradas con proximidad recibida`);
-
-                // Usar ubicación actual del usuario si está disponible
-                const ubicacionUsuario = estadoMapa.posicionUsuario;
-                if (!ubicacionUsuario) {
-                    logger.warn(`${logPrefix} No hay ubicación de usuario disponible, usando datos locales`);
-                    return {
-                        exito: true,
-                        paradas: arrayParadasLocal,
-                        fuente: 'local',
-                        timestamp: new Date().toISOString()
-                    };
-                }
-
-                // Enviar solicitud de proximidad a hijo2 a través del padre
-                const respuesta = await enviarMensajeConConfirmacion({
-                    tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS,
-                    origen: 'funciones-mapa',
-                    destino: getPadreId(),
-                    datos: {
-                        lat: ubicacionUsuario.lat,
-                        lng: ubicacionUsuario.lng,
-                        radio: mensaje.datos?.radio || 100, // 100m por defecto
-                        filtro: mensaje.datos?.filtro,
-                        tipo: mensaje.datos?.tipo,
-                        ordenPor: mensaje.datos?.ordenPor || 'distancia',
-                        orden: mensaje.datos?.orden || 'asc',
-                        limite: mensaje.datos?.limite,
-                        incluirEstadisticas: mensaje.datos?.incluirEstadisticas || true,
-                        soloConAudio: mensaje.datos?.soloConAudio || false,
-                        soloConImagen: mensaje.datos?.soloConImagen || false,
-                        soloConVideo: mensaje.datos?.soloConVideo || false
-                    }
-                }, ajustarTimeoutPorConexion(5000)); // Timeout ajustado según conexión
-
-                if (respuesta && respuesta.datos) {
-                    logger.info(`${logPrefix} Paradas cercanas obtenidas: ${respuesta.datos.total || 0} paradas`);
-                    return {
-                        exito: true,
-                        ...respuesta.datos,
-                        fuente: 'hijo2_proximidad'
-                    };
-                } else {
-                    logger.warn(`${logPrefix} No se recibió respuesta válida, usando datos locales`);
-                    return {
-                        exito: true,
-                        paradas: arrayParadasLocal,
-                        fuente: 'local_fallback',
-                        timestamp: new Date().toISOString()
-                    };
-                }
-
-            } catch (error) {
-                logger.error(`${logPrefix} Error solicitando paradas con proximidad:`, error);
-                // Fallback a datos locales
-                return {
-                    exito: false,
-                    error: error.message,
-                    paradas: arrayParadasLocal,
-                    fuente: 'local_error_fallback',
-                    timestamp: new Date().toISOString()
-                };
-            }
-        });
+        // ...existing code...
         
         // Usar limpiarPorEstado como manejador para SISTEMA.ESTADO
         registrarControlador(TIPOS_MENSAJE.SISTEMA.ESTADO, limpiarPorEstado);
