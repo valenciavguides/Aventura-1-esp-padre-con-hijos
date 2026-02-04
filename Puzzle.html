@@ -213,6 +213,15 @@ effectCanvas.style.zIndex = "10"; // Asegura que esté por encima del canvas del
 puzzleWrapper.appendChild(effectCanvas);
 
 img.onload = () => {
+    // Verificar que la imagen tiene dimensiones válidas
+    if (!img.width || !img.height || img.width <= 0 || img.height <= 0) {
+        console.error('La imagen cargó pero tiene dimensiones inválidas:', img.width, img.height);
+        const errorMsg = document.getElementById("errorMsg");
+        const errorText = document.getElementById("errorText");
+        errorText.textContent = `❌ Error: La imagen del puzzle no tiene dimensiones válidas`;
+        errorMsg.style.display = "block";
+        return;
+    }
     init();
     resizePieces(); // Asegurarse de dimensionar correctamente después de la carga
 };
@@ -227,9 +236,28 @@ img.src = imageSrc;
 window.addEventListener("resize", resizePieces);
 window.addEventListener("orientationchange", () => setTimeout(resizePieces, 300)); // Pequeño retraso para que el navegador se ajuste
 
+// Detectar cuando el puzzle se hace visible (ej. cuando se muestra la pantalla del puzzle)
+// usando IntersectionObserver para manejar iframes en contenedores inicialmente ocultos
+if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && entry.intersectionRatio > 0) {
+                // El puzzle se ha hecho visible, redimensionar
+                setTimeout(resizePieces, 100);
+            }
+        });
+    }, { threshold: 0.1 });
+    observer.observe(puzzleWrapper);
+}
+
 function resizePieces() {
     const w = puzzleWrapper.clientWidth;
     const h = puzzleWrapper.clientHeight;
+    
+    // Si el contenedor está oculto (dimensiones 0), no redimensionar para evitar corrupción
+    if (w <= 0 || h <= 0) {
+        return;
+    }
 
     // Asegura que el canvas no se desborde del wrapper
     canvas.width = w;
@@ -273,6 +301,13 @@ function init() {
     puzzleEnded = false;
     paused = false;
     pauseBtn.textContent = "⏸️ Pausa";
+    
+    // Asegurar que el canvas tenga dimensiones válidas antes de inicializar
+    if (canvas.width <= 0 || canvas.height <= 0) {
+        // Usar dimensiones por defecto si el contenedor está oculto
+        canvas.width = 600;
+        canvas.height = 450;
+    }
 
     const pw = canvas.width / cols;
     const ph = canvas.height / rows;
