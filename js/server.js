@@ -37,7 +37,9 @@ const server = http.createServer((req, res) => {
   }
 
   // Determine file path
-  let filePath = '.' + req.url;
+  // Strip query parameters from URL
+  const urlPath = req.url.split('?')[0];
+  let filePath = '.' + urlPath;
   if (filePath === './') {
     filePath = './index.html';
   }
