@@ -4,6 +4,15 @@
 // Modelo similar a retos-aventuras.js para mantener consistencia
 
 export const DATOS_PUZZLES = {
+    Intro: {
+        "PZ-logo": {
+            id: "PZ-logo",
+            nombre: "Logo Redondo",
+            imagen: "fotos-botones/Logo redondo.jpg",
+            tiempo: 180,
+            filas: 3,
+            columnas: 3
+        },
     Aventura1: {
         "PZ-8": {
             id: "PZ-8",
