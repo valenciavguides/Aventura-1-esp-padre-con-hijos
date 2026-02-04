@@ -215,6 +215,7 @@
     
     // Pre-select adventure and show confirmation screen
     function preSeleccionarAventura(aventura, descripcion, tiempo) {
+      console.log('[SELECCION] Pre-seleccionando aventura:', aventura);
       aventuraSeleccionada = aventura;
       aventuraDescripcion = descripcion;
       aventuraTiempo = tiempo;
@@ -223,6 +224,17 @@
       document.getElementById('aventura-nombre-confirmacion').textContent = nombreFormateado;
       document.getElementById('aventura-descripcion-confirmacion').textContent = descripcion;
       document.getElementById('aventura-tiempo-confirmacion').textContent = 'Tiempo máximo: ' + tiempo;
+      
+      // Notify parent about adventure pre-selection (allows parent to start preparing data)
+      if (typeof window.seleccionarAventura === 'function') {
+        try {
+          window.seleccionarAventura(aventura);
+        } catch (error) {
+          console.warn('[SELECCION] Error notificando al padre sobre pre-selección:', error);
+        }
+      }
+      
+      console.log('[SELECCION] Mostrando pantalla de confirmación (P8)');
       mostrar(8); // Go to adventure confirmation screen (P8)
     }
     
