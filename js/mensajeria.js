@@ -99,6 +99,19 @@ export async function inicializarMensajeria(opciones = {}) {
     componenteId = id;
     stateManager = sm || (typeof window !== 'undefined' ? window.__vv_stateManager : null);
     
+    // VALIDACIÓN CRÍTICA: Verificar que state-manager esté disponible
+    // Si no está disponible, esperamos brevemente o advertimos
+    if (!stateManager && typeof window !== 'undefined') {
+        // Intentar obtenerlo una vez más después de un pequeño delay
+        await new Promise(resolve => setTimeout(resolve, 10));
+        stateManager = window.__vv_stateManager || window.__stateManager;
+        
+        if (!stateManager) {
+            logger.warn('[mensajeria] ⚠️ state-manager no disponible - algunas funciones centralizadas no funcionarán');
+            logger.warn('[mensajeria] Asegúrate de que state-manager.js se cargue ANTES que mensajeria.js');
+        }
+    }
+    
     logger.info(`[mensajeria] Inicializando como ${tipo} con ID: ${id}`);
     
     // Configurar listener de mensajes
@@ -201,8 +214,14 @@ export async function registrarControlador(tipo, handler, opciones = {}) {
     const sm = obtenerStateManager();
     if (sm && typeof sm.registrarManejador === 'function') {
         try {
-            const resultado = await sm.registrarManejador(tipo, handler, opciones);
-            logger.debug(`[mensajeria] Controlador delegado a state-manager: ${tipo}`);
+            // CRÍTICO: Pasar tipoMensaje en opciones para que state-manager pueda 
+            // indexar el handler correctamente y getMapaControladoresSync() lo encuentre
+            const opcionesCompletas = {
+                ...opciones,
+                tipoMensaje: tipo
+            };
+            const resultado = await sm.registrarManejador(tipo, handler, opcionesCompletas);
+            logger.debug(`[mensajeria] Controlador delegado a state-manager: ${tipo} (con tipoMensaje en opciones)`);
             return resultado;
         } catch (error) {
             logger.error(`[mensajeria] Error delegando a state-manager: ${error.message}`);
@@ -278,20 +297,37 @@ export function getControladoresPorTipo(tipo) {
 
 /**
  * Envía un mensaje
- * @param {string} tipo - Tipo de mensaje
- * @param {*} datos - Datos del mensaje
+ * @param {string|Object} tipoOrMensaje - Tipo de mensaje o objeto mensaje completo
+ * @param {*} [datos] - Datos del mensaje (si primer param es string)
  * @param {string|Window} [destino] - Destino del mensaje
  * @returns {boolean} True si se envió
  */
-export function enviarMensaje(tipo, datos, destino) {
-    if (!tipo) {
+export function enviarMensaje(tipoOrMensaje, datos, destino) {
+    // Soportar formato objeto: enviarMensaje({ tipo, datos, destino, ... })
+    if (tipoOrMensaje && typeof tipoOrMensaje === 'object' && tipoOrMensaje.tipo) {
+        const { tipo, datos: objDatos, destino: objDestino, origen, ...resto } = tipoOrMensaje;
+        const mensaje = {
+            tipo,
+            datos: objDatos || resto.datos,
+            id: resto.id || generarIdUnico('msg'),
+            timestamp: resto.timestamp || Date.now(),
+            origen: origen || componenteId,
+            tipoOrigen: tipoComponente,
+            destino: objDestino
+        };
+        logger.debug(`[mensajeria] Enviando mensaje: ${tipo}`, { destino: objDestino || 'broadcast' });
+        return enviarMensajeInterno(mensaje, objDestino);
+    }
+    
+    // Formato tradicional: enviarMensaje(tipo, datos, destino)
+    if (!tipoOrMensaje) {
         logger.error('[mensajeria] enviarMensaje: tipo es requerido');
         return false;
     }
     
-    const mensaje = crearMensaje(tipo, datos);
+    const mensaje = crearMensaje(tipoOrMensaje, datos);
     
-    logger.debug(`[mensajeria] Enviando mensaje: ${tipo}`, { destino: destino || 'broadcast' });
+    logger.debug(`[mensajeria] Enviando mensaje: ${tipoOrMensaje}`, { destino: destino || 'broadcast' });
     
     return enviarMensajeInterno(mensaje, destino);
 }
@@ -389,12 +425,14 @@ function enviarMensajeInterno(mensaje, destino) {
         if (tipoComponente === 'padre') {
             // Destino específico
             if (typeof destino === 'string') {
-                const iframe = iframesRegistrados.get(destino);
-                if (iframe && iframe.contentWindow) {
-                    iframe.contentWindow.postMessage(mensaje, '*');
+                const iframeInfo = iframesRegistrados.get(destino);
+                // Usar elemento.contentWindow para asegurar referencia actual
+                const targetWindow = iframeInfo?.elemento?.contentWindow || iframeInfo?.contentWindow;
+                if (targetWindow) {
+                    targetWindow.postMessage(mensaje, '*');
                     return true;
                 }
-                logger.warn(`[mensajeria] Iframe no encontrado: ${destino}`);
+                logger.warn(`[mensajeria] Iframe no encontrado o sin contentWindow: ${destino}`);
                 return false;
             }
             
@@ -406,9 +444,10 @@ function enviarMensajeInterno(mensaje, destino) {
             
             // Broadcast a todos los iframes
             let enviados = 0;
-            for (const [id, iframe] of iframesRegistrados) {
-                if (iframe.contentWindow) {
-                    iframe.contentWindow.postMessage(mensaje, '*');
+            for (const [id, iframeInfo] of iframesRegistrados) {
+                const targetWindow = iframeInfo?.elemento?.contentWindow || iframeInfo?.contentWindow;
+                if (targetWindow) {
+                    targetWindow.postMessage(mensaje, '*');
                     enviados++;
                 }
             }
@@ -461,6 +500,12 @@ function manejarMensajeEntrante(event) {
     const manejadores = obtenerMapaManejadores();
     const handler = manejadores.get(mensaje.tipo);
     
+    // DEBUG: Log disponibles para diagnóstico
+    if (!handler) {
+        const tiposDisponibles = Array.from(manejadores.keys()).join(', ') || '(ninguno)';
+        logger.debug(`[mensajeria] Sin handler para: ${mensaje.tipo} | Disponibles: ${tiposDisponibles}`);
+    }
+    
     if (handler) {
         try {
             // Pass full message as first arg to match state-manager and handler signatures
@@ -477,9 +522,8 @@ function manejarMensajeEntrante(event) {
                 enviarConfirmacion(mensaje, { error: error.message }, event.source);
             }
         }
-    } else {
-        logger.debug(`[mensajeria] Sin handler para: ${mensaje.tipo}`);
     }
+    // El log de "Sin handler" ya se hizo arriba con la lista de disponibles
 }
 
 /**
