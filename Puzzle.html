@@ -22,7 +22,6 @@
         height: 100%;
         max-width: 990px; /* Aumentado nuevamente */
         max-height: 775px; /* Aumentado nuevamente (manteniendo 4/3 con 900px) */
-        /* aspect-ratio: 4 / 3; /* Comenta o elimina esta línea temporalmente */
         background-color: white; /* Color de fondo del contenedor del puzzle */
         border: 4px solid #007bff; /* Borde de 4px de grosor y color azul */
         border-radius: 8px;
@@ -254,36 +253,32 @@ function resizePieces() {
 
 function init() {
     puzzleEnded = false;
-    paused = false; // Asegurar que el puzzle no esté pausado al reiniciar
-    pauseBtn.textContent = "⏸️ Pausa"; // Resetear el texto del botón de pausa
-
-    // La lógica de reseteo del borde se ha movido al event listener del botón Reiniciar para mejor control.
-    // puzzleWrapper.style.borderColor = "#333"; // <-- Esta línea se movió.
+    paused = false;
+    pauseBtn.textContent = "⏸️ Pausa";
 
     const pw = canvas.width / cols;
     const ph = canvas.height / rows;
 
     pieces = []; placedCount = 0;
     completeMsg.style.display = "none";
-    
-    continueBtn.style.display = "none"; // Oculta el botón de continuar al inicio
+    continueBtn.style.display = "none";
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             pieces.push({
                 sx: c * img.width / cols, sy: r * img.height / rows,
                 sw: img.width / cols, sh: img.height / rows,
-                x: Math.random() * (canvas.width - pw), // Posición aleatoria dentro del canvas
-                y: Math.random() * (canvas.height - ph), // Posición aleatoria dentro del canvas
+                x: Math.random() * (canvas.width - pw),
+                y: Math.random() * (canvas.height - ph),
                 w: pw, h: ph, correctX: c * pw, correctY: r * ph,
                 placed: false, scale: 1
             });
         }
     }
 
-    timeLeft = initialTime; // Reiniciar tiempo
-    updateTimerDisplay(); // Actualizar visualmente
-    startTimer(); // Iniciar cuenta
+    timeLeft = initialTime;
+    updateTimerDisplay();
+    startTimer();
     draw();
 }
 
@@ -304,7 +299,6 @@ function draw() {
             animFrame = 0; animDirection = 1;
         }
     }
-    // Solo solicitar el siguiente frame si el puzzle no ha terminado y no está pausado
     if (!puzzleEnded && !paused) {
         requestAnimationFrame(draw);
     }
@@ -325,21 +319,19 @@ function onPointerDown(e) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Invertir el orden para seleccionar las piezas que están más arriba (últimas en dibujarse)
     for (let i = pieces.length - 1; i >= 0; i--) {
         const p = pieces[i];
         if (!p.placed && x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
             draggingPiece = p;
             offsetX = x - p.x;
             offsetY = y - p.y;
-            // Mover la pieza arrastrada al final del array para que se dibuje encima
             pieces.splice(i, 1);
             pieces.push(p);
             break;
         }
     }
     if (draggingPiece && (e.pointerType === "mouse" || e.pointerType === "touch")) {
-        e.preventDefault(); // Previene el comportamiento por defecto (ej. scroll/selección)
+        e.preventDefault();
     }
 }
 
@@ -353,15 +345,13 @@ function onPointerMove(e) {
     draggingPiece.y = Math.min(Math.max(y - offsetY, 0), canvas.height - draggingPiece.h);
 
     if (e.pointerType === "mouse" || e.pointerType === "touch") {
-        e.preventDefault(); // Previene el scroll/zoom mientras se arrastra
+        e.preventDefault();
     }
 }
 
 function onPointerUp(e) {
     if (!draggingPiece || puzzleEnded || paused) return;
 
-    // Ajuste de la tolerancia para "encajar" la pieza
-    // Una pieza se considera "correcta" si está dentro de un 1/4 de su ancho/alto de la posición correcta
     const toleranceX = draggingPiece.w / 4;
     const toleranceY = draggingPiece.h / 4;
 
@@ -372,10 +362,9 @@ function onPointerUp(e) {
         draggingPiece.placed = true;
         placedCount++;
         placeSound.play();
-        animatingPiece = draggingPiece; // Inicia la animación de la pieza
-        animFrame = 0; animDirection = 1; animScale = 1; // Reinicia animación
+        animatingPiece = draggingPiece;
+        animFrame = 0; animDirection = 1; animScale = 1;
     }
-    // Eliminado: else { failSound.play(); } -> para quitar el sonido al colocar mal una pieza.
     draggingPiece = null;
     if (placedCount === pieces.length) {
         endPuzzle(true);
@@ -405,24 +394,21 @@ function endPuzzle(success) {
     puzzleEnded = true;
     clearInterval(timerInterval);
     completeMsg.style.display = "block";
-    continueBtn.style.display = "block"; // Muestra el botón de continuar
+    continueBtn.style.display = "block";
 
     if (success) {
         successSound.play();
         messageText.textContent = "🎉 ¡Puzzle completado!";
         puzzleWrapper.style.borderColor = "green";
         runFireworks();
-        // Envía mensaje a la página padre indicando que el puzzle se completó con éxito
         window.parent.postMessage("puzzle-state-completed", "*");
     } else {
         failSound.play();
         messageText.textContent = "⏰ Tiempo agotado. Gracias por participar.";
         puzzleWrapper.style.borderColor = "red";
         runConfetti();
-        // Envía mensaje a la página padre indicando que el tiempo del puzzle se agotó
         window.parent.postMessage("puzzle-state-timeout", "*");
     }
-    // No enviar 'advance-to-next' aquí; espera al clic del botón 'Continuar'
 }
 
 function runFireworks() {
@@ -461,7 +447,7 @@ function runFireworks() {
                 const p = particles[i];
                 p.x += p.vx;
                 p.y += p.vy;
-                p.vy += 0.1; // Gravedad
+                p.vy += 0.1;
                 p.life--;
                 if (p.life <= 0) particles.splice(i, 1);
                 else {
@@ -493,7 +479,7 @@ function runConfetti() {
     function createConfetti() {
         return {
             x: Math.random() * effectCanvas.width,
-            y: Math.random() * -20, // Empieza un poco fuera de la pantalla
+            y: Math.random() * -20,
             size: Math.random() * 8 + 8,
             speedY: Math.random() * 3 + 2,
             color: colors[Math.floor(Math.random() * colors.length)],
@@ -515,7 +501,7 @@ function runConfetti() {
             confettiPieces.forEach(p => {
                 p.y += p.speedY;
                 p.tilt += p.tiltSpeed;
-                if (p.y > effectCanvas.height) { // Reiniciar si se sale de la pantalla
+                if (p.y > effectCanvas.height) {
                     p.x = Math.random() * effectCanvas.width;
                     p.y = Math.random() * -20;
                 }
@@ -539,8 +525,8 @@ restartBtn.addEventListener("click", () => {
     puzzleEnded = false;
     completeMsg.style.display = "none";
     continueBtn.style.display = "none";
-    init(); // Llama a init primero para reestablecer todo el estado del puzzle
-    puzzleWrapper.style.borderColor = "#007bff"; // Resetea el borde al color original
+    init();
+    puzzleWrapper.style.borderColor = "#007bff";
     requestAnimationFrame(draw);
 });
 
@@ -548,15 +534,14 @@ pauseBtn.addEventListener("click", () => {
     paused = !paused;
     pauseBtn.textContent = paused ? "▶️ Continuar" : "⏸️ Pausa";
     if (!paused) {
-        requestAnimationFrame(draw); // Reinicia el bucle de dibujo al despausar
-        startTimer(); // Reinicia el temporizador
+        requestAnimationFrame(draw);
+        startTimer();
     } else {
-        clearInterval(timerInterval); // Detiene el temporizador
+        clearInterval(timerInterval);
     }
 });
 
 continueBtn.addEventListener("click", () => {
-    // Esto es lo que le dice a la página principal que avance al siguiente reto
     window.parent.postMessage('advance-to-next', '*');
 });
 
