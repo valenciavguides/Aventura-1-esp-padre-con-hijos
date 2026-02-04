@@ -302,6 +302,9 @@ function init() {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Set piece border style once per frame for performance
+    ctx.strokeStyle = '#888888';
+    ctx.lineWidth = 2;
     // Dibujar piezas colocadas primero, luego las no colocadas para que se vean encima
     for (const p of pieces.filter(p => p.placed)) drawPiece(p);
     for (const p of pieces.filter(p => !p.placed)) drawPiece(p);
@@ -328,6 +331,8 @@ function drawPiece(piece) {
     ctx.scale(piece.scale, piece.scale);
     ctx.translate(-piece.w / 2, -piece.h / 2);
     ctx.drawImage(img, piece.sx, piece.sy, piece.sw, piece.sh, 0, 0, piece.w, piece.h);
+    // Add border around each piece so white pieces are visible against white background
+    ctx.strokeRect(0, 0, piece.w, piece.h);
     ctx.restore();
 }
 
