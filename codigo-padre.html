@@ -1892,17 +1892,86 @@
 
     <!-- Error handling and map initialization -->
     <script type="module">
-                // Inicializar todos los hijos críticos usando la mejora de onload
+        // ============================================================
+        // SISTEMA DE CARGA ÚNICA DE IFRAMES
+        // Protección contra carga duplicada de iframes hijos
+        // ============================================================
+        window.__HIJOS_CARGADOS = window.__HIJOS_CARGADOS || new Set();
+        window.__CARGA_EN_PROGRESO = false;
+
+        /**
+         * Carga un iframe solo si no ha sido cargado previamente
+         * @param {string} id - ID del iframe
+         * @param {string} src - URL del archivo HTML a cargar
+         * @returns {boolean} - true si se cargó, false si ya estaba cargado
+         */
+        window.cargarIframeSiNoEstaCargado = function(id, src) {
+            if (window.__HIJOS_CARGADOS.has(id)) {
+                console.debug(`[PADRE][CARGA_IFRAME] ⏭️ iframe ${id} ya cargado, omitiendo`);
+                return false;
+            }
+            
+            const iframe = document.getElementById(id);
+            if (!iframe) {
+                console.warn(`[PADRE][CARGA_IFRAME] ⚠️ iframe ${id} no encontrado en DOM`);
+                return false;
+            }
+            
+            const srcActual = iframe.src || '';
+            if (srcActual && srcActual !== '' && !srcActual.endsWith('about:blank') && srcActual !== window.location.href) {
+                console.debug(`[PADRE][CARGA_IFRAME] ⏭️ iframe ${id} ya tiene src: ${srcActual}, omitiendo`);
+                window.__HIJOS_CARGADOS.add(id);
+                return false;
+            }
+            
+            console.info(`[PADRE][CARGA_IFRAME] 🚀 Cargando iframe ${id} con src: ${src}`);
+            iframe.src = src;
+            window.__HIJOS_CARGADOS.add(id);
+            iframe.style.display = 'block';
+            iframe.style.visibility = 'visible';
+            
+            return true;
+        };
+
+        /**
+         * Carga todos los iframes hijos críticos con protección contra duplicados
+         * Esta es la ÚNICA función que debe usarse para cargar los hijos
+         */
+        window.cargarTodosLosHijosCriticos = async function() {
+            if (window.__CARGA_EN_PROGRESO) {
+                console.warn(`[PADRE][INICIAR_AVENTURA] ⚠️ Carga ya en progreso, omitiendo`);
+                return;
+            }
+            
+            window.__CARGA_EN_PROGRESO = true;
+            
+            try {
+                const hijosConfig = [
+                    { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                    { id: 'hijo3', src: 'audio-hijo3.html' },
+                    { id: 'hijo4', src: 'retos-hijo4.html' },
+                    { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                    { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                    { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                ];
+                
+                for (const hijo of hijosConfig) {
+                    const cargado = window.cargarIframeSiNoEstaCargado(hijo.id, hijo.src);
+                    if (cargado) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                }
+                
+                console.info(`[PADRE][INICIAR_AVENTURA] ✅ Todos los hijos críticos cargados`);
+            } finally {
+                window.__CARGA_EN_PROGRESO = false;
+            }
+        };
+
+        // Delegación de la función legacy inicializarHijosCriticos
                 window.inicializarHijosCriticos = async function() {
-                    const hijosConfig = [
-                        { id: 'hijo2', src: 'coordenadas-hijo2.html' },
-                        { id: 'hijo3', src: 'audio-hijo3.html' },
-                        { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
-                        { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
-                        { id: 'hijo5', src: 'boton-casa-hijo5.html' }
-                    ];
-                    // Puedes ajustar window.__vv_DATOS_PADRE según los datos que quieras enviar
-                    await window.cargarTodosLosHijosConDatos(hijosConfig, window.__vv_DATOS_PADRE || {});
+                    console.warn('[PADRE] inicializarHijosCriticos() llamada - delegando a cargarTodosLosHijosCriticos()');
+                    return await window.cargarTodosLosHijosCriticos();
                 };
         // ✅ Helper para actualizar mensaje de carga
         window.updateLoadingStatus = (message, details = '') => {
@@ -5134,177 +5203,25 @@
         // FUNCIÓN: CARGAR SOLO IFRAME DE SELECCIÓN
         // Se llama durante startup - carga SOLO En-busca-del-tesoro.html
         // ============================================================
+        window.cargarIframeSoloSeleccion = function() {
+            const iframeSeleccion = document.getElementById('seleccion');
+            
+            if (iframeSeleccion) {
+                if (!iframeSeleccion.src || iframeSeleccion.src === '' || iframeSeleccion.src === 'about:blank') {
+                    console.info(`[PADRE][INIT] 🚀 Cargando iframe de selección...`);
+                    iframeSeleccion.src = 'En-busca-del-tesoro.html';
+                    iframeSeleccion.style.display = 'block';
+                    iframeSeleccion.style.visibility = 'visible';
+                } else {
+                    console.debug(`[PADRE][INIT] ⏭️ iframe de selección ya cargado`);
+                }
+            }
+        };
+
+        // Legacy function for backward compatibility
         async function cargarIframeSoloSeleccion() {
-            // Asegurarse de que el Map estadoHijos existe
-            if (!window.estadoPadre.estadoHijos) {
-                window.estadoPadre.estadoHijos = new Map();
-            }
-
-            const iframes = [
-                // SOLO la página de selección - se carga primero y visible
-                { id: 'seleccion', src: 'En-busca-del-tesoro.html', mostrarInicial: true }
-            ];
-
-            logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
-            
-            const hijosFallidos = [];
-
-            for (const iframe of iframes) {
-                logger.info(`${CONFIG_PADRE.LOG_PREFIX} Cargando iframe: ${iframe.id}`);
-                
-                try {
-                    const iframeEl = document.getElementById(iframe.id);
-                    if (!iframeEl) {
-                        throw new Error(`Iframe ${iframe.id} no encontrado en DOM`);
-                    }
-
-                    // ✅ Registrar iframe en mensajería para permitir envío de mensajes
-                    if (typeof registrarIframe_S1 === 'function') {
-                        registrarIframe_S1(iframe.id, iframeEl, { capacidades: iframe.capacidades || [] });
-                        logger.debug(`${CONFIG_PADRE.LOG_PREFIX} Iframe ${iframe.id} registrado en mensajería`);
-                    }
-
-                    // Si tiene mostrarInicial, mostrarlo directamente; si no, ocultarlo
-                    if (iframe.mostrarInicial) {
-                        iframeEl.style.display = 'block';
-                        iframeEl.style.visibility = 'visible';
-                    } else {
-                        iframeEl.style.display = 'none';
-                        iframeEl.style.visibility = 'hidden';
-                    }
-
-                    // Esperar a que el iframe cargue usando eventos onload/onerror
-                    await new Promise((resolve, reject) => {
-                        const timeoutFallback = setTimeout(() => {
-                            logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
-                            resolve(); // Continuar incluso si hay timeout
-                        }, ajustarTimeoutPorConexion_S1(10000)); // Ajustado dinámicamente según conexión
-
-                        const onLoad = () => {
-                            clearTimeout(timeoutFallback);
-                            iframeEl.removeEventListener('load', onLoad);
-                            iframeEl.removeEventListener('error', onError);
-                            logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} cargado (evento onload)`);
-                            resolve();
-                        };
-
-                        const onError = (err) => {
-                            clearTimeout(timeoutFallback);
-                            iframeEl.removeEventListener('load', onLoad);
-                            iframeEl.removeEventListener('error', onError);
-                            logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error de carga para ${iframe.id}:`, err);
-                            resolve(); // Continuar incluso si hay error (se manejará después)
-                        };
-
-                        iframeEl.addEventListener('load', onLoad, { once: true });
-                        iframeEl.addEventListener('error', onError, { once: true });
-
-                        logger.info(`${CONFIG_PADRE.LOG_PREFIX} Asignando src a ${iframe.id}: ${iframe.src}`);
-                        iframeEl.src = iframe.src;
-                    });
-
-                    // NOTA: No enviamos PADRE_DATOS manualmente aquí.
-                    // El hijo enviará HIJO_PREPARADO cuando esté listo, y el controlador
-                    // de HIJO_PREPARADO en el padre enviará PADRE_DATOS automáticamente.
-                    // Esto garantiza que el hijo haya registrado sus controladores antes.
-
-                    // Esperar a que el hijo esté listo
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Esperando HIJO_LISTO de ${iframe.id}...`);
-                    await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
-                        }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION)); // Ajustado dinámicamente según conexión
-
-                        const check = () => {
-                            if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
-                                clearTimeout(timeout);
-                                logger.info(`${CONFIG_PADRE.LOG_PREFIX} HIJO_LISTO recibido de ${iframe.id}`);
-                                resolve();
-                            } else {
-                                setTimeout(check, 100);
-                            }
-                        };
-                        check();
-                    });
-
-                    logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} listo y confirmado.`);
-                    iframeEl.style.display = '';
-                    iframeEl.style.visibility = 'visible';
-
-                } catch (error) {
-                    // Si un hijo falla, registrarlo pero continuar con los demás
-                    logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error cargando ${iframe.id}: ${error.message}`);
-                    logger.warn(`${CONFIG_PADRE.LOG_PREFIX} Continuando con siguiente hijo...`);
-
-                    // DEBUG: Dump central handlers and estadoPadre for diagnosis
-                    try {
-                        (async () => {
-                            try {
-                                if (window.__vv_stateManager && typeof window.__vv_stateManager.getControladoresPorTipo === 'function') {
-                                    const central = await window.__vv_stateManager.getControladoresPorTipo(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO);
-                                    console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
-                                }
-                            } catch (e) {
-                                console.warn(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] No se pudo consultar state-manager:`, e && e.message);
-                            }
-                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosInicializados:`, Array.from(window.estadoPadre.hijosInicializados || new Set())); } catch (e) {}
-                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosListos:`, Array.from(window.estadoPadre.hijosListos || new Set())); } catch (e) {}
-                        })();
-                    } catch (e) { /* ignore debug errors */ }
-
-                    // Rastrear hijo fallido para reconexión posterior
-                    hijosFallidos.push({
-                        id: iframe.id,
-                        src: iframe.src,
-                        error: error.message,
-                        timestamp: Date.now()
-                    });
-
-                    // Inicializar estado del hijo fallido
-                    if (!window.estadoPadre.estadoHijos.has(iframe.id)) {
-                        window.estadoPadre.estadoHijos.set(iframe.id, {
-                            activo: false,
-                            fallosConsecutivos: 1,
-                            ultimoPing: null,
-                            ultimoError: error.message
-                        });
-                    } else {
-                        const estadoHijo = window.estadoPadre.estadoHijos.get(iframe.id);
-                        if (estadoHijo) {
-                            estadoHijo.fallosConsecutivos = (estadoHijo.fallosConsecutivos || 0) + 1;
-                            estadoHijo.ultimoError = error.message;
-                        }
-                    }
-                }
-            }
-
-            logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Carga secuencial completada`);
-            
-            // 🔥 PROCESAR DISTRIBUCIONES PENDIENTES DESPUÉS DE CARGA DE IFRAMES
-            // Una vez que todos los iframes están cargados y conectados, procesar distribuciones pendientes
-            if (window.__pendingDistribucion && typeof enviarMensaje_S1 === 'function') {
-                const { aventura, idioma } = window.__pendingDistribucion;
-                logger.info(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Procesando distribución pendiente de aventura ${aventura} (${idioma}) después de carga de iframes...`);
-                try {
-                    const resultados = await distribuirDatosAventura(aventura, idioma);
-                    if (resultados.pospuesto) {
-                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Distribución pendiente aún pospuesta: ${resultados.mensaje}`);
-                    } else {
-                        logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Distribución pendiente completada:`, resultados);
-                        delete window.__pendingDistribucion;
-                    }
-                } catch (error) {
-                    logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error en distribución pendiente después de carga de iframes:`, error);
-                }
-            }
-            
-            // RECONEXIÓN: Intentar reconectar hijos fallidos después de cargar todos los exitosos
-            if (hijosFallidos.length > 0) {
-                logger.warn(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Detectados ${hijosFallidos.length} hijos fallidos, iniciando reconexión...`);
-                await intentarReconectarHijosFallidos(hijosFallidos);
-            } else {
-                logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Todos los iframes conectados exitosamente`);
-            }
+            console.warn('[PADRE] Legacy cargarIframeSoloSeleccion() llamada - delegando a window.cargarIframeSoloSeleccion()');
+            window.cargarIframeSoloSeleccion();
         }
         
         /**
@@ -5577,9 +5494,17 @@
                 logger.info(`${logPrefix} 🚀 Ejecutando FASE 3: Carga de iframes HTML...`);
                 updateLoadingStatus('Cargando componentes...', 'Inicializando pantalla de selección');
                 // 1. Cargar iframe de selección primero
-                await cargarIframeSoloSeleccion();
+                window.cargarIframeSoloSeleccion();  // Changed to sync version, no await needed
                 logger.success(`${logPrefix} ✅ FASE 3.1 COMPLETADA - Iframe de selección cargado`);
 
+                // ⚠️ IMPORTANTE: NO cargar el resto de iframes aquí
+                // Los iframes hijos se cargarán SOLO cuando el usuario inicie la aventura
+                // a través del controlador SELECCION.INICIAR_AVENTURA
+                logger.info(`${logPrefix} ⏭️ Saltando carga de iframes hijos (se cargarán al iniciar aventura)`);
+                
+                /* ============================================================
+                   CÓDIGO COMENTADO - Los iframes hijos ahora se cargan solo desde INICIAR_AVENTURA
+                   ============================================================
                 // 2. Cargar el resto de iframes hijos en secuencia
                 const iframesHijos = [
                     { id: 'hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
@@ -5656,7 +5581,8 @@
                         logger.warn(`${logPrefix} Continuando con siguiente hijo...`);
                     }
                 }
-                logger.success(`${logPrefix} ✅ FASE 3 COMPLETADA - Todos los iframes hijos cargados y confirmados`);
+                ============================================================ */
+                logger.success(`${logPrefix} ✅ FASE 3 COMPLETADA - Iframe de selección listo`);
                 
                 // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
                 logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
@@ -9122,6 +9048,12 @@
                     }
                 }
                 
+                // ⏭️ NO cargar iframes aquí - se cargarán al INICIAR_AVENTURA
+                logger.info(`${logPrefix} ⏭️ Iframes se cargarán cuando el usuario inicie la aventura (INICIAR_AVENTURA)`);
+                
+                /* ============================================================
+                   CÓDIGO COMENTADO - Los iframes ahora se cargan solo desde INICIAR_AVENTURA
+                   ============================================================
                 // 🔥 CARGAR RESTO DE IFRAMES después de selección de aventura
                 logger.info(`${logPrefix} 🚀 Cargando resto de iframes después de selección de aventura...`);
                 try {
@@ -9135,6 +9067,7 @@
                 // 🔥 CARGAR hijo5 después de selección de aventura
                 logger.info(`${logPrefix} 🚀 Cargando hijo5 después de selección de aventura...`);
                 await cargarHijoCasa();
+                ============================================================ */
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando selección de aventura:`, error);
@@ -9169,6 +9102,11 @@
                 window.aventuraSeleccionada = aventura;
                 window.idiomaSeleccionado = idioma || window.idiomaSeleccionado;
                 
+                console.log(`${logPrefix} ⏭️ Iframes se cargarán cuando el usuario inicie la aventura (INICIAR_AVENTURA)`);
+                
+                /* ============================================================
+                   CÓDIGO COMENTADO - Los iframes ahora se cargan solo desde INICIAR_AVENTURA
+                   ============================================================
                 console.log(`${logPrefix} 🚀 Iniciando carga de iframes al confirmar aventura...`);
                 
                 // Cargar los iframes ahora que la aventura está confirmada
@@ -9195,6 +9133,7 @@
                 } catch (error) {
                     console.error(`${logPrefix} ❌ Error cargando iframes:`, error);
                 }
+                ============================================================ */
                 
             } catch (e) {
                 console.error('[PADRE][AVENTURA_CONFIRMADA] Error procesando mensaje:', e);
@@ -9399,6 +9338,27 @@
                 estado.seleccion.iniciada = true;
                 estado.seleccion.timestampInicio = timestamp;
                 
+                // Guardar en estado global
+                window.aventuraSeleccionada = aventura || 'Aventura1';
+                window.idiomaSeleccionado = idioma || 'es';
+                
+                // Actualizar estadoPadre
+                if (window.estadoPadre) {
+                    window.estadoPadre.aventura = aventura;
+                    window.estadoPadre.idioma = idioma;
+                }
+                
+                // Cargar datos de aventura diferidos
+                if (typeof window.__cargarDatosAventuraDiferidos === 'function') {
+                    try {
+                        logger.info(`${logPrefix} 📦 Cargando datos de aventura diferidos...`);
+                        await window.__cargarDatosAventuraDiferidos();
+                        logger.success(`${logPrefix} ✅ Datos de aventura diferidos cargados`);
+                    } catch (dataError) {
+                        logger.error(`${logPrefix} ❌ Error cargando datos diferidos:`, dataError);
+                    }
+                }
+                
                 // =====================================================
                 // DISTRIBUIR DATOS DE AVENTURA A LOS HIJOS
                 // =====================================================
@@ -9414,112 +9374,54 @@
                     logger.error(`${logPrefix} ❌ Error distribuyendo datos:`, distribucionError);
                 }
                 
-                // =====================================================
-                // ESPERAR CONFIRMACIONES DE CARGA DE LOS HIJOS
-                // =====================================================
-                logger.info(`${logPrefix} Esperando confirmaciones de carga de datos...`);
-                
-                // Resetear flags de confirmación
-                estado.seleccion.coordenadasCargadas = false;
-                estado.seleccion.audiosCargados = false;
-                estado.seleccion.retosCargados = false;
-                
-                // Función para esperar confirmaciones con timeout
-                const esperarConfirmaciones = async (timeoutMs = 10000) => {
-                    const startTime = Date.now();
-                    
-                    while (Date.now() - startTime < timeoutMs) {
-                        const coordenadasOk = estado.seleccion.coordenadasCargadas !== false; // true o undefined = ok
-                        const audiosOk = estado.seleccion.audiosCargados !== false;
-                        const retosOk = estado.seleccion.retosCargados !== false;
-                        
-                        if (coordenadasOk && audiosOk && retosOk) {
-                            logger.success(`${logPrefix} ✅ Todas las confirmaciones recibidas`);
-                            return true;
-                        }
-                        
-                        // Esperar un poco antes de verificar nuevamente
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    
-                    logger.warn(`${logPrefix} ⚠️ Timeout esperando confirmaciones (${timeoutMs}ms)`);
-                    return false;
-                };
-                
-                // Esperar confirmaciones (con timeout de 10 segundos)
-                const confirmacionesCompletas = await esperarConfirmaciones(10000);
-                
-                if (!confirmacionesCompletas) {
-                    logger.warn(`${logPrefix} Continuando sin todas las confirmaciones...`);
-                }
-                
                 // Ocultar página de selección si está como iframe
                 const iframeSeleccion = document.getElementById('seleccion');
                 if (iframeSeleccion) {
                     iframeSeleccion.style.display = 'none';
+                    iframeSeleccion.style.visibility = 'hidden';
                 }
                 
-                // Mostrar componentes de la aventura (mapa, hijos, controles)
-                logger.info(`${logPrefix} Mostrando componentes de la aventura...`);
+                // Mostrar elementos de la aventura
+                const logo = document.getElementById('logo-aventura');
+                const fondo = document.getElementById('fondo-blanco');
+                if (logo) logo.style.display = 'block';
+                if (fondo) fondo.style.display = 'block';
                 
-                // Mostrar los iframes de los hijos
-                const iframesToShow = ['hijo2', 'hijo3', 'hijo1-hamburguesa', 'hijo1-opciones', 'hijo5'];
-                for (const iframeId of iframesToShow) {
-                    const iframe = document.getElementById(iframeId);
-                    if (iframe) {
-                        iframe.style.display = 'block';
-                        iframe.style.visibility = 'visible';
+                // 🚀 CARGAR TODOS LOS HIJOS CRÍTICOS - ÚNICO PUNTO DE CARGA
+                logger.info(`${logPrefix} 🚀 Cargando todos los hijos críticos...`);
+                await window.cargarTodosLosHijosCriticos();
+                logger.success(`${logPrefix} ✅ Todos los hijos críticos cargados`);
+                
+                // Inicializar mapa si no está inicializado
+                if (!window.estadoPadre?.mapaInicializado && typeof initializeMap === 'function') {
+                    try {
+                        logger.info(`${logPrefix} 🗺️ Inicializando mapa...`);
+                        await initializeMap();
+                        logger.success(`${logPrefix} ✅ Mapa inicializado`);
+                    } catch (mapError) {
+                        logger.error(`${logPrefix} ❌ Error inicializando mapa:`, mapError);
                     }
                 }
                 
-                // Mostrar logo y fondo blanco ahora que la aventura ha iniciado
-                const logoElement = document.getElementById('logo-aventura');
-                const fondoElement = document.getElementById('fondo-blanco');
-                if (logoElement) {
-                    logoElement.style.display = 'block';
-                }
-                if (fondoElement) {
-                    fondoElement.style.display = 'block';
-                }
-                
-                logger.info(`${logPrefix} Logo y fondo blanco mostrados`);
-                
-                // Notificar a los hijos que la aventura ha iniciado
-                const datosInicio = {
-                    aventura: aventura,
-                    idioma: idioma || 'es',
-                    timestamp: Date.now()
-                };
-                
-                // Broadcast a todos los hijos
-                try {
-                    if (typeof enviarMensaje_S1 === 'function') {
-                        await enviarMensaje_S1({
-                            tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
-                            origen: getPadreId(),
-                            destino: 'broadcast',
-                            datos: {
-                                evento: 'AVENTURA_INICIADA',
-                                ...datosInicio
-                            }
-                        });
-                        logger.debug(`${logPrefix} Notificación de inicio enviada a todos los hijos`);
-                    } else {
-                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible aún. Esperando inicialización de mensajería...`);
-                        // Marcar como pendiente para cuando enviarMensaje_S1 esté disponible
-                        if (!window.__pendingBroadcast) window.__pendingBroadcast = [];
-                        window.__pendingBroadcast.push({
-                            tipo: TIPOS_MENSAJE.SISTEMA.NOTIFICACION,
-                            origen: getPadreId(),
-                            destino: 'broadcast',
-                            datos: {
-                                evento: 'AVENTURA_INICIADA',
-                                ...datosInicio
-                            }
-                        });
+                // Activar GPS
+                if (typeof window.activarGPS === 'function') {
+                    try {
+                        logger.info(`${logPrefix} 📍 Activando GPS...`);
+                        await window.activarGPS();
+                        logger.success(`${logPrefix} ✅ GPS activado`);
+                    } catch (gpsError) {
+                        logger.warn(`${logPrefix} ⚠️ GPS no disponible:`, gpsError);
                     }
-                } catch (broadcastError) {
-                    logger.warn(`${logPrefix} Error en broadcast de inicio:`, broadcastError);
+                }
+                
+                // Ocultar overlay de carga
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.style.opacity = '0';
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                        document.body.classList.remove('loading');
+                    }, 500);
                 }
                 
                 logger.success(`${logPrefix} ✅ Aventura ${aventura} iniciada correctamente`);
