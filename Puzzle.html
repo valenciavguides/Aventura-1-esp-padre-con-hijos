@@ -143,17 +143,30 @@ import { DATOS_PUZZLES } from './js/puzzles-data.js';
 const urlParams = new URLSearchParams(window.location.search);
 const puzzleId = urlParams.get('id');
 
-// Validar que existe el puzzle
-if (!puzzleId || !DATOS_PUZZLES[puzzleId]) {
-    const errorMsg = document.getElementById("errorMsg");
-    const errorText = document.getElementById("errorText");
-    errorText.textContent = `❌ Error: Puzzle "${puzzleId || 'sin ID'}" no encontrado`;
-    errorMsg.style.display = "block";
-    throw new Error(`Puzzle ${puzzleId} no encontrado en DATOS_PUZZLES`);
+// Obtener la aventura actual desde el padre (retos-hijo4.html)
+// Si estamos en un iframe, el padre es window.parent
+// Si no hay aventura especificada, usar Aventura1 como predeterminado
+let aventuraActual = 'Aventura1';
+try {
+    if (window.parent && window.parent !== window && window.parent.__vv_aventuraActual) {
+        aventuraActual = window.parent.__vv_aventuraActual;
+    }
+} catch (e) {
+    // Si hay error de acceso cross-origin, usar predeterminado
+    console.warn('No se pudo acceder a la aventura del padre, usando Aventura1 por defecto');
 }
 
-// Obtener la configuración del puzzle
-const puzzleConfig = DATOS_PUZZLES[puzzleId];
+// Validar que existe la aventura y el puzzle
+if (!puzzleId || !DATOS_PUZZLES[aventuraActual] || !DATOS_PUZZLES[aventuraActual][puzzleId]) {
+    const errorMsg = document.getElementById("errorMsg");
+    const errorText = document.getElementById("errorText");
+    errorText.textContent = `❌ Error: Puzzle "${puzzleId || 'sin ID'}" no encontrado en ${aventuraActual}`;
+    errorMsg.style.display = "block";
+    throw new Error(`Puzzle ${puzzleId} no encontrado en DATOS_PUZZLES.${aventuraActual}`);
+}
+
+// Obtener la configuración del puzzle desde la aventura correspondiente
+const puzzleConfig = DATOS_PUZZLES[aventuraActual][puzzleId];
 const imageSrc = puzzleConfig.imagen;
 const rows = puzzleConfig.filas;
 const cols = puzzleConfig.columnas;

@@ -73,6 +73,9 @@
     </div>
 
     <script>
+        // Configurar la aventura actual para que los puzzles puedan acceder a ella
+        window.__vv_aventuraActual = 'Aventura1';
+        
         // Escuchar mensajes de los puzzles
         window.addEventListener('message', (event) => {
             const log = document.getElementById('messageLog');
@@ -85,6 +88,7 @@
         });
 
         console.log('Test page loaded. Listening for puzzle messages...');
+        console.log('Aventura actual configurada:', window.__vv_aventuraActual);
     </script>
 </body>
 </html>
