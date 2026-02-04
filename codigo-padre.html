@@ -1892,17 +1892,10 @@
 
     <!-- Error handling and map initialization -->
     <script type="module">
-                // Inicializar todos los hijos críticos usando la mejora de onload
+                // Inicializar todos los hijos críticos usando el sistema de protección contra duplicados
                 window.inicializarHijosCriticos = async function() {
-                    const hijosConfig = [
-                        { id: 'hijo2', src: 'coordenadas-hijo2.html' },
-                        { id: 'hijo3', src: 'audio-hijo3.html' },
-                        { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
-                        { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
-                        { id: 'hijo5', src: 'boton-casa-hijo5.html' }
-                    ];
-                    // Puedes ajustar window.__vv_DATOS_PADRE según los datos que quieras enviar
-                    await window.cargarTodosLosHijosConDatos(hijosConfig, window.__vv_DATOS_PADRE || {});
+                    // ✅ Usar la función centralizada con protección contra duplicados
+                    return await window.cargarTodosLosHijosCriticos();
                 };
         // ✅ Helper para actualizar mensaje de carga
         window.updateLoadingStatus = (message, details = '') => {
@@ -5129,12 +5122,187 @@
 
         logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ Controladores CRÍTICOS registrados (Script 1)`);
 
+        // ============================================================
+        // SISTEMA DE PROTECCIÓN CONTRA CARGA DUPLICADA DE IFRAMES
+        // ============================================================
+        // Set para trackear qué iframes ya fueron cargados
+        window.__HIJOS_CARGADOS = window.__HIJOS_CARGADOS || new Set();
+        
+        // Flag mutex para evitar cargas concurrentes
+        window.__CARGA_EN_PROGRESO = window.__CARGA_EN_PROGRESO || false;
+
+        /**
+         * Carga un iframe solo si no ha sido cargado previamente
+         * @param {string} id - ID del iframe
+         * @param {string} src - Ruta del archivo HTML a cargar
+         * @returns {Promise<boolean>} - true si se cargó, false si ya estaba cargado
+         */
+        window.cargarIframeSiNoEstaCargado = async function(id, src) {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CARGA_UNICA]`;
+            
+            // Verificar si ya está cargado
+            if (window.__HIJOS_CARGADOS.has(id)) {
+                logger.info(`${logPrefix} ℹ️ ${id} ya está cargado, saltando...`);
+                return false;
+            }
+            
+            logger.info(`${logPrefix} 🚀 Cargando ${id}...`);
+            
+            try {
+                const iframeEl = document.getElementById(id);
+                if (!iframeEl) {
+                    throw new Error(`Iframe ${id} no encontrado en DOM`);
+                }
+
+                // Registrar iframe en mensajería
+                if (typeof registrarIframe_S1 === 'function') {
+                    registrarIframe_S1(id, iframeEl, { capacidades: [] });
+                    logger.debug(`${logPrefix} Iframe ${id} registrado en mensajería`);
+                }
+
+                // Ocultar inicialmente (se mostrará cuando sea necesario)
+                iframeEl.style.display = 'none';
+                iframeEl.style.visibility = 'hidden';
+
+                // Esperar a que el iframe cargue
+                await new Promise((resolve, reject) => {
+                    const timeoutFallback = setTimeout(() => {
+                        logger.warn(`${logPrefix} ⚠️ Timeout de carga para ${id}, continuando...`);
+                        resolve();
+                    }, ajustarTimeoutPorConexion_S1(10000));
+
+                    const onLoad = () => {
+                        clearTimeout(timeoutFallback);
+                        iframeEl.removeEventListener('load', onLoad);
+                        iframeEl.removeEventListener('error', onError);
+                        logger.info(`${logPrefix} ✅ ${id} cargado (evento onload)`);
+                        resolve();
+                    };
+
+                    const onError = (err) => {
+                        clearTimeout(timeoutFallback);
+                        iframeEl.removeEventListener('load', onLoad);
+                        iframeEl.removeEventListener('error', onError);
+                        logger.error(`${logPrefix} ❌ Error de carga para ${id}:`, err);
+                        resolve();
+                    };
+
+                    iframeEl.addEventListener('load', onLoad, { once: true });
+                    iframeEl.addEventListener('error', onError, { once: true });
+
+                    logger.info(`${logPrefix} Asignando src a ${id}: ${src}`);
+                    iframeEl.src = src;
+                });
+
+                // Esperar a que el hijo esté listo
+                logger.info(`${logPrefix} Esperando HIJO_LISTO de ${id}...`);
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        logger.warn(`${logPrefix} ⚠️ Timeout esperando HIJO_LISTO de ${id}`);
+                        resolve(); // Continuar aunque no responda
+                    }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
+
+                    const check = () => {
+                        if (window.estadoPadre.hijosInicializados.has(id)) {
+                            clearTimeout(timeout);
+                            logger.info(`${logPrefix} HIJO_LISTO recibido de ${id}`);
+                            resolve();
+                        } else {
+                            setTimeout(check, 100);
+                        }
+                    };
+                    check();
+                });
+
+                logger.success(`${logPrefix} ✅ ${id} listo y confirmado`);
+                
+                // Marcar como cargado
+                window.__HIJOS_CARGADOS.add(id);
+                
+                return true;
+                
+            } catch (error) {
+                logger.error(`${logPrefix} ❌ Error cargando ${id}: ${error.message}`);
+                throw error;
+            }
+        };
+
+        /**
+         * Carga todos los iframes hijos críticos con protección contra duplicados
+         * Esta es la función centralizada para cargar TODOS los hijos
+         */
+        window.cargarTodosLosHijosCriticos = async function() {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[CARGA_TODOS]`;
+            
+            // Verificar si ya hay una carga en progreso
+            if (window.__CARGA_EN_PROGRESO) {
+                logger.warn(`${logPrefix} ⚠️ Ya hay una carga de iframes en progreso, saltando...`);
+                return { exito: false, mensaje: 'Carga ya en progreso' };
+            }
+            
+            // Marcar como en progreso
+            window.__CARGA_EN_PROGRESO = true;
+            
+            try {
+                logger.info(`${logPrefix} 🚀 Iniciando carga de todos los hijos críticos...`);
+                
+                const hijosConfig = [
+                    { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                    { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                    { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                    { id: 'hijo3', src: 'audio-hijo3.html' },
+                    { id: 'hijo4', src: 'retos-hijo4.html' },
+                    { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                ];
+                
+                const resultados = {
+                    cargados: [],
+                    yaExistian: [],
+                    fallidos: []
+                };
+                
+                for (const hijo of hijosConfig) {
+                    try {
+                        const cargado = await window.cargarIframeSiNoEstaCargado(hijo.id, hijo.src);
+                        if (cargado) {
+                            resultados.cargados.push(hijo.id);
+                        } else {
+                            resultados.yaExistian.push(hijo.id);
+                        }
+                    } catch (error) {
+                        logger.error(`${logPrefix} ❌ Error cargando ${hijo.id}:`, error);
+                        resultados.fallidos.push({ id: hijo.id, error: error.message });
+                    }
+                }
+                
+                logger.success(`${logPrefix} ✅ Carga completada:`, {
+                    nuevos: resultados.cargados.length,
+                    existentes: resultados.yaExistian.length,
+                    fallidos: resultados.fallidos.length
+                });
+                
+                return { exito: true, resultados };
+                
+            } finally {
+                // Liberar mutex
+                window.__CARGA_EN_PROGRESO = false;
+            }
+        };
+
         // Función para carga secuencial de iframes
         // ============================================================
         // FUNCIÓN: CARGAR SOLO IFRAME DE SELECCIÓN
         // Se llama durante startup - carga SOLO En-busca-del-tesoro.html
         // ============================================================
         async function cargarIframeSoloSeleccion() {
+            const logPrefix = `${CONFIG_PADRE.LOG_PREFIX}[SELECCION]`;
+            
+            // ✅ PROTECCIÓN: Verificar si ya está cargado
+            if (window.__HIJOS_CARGADOS.has('seleccion')) {
+                logger.info(`${logPrefix} ℹ️ Iframe de selección ya está cargado, saltando...`);
+                return;
+            }
+            
             // Asegurarse de que el Map estadoHijos existe
             if (!window.estadoPadre.estadoHijos) {
                 window.estadoPadre.estadoHijos = new Map();
@@ -5145,12 +5313,12 @@
                 { id: 'seleccion', src: 'En-busca-del-tesoro.html', mostrarInicial: true }
             ];
 
-            logger.info(`${CONFIG_PADRE.LOG_PREFIX} Iniciando carga secuencial de iframes...`);
+            logger.info(`${logPrefix} Iniciando carga de iframe de selección...`);
             
             const hijosFallidos = [];
 
             for (const iframe of iframes) {
-                logger.info(`${CONFIG_PADRE.LOG_PREFIX} Cargando iframe: ${iframe.id}`);
+                logger.info(`${logPrefix} Cargando iframe: ${iframe.id}`);
                 
                 try {
                     const iframeEl = document.getElementById(iframe.id);
@@ -5161,7 +5329,7 @@
                     // ✅ Registrar iframe en mensajería para permitir envío de mensajes
                     if (typeof registrarIframe_S1 === 'function') {
                         registrarIframe_S1(iframe.id, iframeEl, { capacidades: iframe.capacidades || [] });
-                        logger.debug(`${CONFIG_PADRE.LOG_PREFIX} Iframe ${iframe.id} registrado en mensajería`);
+                        logger.debug(`${logPrefix} Iframe ${iframe.id} registrado en mensajería`);
                     }
 
                     // Si tiene mostrarInicial, mostrarlo directamente; si no, ocultarlo
@@ -5176,7 +5344,7 @@
                     // Esperar a que el iframe cargue usando eventos onload/onerror
                     await new Promise((resolve, reject) => {
                         const timeoutFallback = setTimeout(() => {
-                            logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
+                            logger.warn(`${logPrefix} ⚠️ Timeout de carga para ${iframe.id}, continuando...`);
                             resolve(); // Continuar incluso si hay timeout
                         }, ajustarTimeoutPorConexion_S1(10000)); // Ajustado dinámicamente según conexión
 
@@ -5184,7 +5352,7 @@
                             clearTimeout(timeoutFallback);
                             iframeEl.removeEventListener('load', onLoad);
                             iframeEl.removeEventListener('error', onError);
-                            logger.info(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} cargado (evento onload)`);
+                            logger.info(`${logPrefix} ✅ ${iframe.id} cargado (evento onload)`);
                             resolve();
                         };
 
@@ -5192,14 +5360,14 @@
                             clearTimeout(timeoutFallback);
                             iframeEl.removeEventListener('load', onLoad);
                             iframeEl.removeEventListener('error', onError);
-                            logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error de carga para ${iframe.id}:`, err);
+                            logger.error(`${logPrefix} ❌ Error de carga para ${iframe.id}:`, err);
                             resolve(); // Continuar incluso si hay error (se manejará después)
                         };
 
                         iframeEl.addEventListener('load', onLoad, { once: true });
                         iframeEl.addEventListener('error', onError, { once: true });
 
-                        logger.info(`${CONFIG_PADRE.LOG_PREFIX} Asignando src a ${iframe.id}: ${iframe.src}`);
+                        logger.info(`${logPrefix} Asignando src a ${iframe.id}: ${iframe.src}`);
                         iframeEl.src = iframe.src;
                     });
 
@@ -5209,7 +5377,7 @@
                     // Esto garantiza que el hijo haya registrado sus controladores antes.
 
                     // Esperar a que el hijo esté listo
-                    logger.info(`${CONFIG_PADRE.LOG_PREFIX} Esperando HIJO_LISTO de ${iframe.id}...`);
+                    logger.info(`${logPrefix} Esperando HIJO_LISTO de ${iframe.id}...`);
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
@@ -5218,7 +5386,7 @@
                         const check = () => {
                             if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
                                 clearTimeout(timeout);
-                                logger.info(`${CONFIG_PADRE.LOG_PREFIX} HIJO_LISTO recibido de ${iframe.id}`);
+                                logger.info(`${logPrefix} HIJO_LISTO recibido de ${iframe.id}`);
                                 resolve();
                             } else {
                                 setTimeout(check, 100);
@@ -5227,14 +5395,17 @@
                         check();
                     });
 
-                    logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ ${iframe.id} listo y confirmado.`);
+                    logger.success(`${logPrefix} ✅ ${iframe.id} listo y confirmado.`);
                     iframeEl.style.display = '';
                     iframeEl.style.visibility = 'visible';
+                    
+                    // ✅ Marcar como cargado en el sistema de protección
+                    window.__HIJOS_CARGADOS.add(iframe.id);
 
                 } catch (error) {
                     // Si un hijo falla, registrarlo pero continuar con los demás
-                    logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error cargando ${iframe.id}: ${error.message}`);
-                    logger.warn(`${CONFIG_PADRE.LOG_PREFIX} Continuando con siguiente hijo...`);
+                    logger.error(`${logPrefix} ❌ Error cargando ${iframe.id}: ${error.message}`);
+                    logger.warn(`${logPrefix} Continuando con siguiente hijo...`);
 
                     // DEBUG: Dump central handlers and estadoPadre for diagnosis
                     try {
@@ -5242,13 +5413,13 @@
                             try {
                                 if (window.__vv_stateManager && typeof window.__vv_stateManager.getControladoresPorTipo === 'function') {
                                     const central = await window.__vv_stateManager.getControladoresPorTipo(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO);
-                                    console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
+                                    console.log(`${logPrefix} [DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
                                 }
                             } catch (e) {
-                                console.warn(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] No se pudo consultar state-manager:`, e && e.message);
+                                console.warn(`${logPrefix} [DEBUG] No se pudo consultar state-manager:`, e && e.message);
                             }
-                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosInicializados:`, Array.from(window.estadoPadre.hijosInicializados || new Set())); } catch (e) {}
-                            try { console.log(`${CONFIG_PADRE.LOG_PREFIX} [DEBUG] estadoPadre.hijosListos:`, Array.from(window.estadoPadre.hijosListos || new Set())); } catch (e) {}
+                            try { console.log(`${logPrefix} [DEBUG] estadoPadre.hijosInicializados:`, Array.from(window.estadoPadre.hijosInicializados || new Set())); } catch (e) {}
+                            try { console.log(`${logPrefix} [DEBUG] estadoPadre.hijosListos:`, Array.from(window.estadoPadre.hijosListos || new Set())); } catch (e) {}
                         })();
                     } catch (e) { /* ignore debug errors */ }
 
@@ -5278,32 +5449,32 @@
                 }
             }
 
-            logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Carga secuencial completada`);
+            logger.success(`${logPrefix} ✅ Carga de iframe de selección completada`);
             
             // 🔥 PROCESAR DISTRIBUCIONES PENDIENTES DESPUÉS DE CARGA DE IFRAMES
             // Una vez que todos los iframes están cargados y conectados, procesar distribuciones pendientes
             if (window.__pendingDistribucion && typeof enviarMensaje_S1 === 'function') {
                 const { aventura, idioma } = window.__pendingDistribucion;
-                logger.info(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Procesando distribución pendiente de aventura ${aventura} (${idioma}) después de carga de iframes...`);
+                logger.info(`${logPrefix} 🔄 Procesando distribución pendiente de aventura ${aventura} (${idioma}) después de carga de iframes...`);
                 try {
                     const resultados = await distribuirDatosAventura(aventura, idioma);
                     if (resultados.pospuesto) {
-                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} ⚠️ Distribución pendiente aún pospuesta: ${resultados.mensaje}`);
+                        logger.warn(`${logPrefix} ⚠️ Distribución pendiente aún pospuesta: ${resultados.mensaje}`);
                     } else {
-                        logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Distribución pendiente completada:`, resultados);
+                        logger.success(`${logPrefix} ✅ Distribución pendiente completada:`, resultados);
                         delete window.__pendingDistribucion;
                     }
                 } catch (error) {
-                    logger.error(`${CONFIG_PADRE.LOG_PREFIX} ❌ Error en distribución pendiente después de carga de iframes:`, error);
+                    logger.error(`${logPrefix} ❌ Error en distribución pendiente después de carga de iframes:`, error);
                 }
             }
             
             // RECONEXIÓN: Intentar reconectar hijos fallidos después de cargar todos los exitosos
             if (hijosFallidos.length > 0) {
-                logger.warn(`${CONFIG_PADRE.LOG_PREFIX} 🔄 Detectados ${hijosFallidos.length} hijos fallidos, iniciando reconexión...`);
+                logger.warn(`${logPrefix} 🔄 Detectados ${hijosFallidos.length} hijos fallidos, iniciando reconexión...`);
                 await intentarReconectarHijosFallidos(hijosFallidos);
             } else {
-                logger.success(`${CONFIG_PADRE.LOG_PREFIX} ✅ Todos los iframes conectados exitosamente`);
+                logger.success(`${logPrefix} ✅ Iframe de selección conectado exitosamente`);
             }
         }
         
@@ -5572,91 +5743,19 @@
                 }
                 
                 // ============================================================
-                // 📄 FASE 3: CARGAR IFRAMES HTML (necesitan datos de FASE 2)
+                // 📄 FASE 3: CARGAR IFRAME DE SELECCIÓN ÚNICAMENTE
                 // ============================================================
-                logger.info(`${logPrefix} 🚀 Ejecutando FASE 3: Carga de iframes HTML...`);
+                logger.info(`${logPrefix} 🚀 Ejecutando FASE 3: Carga de iframe de selección...`);
                 updateLoadingStatus('Cargando componentes...', 'Inicializando pantalla de selección');
-                // 1. Cargar iframe de selección primero
+                
+                // ✅ Cargar SOLO iframe de selección durante inicialización
+                // Los hijos se cargarán DESPUÉS en SELECCION.INICIAR_AVENTURA
                 await cargarIframeSoloSeleccion();
-                logger.success(`${logPrefix} ✅ FASE 3.1 COMPLETADA - Iframe de selección cargado`);
-
-                // 2. Cargar el resto de iframes hijos en secuencia
-                const iframesHijos = [
-                    { id: 'hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
-                    { id: 'opciones', src: 'botones-y-subfunciones-opciones.html' },
-                    { id: 'hijo2', src: 'coordenadas-hijo2.html' },
-                    { id: 'hijo3', src: 'audio-hijo3.html' },
-                    { id: 'hijo4', src: 'retos-hijo4.html' },
-                    { id: 'hijo5', src: 'boton-casa-hijo5.html' }
-                ];
-
-                for (const iframe of iframesHijos) {
-                    logger.info(`${logPrefix} Cargando iframe hijo: ${iframe.id}`);
-                    try {
-                        const iframeEl = document.getElementById(iframe.id);
-                        if (!iframeEl) {
-                            throw new Error(`Iframe hijo ${iframe.id} no encontrado en DOM`);
-                        }
-                        // Registrar iframe en mensajería si corresponde
-                        if (typeof registrarIframe_S1 === 'function') {
-                            registrarIframe_S1(iframe.id, iframeEl, { capacidades: iframe.capacidades || [] });
-                            logger.debug(`${logPrefix} Iframe hijo ${iframe.id} registrado en mensajería`);
-                        }
-                        // Ocultar inicialmente
-                        iframeEl.style.display = 'none';
-                        iframeEl.style.visibility = 'hidden';
-                        // Esperar a que el iframe cargue
-                        await new Promise((resolve, reject) => {
-                            const timeoutFallback = setTimeout(() => {
-                                logger.warn(`${logPrefix} ⚠️ Timeout de carga para hijo ${iframe.id}, continuando...`);
-                                resolve();
-                            }, ajustarTimeoutPorConexion_S1(10000));
-                            const onLoad = () => {
-                                clearTimeout(timeoutFallback);
-                                iframeEl.removeEventListener('load', onLoad);
-                                iframeEl.removeEventListener('error', onError);
-                                logger.info(`${logPrefix} ✅ Hijo ${iframe.id} cargado (evento onload)`);
-                                resolve();
-                            };
-                            const onError = (err) => {
-                                clearTimeout(timeoutFallback);
-                                iframeEl.removeEventListener('load', onLoad);
-                                iframeEl.removeEventListener('error', onError);
-                                logger.error(`${logPrefix} ❌ Error de carga para hijo ${iframe.id}:`, err);
-                                resolve();
-                            };
-                            iframeEl.addEventListener('load', onLoad, { once: true });
-                            iframeEl.addEventListener('error', onError, { once: true });
-                            logger.info(`${logPrefix} Asignando src a hijo ${iframe.id}: ${iframe.src}`);
-                            iframeEl.src = iframe.src;
-                        });
-                        // Esperar a que el hijo esté listo
-                        logger.info(`${logPrefix} Esperando HIJO_LISTO de hijo ${iframe.id}...`);
-                        await new Promise((resolve, reject) => {
-                            const timeout = setTimeout(() => {
-                                reject(new Error(`Timeout esperando HIJO_LISTO de hijo ${iframe.id}`));
-                            }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
-                            const check = () => {
-                                if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
-                                    clearTimeout(timeout);
-                                    logger.info(`${logPrefix} HIJO_LISTO recibido de hijo ${iframe.id}`);
-                                    resolve();
-                                } else {
-                                    setTimeout(check, 100);
-                                }
-                            };
-                            check();
-                        });
-                        logger.success(`${logPrefix} ✅ Hijo ${iframe.id} listo y confirmado.`);
-                        // Mostrar el iframe
-                        iframeEl.style.display = '';
-                        iframeEl.style.visibility = 'visible';
-                    } catch (error) {
-                        logger.error(`${logPrefix} ❌ Error cargando hijo ${iframe.id}: ${error.message}`);
-                        logger.warn(`${logPrefix} Continuando con siguiente hijo...`);
-                    }
-                }
-                logger.success(`${logPrefix} ✅ FASE 3 COMPLETADA - Todos los iframes hijos cargados y confirmados`);
+                logger.success(`${logPrefix} ✅ FASE 3 COMPLETADA - Iframe de selección cargado`);
+                
+                // ✅ NOTA: Los iframes hijos (hijo1, hijo2, hijo3, hijo4, hijo5) se cargarán
+                // únicamente desde el controlador SELECCION.INICIAR_AVENTURA para evitar
+                // carga duplicada y asegurar que se carguen solo cuando se inicie la aventura
                 
                 // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
                 logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
@@ -9122,19 +9221,9 @@
                     }
                 }
                 
-                // 🔥 CARGAR RESTO DE IFRAMES después de selección de aventura
-                logger.info(`${logPrefix} 🚀 Cargando resto de iframes después de selección de aventura...`);
-                try {
-                    await cargarRestoDeiframes();
-                    logger.success(`${logPrefix} ✅ Resto de iframes cargados correctamente`);
-                } catch (error) {
-                    logger.error(`${logPrefix} ❌ Error cargando resto de iframes:`, error);
-                    // Continuar aunque algunos iframes fallen
-                }
-                
-                // 🔥 CARGAR hijo5 después de selección de aventura
-                logger.info(`${logPrefix} 🚀 Cargando hijo5 después de selección de aventura...`);
-                await cargarHijoCasa();
+                // ✅ NOTA: Los iframes hijos se cargarán únicamente desde SELECCION.INICIAR_AVENTURA
+                // para evitar carga duplicada. Este controlador solo maneja la distribución de datos.
+                logger.info(`${logPrefix} ✅ Aventura seleccionada. Esperando INICIAR_AVENTURA para cargar iframes hijos.`);
                 
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando selección de aventura:`, error);
@@ -9169,32 +9258,9 @@
                 window.aventuraSeleccionada = aventura;
                 window.idiomaSeleccionado = idioma || window.idiomaSeleccionado;
                 
-                console.log(`${logPrefix} 🚀 Iniciando carga de iframes al confirmar aventura...`);
-                
-                // Cargar los iframes ahora que la aventura está confirmada
-                try {
-                    // Load hijo iframes
-                    const iframesToLoad = [
-                        { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
-                        { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
-                        { id: 'hijo2', src: 'coordenadas-hijo2.html' },
-                        { id: 'hijo3', src: 'audio-hijo3.html' },
-                        { id: 'hijo4', src: 'retos-hijo4.html' },
-                        { id: 'hijo5', src: 'boton-casa-hijo5.html' }
-                    ];
-                    
-                    for (const iframeConfig of iframesToLoad) {
-                        const iframe = document.getElementById(iframeConfig.id);
-                        if (iframe && !iframe.src) {
-                            iframe.src = iframeConfig.src;
-                            console.log(`${logPrefix} ✅ Cargando ${iframeConfig.id}: ${iframeConfig.src}`);
-                        }
-                    }
-                    
-                    console.log(`${logPrefix} ✅ Iframes iniciados para carga`);
-                } catch (error) {
-                    console.error(`${logPrefix} ❌ Error cargando iframes:`, error);
-                }
+                // ✅ NOTA: Los iframes se cargarán en SELECCION.INICIAR_AVENTURA
+                // Este controlador solo guarda la selección del usuario
+                console.log(`${logPrefix} ✅ Aventura confirmada. Los iframes se cargarán al iniciar la aventura.`);
                 
             } catch (e) {
                 console.error('[PADRE][AVENTURA_CONFIRMADA] Error procesando mensaje:', e);
@@ -9398,6 +9464,22 @@
                 estado.seleccion.terminosAceptados = terminosAceptados;
                 estado.seleccion.iniciada = true;
                 estado.seleccion.timestampInicio = timestamp;
+                
+                // =====================================================
+                // 🔥 CARGAR TODOS LOS IFRAMES HIJOS (ÚNICO PUNTO DE CARGA)
+                // =====================================================
+                logger.info(`${logPrefix} 🚀 Cargando todos los iframes hijos...`);
+                try {
+                    const resultadoCarga = await window.cargarTodosLosHijosCriticos();
+                    if (resultadoCarga.exito) {
+                        logger.success(`${logPrefix} ✅ Carga de iframes completada:`, resultadoCarga.resultados);
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ ${resultadoCarga.mensaje}`);
+                    }
+                } catch (cargaError) {
+                    logger.error(`${logPrefix} ❌ Error cargando iframes:`, cargaError);
+                    // Continuar aunque algunos iframes fallen
+                }
                 
                 // =====================================================
                 // DISTRIBUIR DATOS DE AVENTURA A LOS HIJOS
