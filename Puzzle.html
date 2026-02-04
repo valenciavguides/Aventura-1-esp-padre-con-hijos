@@ -153,7 +153,7 @@ try {
     }
 } catch (e) {
     // Si hay error de acceso cross-origin, usar predeterminado
-    console.warn('No se pudo acceder a la aventura del padre, usando Aventura1 por defecto');
+    console.warn('No se pudo acceder a la aventura del padre, usando Aventura1 por defecto:', e.message);
 }
 
 // Validar que existe la aventura y el puzzle
