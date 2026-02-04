@@ -143,17 +143,22 @@ import { DATOS_PUZZLES } from './js/puzzles-data.js';
 const urlParams = new URLSearchParams(window.location.search);
 const puzzleId = urlParams.get('id');
 
-// Obtener la aventura actual desde el padre (retos-hijo4.html)
-// Si estamos en un iframe, el padre es window.parent
-// Si no hay aventura especificada, usar Aventura1 como predeterminado
-let aventuraActual = 'Aventura1';
-try {
-    if (window.parent && window.parent !== window && window.parent.__vv_aventuraActual) {
-        aventuraActual = window.parent.__vv_aventuraActual;
+// Obtener la aventura desde la URL o desde el padre
+// Prioridad: URL param > padre > default (Aventura1)
+let aventuraActual = urlParams.get('aventura') || null;
+if (!aventuraActual) {
+    try {
+        if (window.parent && window.parent !== window && window.parent.__vv_aventuraActual) {
+            aventuraActual = window.parent.__vv_aventuraActual;
+        }
+    } catch (e) {
+        // Si hay error de acceso cross-origin, usar predeterminado
+        console.warn('No se pudo acceder a la aventura del padre:', e.message);
     }
-} catch (e) {
-    // Si hay error de acceso cross-origin, usar predeterminado
-    console.warn('No se pudo acceder a la aventura del padre, usando Aventura1 por defecto:', e.message);
+}
+// Default to Aventura1 if no aventura specified
+if (!aventuraActual) {
+    aventuraActual = 'Aventura1';
 }
 
 // Validar que existe la aventura y el puzzle
