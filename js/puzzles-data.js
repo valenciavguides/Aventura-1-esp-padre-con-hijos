@@ -7,8 +7,8 @@ export const DATOS_PUZZLES = {
     Intro: {
         "PZ-logo": {
             id: "PZ-logo",
-            nombre: "Logo Redondo",
-            imagen: "fotos-botones/logo-redondo-fondo-blanco.jpg",
+            nombre: "Torres de Serranos",
+            imagen: "fotos_Av1/01_torres_de_serranos_front.jpg",
             tiempo: 180,
             filas: 3,
             columnas: 3
