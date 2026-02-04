@@ -9141,6 +9141,66 @@
             }
         });
 
+        /**
+         * Controlador: SELECCION.AVENTURA_CONFIRMADA
+         * Descripción: El usuario confirmó la aventura en la pantalla de confirmación (screen 8)
+         * Este es el momento de empezar a cargar los iframes
+         * Origen: seleccion (En-busca-del-tesoro.html)
+         */
+        window.addEventListener('message', async (ev) => {
+            try {
+                const data = ev && ev.data;
+                if (!data || data.tipo !== 'SELECCION.AVENTURA_CONFIRMADA') return;
+                
+                const logPrefix = `${(window.CONFIG_PADRE && window.CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'}[AVENTURA_CONFIRMADA]`;
+                const { aventura, idioma, timestamp } = data.datos || {};
+                
+                console.log(`${logPrefix} 🎯 Aventura confirmada: ${aventura} (idioma: ${idioma})`);
+                
+                // Almacenar en estado global
+                if (!window.estado) window.estado = {};
+                if (!window.estado.seleccion) window.estado.seleccion = {};
+                window.estado.seleccion.aventura = aventura;
+                window.estado.seleccion.idioma = idioma;
+                window.estado.seleccion.aventuraConfirmada = true;
+                window.estado.seleccion.timestampConfirmacion = timestamp;
+                
+                // Exponer globalmente
+                window.aventuraSeleccionada = aventura;
+                window.idiomaSeleccionado = idioma || window.idiomaSeleccionado;
+                
+                console.log(`${logPrefix} 🚀 Iniciando carga de iframes al confirmar aventura...`);
+                
+                // Cargar los iframes ahora que la aventura está confirmada
+                try {
+                    // Load hijo iframes
+                    const iframesToLoad = [
+                        { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                        { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                        { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                        { id: 'hijo3', src: 'audio-hijo3.html' },
+                        { id: 'hijo4', src: 'retos-hijo4.html' },
+                        { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                    ];
+                    
+                    for (const iframeConfig of iframesToLoad) {
+                        const iframe = document.getElementById(iframeConfig.id);
+                        if (iframe && !iframe.src) {
+                            iframe.src = iframeConfig.src;
+                            console.log(`${logPrefix} ✅ Cargando ${iframeConfig.id}: ${iframeConfig.src}`);
+                        }
+                    }
+                    
+                    console.log(`${logPrefix} ✅ Iframes iniciados para carga`);
+                } catch (error) {
+                    console.error(`${logPrefix} ❌ Error cargando iframes:`, error);
+                }
+                
+            } catch (e) {
+                console.error('[PADRE][AVENTURA_CONFIRMADA] Error procesando mensaje:', e);
+            }
+        });
+
         // ============================================================
         // FUNCIÓN: DISTRIBUIR DATOS DE AVENTURA A LOS HIJOS
         // Envía coordenadas, audios y retos según aventura e idioma

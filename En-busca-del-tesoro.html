@@ -43,6 +43,20 @@
     .btn-arrow { font-size: 28px; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
     .puzzle-container { width: 100%; height: 90vh; max-width: 600px; }
     .audio-controls { margin-top: 20px; width: 80%; max-width: 300px; }
+    
+    /* Styles for confirmation screens (screen 3 and 8) */
+    .confirmacion-container { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; }
+    .confirmacion-imagen { width: 75vw; max-width: 400px; height: auto; max-height: 60vh; object-fit: contain; border: 4px solid white; border-radius: 15px; margin-bottom: 40px; }
+    .confirmacion-botones { display: flex; flex-direction: row; justify-content: center; gap: 80px; margin-top: 20px; }
+    .btn-confirm { font-size: 36px; width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; }
+    .btn-confirm-yes { background-color: #4CAF50; color: white; }
+    .btn-confirm-no { background-color: #f44336; color: white; }
+    .btn-confirm:hover { opacity: 0.9; transform: scale(1.05); }
+    
+    /* Adventure confirmation box */
+    .aventura-confirmacion-box { background: white; color: black; border-radius: 20px; padding: 30px; border: 5px solid gold; width: 80%; max-width: 400px; text-align: center; margin-bottom: 40px; }
+    .aventura-confirmacion-box h3 { margin: 0 0 15px 0; color: #333; }
+    .aventura-confirmacion-box p { margin: 0; font-size: 16px; color: #666; }
   </style>
 </head>
 <body>
@@ -60,7 +74,7 @@
     <div class="free-demo">FREE DEMO</div>
     <h2>Selecciona tu idioma</h2>
     <div class="banderas">
-      <div class="bandera-container"><img src="fotos-botones/Bandera España.png" class="bandera" onclick="seleccionarIdioma('es')"></div>
+      <div class="bandera-container"><img src="fotos-botones/Bandera España.png" class="bandera" onclick="preSeleccionarIdioma('es', 'fotos-botones/Bandera España.png')"></div>
       <div class="bandera-container"><img src="fotos-botones/Bandera habla inglesa.png" class="bandera"><div class="en-desarrollo">Soon coming</div></div>
       <div class="bandera-container"><img src="fotos-botones/Bandera Francia.png" class="bandera"><div class="en-desarrollo">En développement</div></div>
       <div class="bandera-container"><img src="fotos-botones/Bandera Italia.png" class="bandera"><div class="en-desarrollo">In sviluppo</div></div>
@@ -69,15 +83,27 @@
     </div>
   </div>
 
-  <!-- P3: Términos y Condiciones -->
+  <!-- P3: Confirmación del idioma -->
   <div class="pantalla" id="pantalla3">
     <div class="free-demo">FREE DEMO</div>
-    <p>Por favor, lee los <a href="terminos y condiciones/español" target="_blank">Términos y Condiciones</a> antes de continuar.</p>
-    <button class="btn" onclick="aceptarTerminos()">Aceptar</button>
+    <div class="confirmacion-container">
+      <img id="bandera-confirmacion" src="fotos-botones/Bandera España.png" class="confirmacion-imagen" alt="Idioma seleccionado">
+      <div class="confirmacion-botones">
+        <button class="btn-confirm btn-confirm-no" onclick="mostrar(2)" aria-label="Cancelar">✕</button>
+        <button class="btn-confirm btn-confirm-yes" onclick="confirmarIdioma()" aria-label="Confirmar">✓</button>
+      </div>
+    </div>
   </div>
 
-  <!-- P4: Audio Intro -->
+  <!-- P4: Términos y Condiciones -->
   <div class="pantalla" id="pantalla4">
+    <div class="free-demo">FREE DEMO</div>
+    <p>Por favor, lee los <a href="terminos y condiciones/español" target="_blank" style="color: #4fc3f7;">Términos y Condiciones</a> antes de continuar.</p>
+    <button class="btn btn-arrow" onclick="aceptarTerminos()" aria-label="Aceptar">→</button>
+  </div>
+
+  <!-- P5: Audio Intro -->
+  <div class="pantalla" id="pantalla5">
     <div class="free-demo">FREE DEMO</div>
     <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
     <h3>Audio de introducción</h3>
@@ -86,15 +112,15 @@
       Tu navegador no soporta el audio.
     </audio>
     <p id="audioStatus">Escucha el audio para continuar</p>
-    <button class="btn btn-arrow" id="btnAudioNext" onclick="mostrar(5)" disabled aria-label="Siguiente">→</button>
+    <button class="btn btn-arrow" id="btnAudioNext" onclick="mostrar(6)" disabled aria-label="Siguiente">→</button>
   </div>
 
-  <!-- P5: Elección de Aventura -->
-  <div class="pantalla" id="pantalla5">
+  <!-- P6: Elección de Aventura -->
+  <div class="pantalla" id="pantalla6">
     <div class="free-demo">FREE DEMO</div>
     <h2>Elección de Aventura</h2>
     <div class="aventuras-lista">
-      <button class="btn" onclick="seleccionarAventura('Aventura1')">Aventura 1<br><small>València histórica 1<br>Tiempo máximo: 60h</small></button>
+      <button class="btn" onclick="preSeleccionarAventura('Aventura1', 'València histórica 1', '60h')">Aventura 1<br><small>València histórica 1<br>Tiempo máximo: 60h</small></button>
       <button class="btn" disabled style="opacity:0.5;">Aventura 2<br><small>Soon</small></button>
       <button class="btn" disabled style="opacity:0.5;">Aventura 3<br><small>Soon</small></button>
       <button class="btn" disabled style="opacity:0.5;">Aventura 4<br><small>Soon</small></button>
@@ -104,8 +130,8 @@
     </div>
   </div>
 
-  <!-- P6: Reto interactivo -->
-  <div class="pantalla" id="pantalla6">
+  <!-- P7: Reto interactivo -->
+  <div class="pantalla" id="pantalla7">
     <div class="free-demo">FREE DEMO</div>
     <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
     <div class="reto-box" id="reto">
@@ -119,23 +145,105 @@
     </div>
   </div>
 
-  <!-- P7: Puzzle interactivo -->
-  <div class="pantalla" id="pantalla7">
+  <!-- P8: Confirmación de la aventura seleccionada -->
+  <div class="pantalla" id="pantalla8">
+    <div class="free-demo">FREE DEMO</div>
+    <div class="confirmacion-container">
+      <div class="aventura-confirmacion-box">
+        <h3 id="aventura-nombre-confirmacion">Aventura 1</h3>
+        <p id="aventura-descripcion-confirmacion">València histórica 1</p>
+        <p><small id="aventura-tiempo-confirmacion">Tiempo máximo: 60h</small></p>
+      </div>
+      <div class="confirmacion-botones">
+        <button class="btn-confirm btn-confirm-no" onclick="mostrar(6)" aria-label="Cancelar">✕</button>
+        <button class="btn-confirm btn-confirm-yes" onclick="confirmarAventura()" aria-label="Confirmar">✓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- P9: Puzzle interactivo -->
+  <div class="pantalla" id="pantalla9">
     <div class="free-demo">FREE DEMO</div>
     <div class="puzzle-container">
       <iframe id="puzzleFrame" src="Puzzle.html?id=PZ-logo&aventura=Intro" style="width:100%; height:80vh; border:none;"></iframe>
     </div>
   </div>
 
+  <!-- P10: Mapa e inicio -->
+  <div class="pantalla" id="pantalla10" style="background-color:orange;">
+    <h2>Su Aventura comienza aquí</h2>
+    <p style="background:white;color:black;padding:10px;border-radius:10px;border:2px solid yellow;">
+      Por favor pulse el botón para iniciar la aventura
+    </p>
+    <div style="margin:20px;">
+      <button class="btn" onclick="iniciarAventura()">🚀 Iniciar Aventura</button>
+    </div>
+    <p style="font-size:12px;color:#ccc;">Al pulsar, se cargará el mapa y comenzará la experiencia guiada.</p>
+  </div>
+
   <script>
     let idiomaSeleccionado = "";
+    let idiomaImagenUrl = "";
     let aventuraSeleccionada = "";
+    let aventuraDescripcion = "";
+    let aventuraTiempo = "";
     let audioHasEnded = false;
     
     function mostrar(id) {
       document.querySelectorAll(".pantalla").forEach(p => p.classList.remove("visible"));
       document.getElementById("pantalla" + id).classList.add("visible");
     }
+    
+    // Pre-select language and show confirmation screen
+    function preSeleccionarIdioma(idioma, imagenUrl) {
+      idiomaSeleccionado = idioma;
+      idiomaImagenUrl = imagenUrl;
+      // Update confirmation screen with selected flag
+      const banderaConfirmacion = document.getElementById('bandera-confirmacion');
+      if (banderaConfirmacion) {
+        banderaConfirmacion.src = imagenUrl;
+      }
+      mostrar(3); // Go to confirmation screen
+    }
+    
+    // Confirm language selection and proceed
+    function confirmarIdioma() {
+      // Language is already set in idiomaSeleccionado
+      console.log('[SELECCION] Idioma confirmado:', idiomaSeleccionado);
+      mostrar(4); // Go to terms and conditions
+    }
+    
+    // Pre-select adventure and show confirmation screen
+    function preSeleccionarAventura(aventura, descripcion, tiempo) {
+      aventuraSeleccionada = aventura;
+      aventuraDescripcion = descripcion;
+      aventuraTiempo = tiempo;
+      // Update confirmation screen
+      document.getElementById('aventura-nombre-confirmacion').textContent = aventura.replace('Aventura', 'Aventura ');
+      document.getElementById('aventura-descripcion-confirmacion').textContent = descripcion;
+      document.getElementById('aventura-tiempo-confirmacion').textContent = 'Tiempo máximo: ' + tiempo;
+      mostrar(8); // Go to adventure confirmation screen
+    }
+    
+    // Confirm adventure selection - notify padre to start loading iframes
+    function confirmarAventura() {
+      console.log('[SELECCION] Aventura confirmada:', aventuraSeleccionada);
+      // Notify padre to start preparing iframes
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          tipo: 'SELECCION.AVENTURA_CONFIRMADA',
+          origen: 'seleccion',
+          destino: 'padre',
+          datos: {
+            aventura: aventuraSeleccionada,
+            idioma: idiomaSeleccionado || 'es',
+            timestamp: Date.now()
+          }
+        }, '*');
+      }
+      mostrar(7); // Go to quiz screen first (before puzzle)
+    }
+    
     function verificar() {
       const seleccion = document.querySelector('input[name="op"]:checked');
       const caja = document.getElementById("reto");
@@ -144,8 +252,8 @@
         caja.style.borderColor = "green";
         seleccion.nextElementSibling.classList.add("tick", "correcto");
         alert("🎉 ¡Correcto!");
-        // Después del reto demo, pasar al puzzle interactivo
-        setTimeout(() => mostrar(7), 1000);
+        // Después del reto demo, pasar al puzzle interactivo (pantalla 9)
+        setTimeout(() => mostrar(9), 1000);
       } else {
         caja.style.borderColor = "red";
         seleccion.nextElementSibling.classList.add("x", "incorrecto");
@@ -179,12 +287,12 @@
     // Listen for puzzle completion messages
     window.addEventListener('message', function(event) {
       if (event.data === 'puzzle-state-completed' || event.data === 'advance-to-next') {
-        // Puzzle completed, advance to screen 8
-        mostrar(8);
+        // Puzzle completed, advance to screen 10 (map/start)
+        mostrar(10);
       }
       if (event.data === 'puzzle-state-timeout') {
-        // Puzzle timed out, also advance to screen 8
-        mostrar(8);
+        // Puzzle timed out, also advance to screen 10
+        mostrar(10);
       }
     });
   </script>
@@ -901,12 +1009,10 @@
             
             logger.debug(`[SELECCION] Mensaje IDIOMA_SELECCIONADO enviado al padre`);
             
-            // Navegar a términos y condiciones (pantalla 3)
-            mostrar(3);
+            // Note: Navigation is now handled by confirmarIdioma() in the inline script
+            // after user confirms on screen 3
         } catch (error) {
             logger.error(`[SELECCION] Error seleccionando idioma:`, error);
-            // Continuar con navegación aunque falle el mensaje
-            mostrar(3);
         }
     };
 
@@ -935,11 +1041,10 @@
             
             logger.debug(`[SELECCION] Mensaje AVENTURA_SELECCIONADA enviado al padre`);
             
-            // Navegar a pantalla del reto interactivo (pantalla 6)
-            mostrar(6);
+            // Note: Navigation is now handled by confirmarAventura() in the inline script
+            // after user confirms on screen 8
         } catch (error) {
             logger.error(`[SELECCION] Error seleccionando aventura:`, error);
-            mostrar(6);
         }
     };
 
@@ -1001,11 +1106,11 @@
                 }
             });
             
-            // Navegar a pantalla de audio intro (pantalla 4)
-            mostrar(4);
+            // Navegar a pantalla de audio intro (pantalla 5)
+            mostrar(5);
         } catch (error) {
             logger.error(`[SELECCION] Error aceptando términos:`, error);
-            mostrar(4);
+            mostrar(5);
         }
     };
 
@@ -1025,18 +1130,6 @@
         // Aquí se puede agregar lógica adicional que necesite ejecutarse después de la confirmación del padre
     }
   </script>
-
-<!-- P8: Mapa e inicio -->
-<div class="pantalla" id="pantalla8" style="background-color:orange;">
-  <h2>Su Aventura comienza aquí</h2>
-  <p style="background:white;color:black;padding:10px;border-radius:10px;border:2px solid yellow;">
-    Por favor pulse el botón para iniciar la aventura
-  </p>
-  <div style="margin:20px;">
-    <button class="btn" onclick="iniciarAventura()">🚀 Iniciar Aventura</button>
-  </div>
-  <p style="font-size:12px;color:#ccc;">Al pulsar, se cargará el mapa y comenzará la experiencia guiada.</p>
-</div>
 
 </body>
 </html>
