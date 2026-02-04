@@ -8,7 +8,7 @@ export const DATOS_PUZZLES = {
         "PZ-logo": {
             id: "PZ-logo",
             nombre: "Logo Redondo",
-            imagen: "fotos-botones/Logo redondo.jpg",
+            imagen: "fotos-botones/logo-redondo-fondo-blanco.jpg",
             tiempo: 180,
             filas: 3,
             columnas: 3
