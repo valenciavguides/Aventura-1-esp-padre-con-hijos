@@ -223,7 +223,7 @@
       document.getElementById('aventura-nombre-confirmacion').textContent = nombreFormateado;
       document.getElementById('aventura-descripcion-confirmacion').textContent = descripcion;
       document.getElementById('aventura-tiempo-confirmacion').textContent = 'Tiempo máximo: ' + tiempo;
-      mostrar(8); // Go to adventure confirmation screen (P8)
+      mostrar(7); // Go to quiz screen (P7) first, then adventure confirmation (P8)
     }
     
     // Confirm adventure selection - notify padre to start loading iframes
@@ -242,8 +242,8 @@
           }
         }, '*');
       }
-      // Go to screen 7 (reto interactivo / quiz) before puzzle (screen 9)
-      mostrar(7);
+      // Go to screen 9 (puzzle) after adventure confirmation
+      mostrar(9);
     }
     
     function verificar() {
@@ -254,8 +254,8 @@
         caja.style.borderColor = "green";
         seleccion.nextElementSibling.classList.add("tick", "correcto");
         alert("🎉 ¡Correcto!");
-        // Después del reto demo, pasar al puzzle interactivo (pantalla 9)
-        setTimeout(() => mostrar(9), 1000);
+        // Después del reto demo, pasar a la confirmación de aventura (pantalla 8)
+        setTimeout(() => mostrar(8), 1000);
       } else {
         caja.style.borderColor = "red";
         seleccion.nextElementSibling.classList.add("x", "incorrecto");
