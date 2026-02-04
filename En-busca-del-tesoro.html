@@ -227,7 +227,11 @@
       
       // Notify parent about adventure pre-selection (allows parent to start preparing data)
       if (typeof window.seleccionarAventura === 'function') {
-        window.seleccionarAventura(aventura);
+        try {
+          window.seleccionarAventura(aventura);
+        } catch (error) {
+          console.warn('[SELECCION] Error notificando al padre sobre pre-selección:', error);
+        }
       }
       
       console.log('[SELECCION] Mostrando pantalla de confirmación (P8)');
