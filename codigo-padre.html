@@ -186,13 +186,7 @@
                             }
                         }
 
-                        // Enviar ACK de aplicación de manejadores
-                        try {
-                            if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
-                                await window.mensajeria.enviarMensaje({ destino: hijoOrigen, tipo: 'SISTEMA.PADRE_APLICA_MANEJADORES', origen: getPadreId(), datos: { pedidoId, aplicados, timestamp: Date.now() } });
-                                console.info(`${logPrefix2} PADRE_APLICA_MANEJADORES enviado a ${hijoOrigen}`);
-                            }
-                        } catch (err) { console.warn(`${logPrefix2} Error enviando PADRE_APLICA_MANEJADORES a ${hijoOrigen}:`, err && err.message); }
+                        // NOTA: PADRE_APLICA_MANEJADORES eliminado (obsoleto)
 
                         // Resolver petición pendiente si existe
                         try {
@@ -1898,6 +1892,18 @@
 
     <!-- Error handling and map initialization -->
     <script type="module">
+                // Inicializar todos los hijos críticos usando la mejora de onload
+                window.inicializarHijosCriticos = async function() {
+                    const hijosConfig = [
+                        { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                        { id: 'hijo3', src: 'audio-hijo3.html' },
+                        { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                        { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                        { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                    ];
+                    // Puedes ajustar window.__vv_DATOS_PADRE según los datos que quieras enviar
+                    await window.cargarTodosLosHijosConDatos(hijosConfig, window.__vv_DATOS_PADRE || {});
+                };
         // ✅ Helper para actualizar mensaje de carga
         window.updateLoadingStatus = (message, details = '') => {
             const textEl = document.getElementById('loading-text');
@@ -2015,9 +2021,16 @@
         // Carga de módulos base
         
         // =====================================================
+        // FASE 1: INICIO - Módulos de infraestructura críticos
+        // =====================================================
+        console.log('%c[PADRE][FASE1] 🚀 INICIANDO FASE 1: Infraestructura...', 'color: #ffff00; font-weight: bold');
+        const fase1GlobalInicio = performance.now();
+        
+        // =====================================================
         // PASO 1: Importar e inicializar state-manager PRIMERO
         // Esto es crítico para que mensajeria.js pueda conectarse
         // =====================================================
+        console.log('[PADRE][FASE1] 📦 Cargando state-manager...');
         const { 
             inicializarStateManager: inicializarStateManager_S1,
             setEstadoPadre: setEstadoPadre_S1,
@@ -2031,14 +2044,16 @@
         
         // Inicializar state-manager y exponer globalmente ANTES de mensajeria
         await inicializarStateManager_S1();
-        console.log('[PADRE] State-manager inicializado correctamente');
+        console.log('[PADRE][FASE1] ✅ state-manager inicializado');
         
         // =====================================================
         // PASO 2: Importar mensajeria (ahora puede ver __vv_stateManager)
         // NOTA: mensajeria.js ya expone window.mensajeria via exponerAPIGlobal()
         // NO sobrescribir - usar la fuente de verdad única del módulo
         // =====================================================
+        console.log('[PADRE][FASE1] 📦 Cargando mensajeria...');
         const mensajeriaModule = await import('./js/mensajeria.js');
+        console.log('[PADRE][FASE1] ✅ mensajeria cargado');
         
         // Extraer funciones del módulo para uso local en Script 1
         const {
@@ -2052,18 +2067,27 @@
             getControladoresRegistrados: getControladoresRegistrados_S1,
             getControladoresPorTipo: getControladoresPorTipo_S1,
             registrarControladorCentral: registrarControladorCentral_S1,
-            enviarMensajeCentral: enviarMensajeCentral_S1
+            enviarMensajeCentral: enviarMensajeCentral_S1,
+            registrarIframe: registrarIframe_S1
         } = mensajeriaModule;
         
         // Verificar que window.mensajeria existe (creado por mensajeria.js)
         if (!window.mensajeria) {
-            console.error('[PADRE] CRÍTICO: window.mensajeria no fue creado por mensajeria.js');
+            console.error('[PADRE][FASE1] ❌ CRÍTICO: window.mensajeria no fue creado por mensajeria.js');
             throw new Error('Sistema de mensajería no inicializado correctamente');
         }
         
-        console.log('[PADRE] window.mensajeria disponible (fuente: mensajeria.js)');
+        console.log('[PADRE][FASE1] ✅ window.mensajeria disponible');
         
         // El evento mensajeriaReady se dispara más adelante tras inicialización completa
+        
+        // =====================================================================
+        // FASE 1: MÓDULOS CRÍTICOS (todos los módulos con lógica e imports cruzados)
+        // NOTA: validacion.js y monitoreo.js DEBEN estar aquí porque app.js y
+        // funciones-mapa.js los importan estáticamente
+        // =====================================================================
+        console.log('[PADRE][FASE1] � Cargando 9 módulos en paralelo...');
+        const fase1ModulosInicio = performance.now();
         
         const [
 
@@ -2109,9 +2133,17 @@
 
         // Nota: window.mensajeria ya fue asignado arriba con todas las funciones centralizadas
         // No sobrescribir aquí para evitar perder las funciones de state-manager
+        
+        const fase1ModulosFin = performance.now();
+        const fase1TotalTiempo = Math.round(fase1ModulosFin - fase1GlobalInicio);
+        console.log(`%c[PADRE][FASE1] ✅ FASE 1 COMPLETADA - 11 módulos cargados (${fase1TotalTiempo}ms)`, 'color: #00ff00; font-weight: bold');
+        console.log('[PADRE][FASE1] ✅ Módulos: state-manager, mensajeria, constants, utils, device-detection, validacion, logger, config, monitoreo, app, funciones-mapa');
 
         // =====================================================================
-        // DATOS CENTRALIZADOS DE AVENTURAS (coordenadas, audios, retos, índice)
+        // DATOS CENTRALIZADOS DE AVENTURAS - CARGA DIFERIDA (Fase 2)
+        // ⚠️ OPTIMIZACIÓN: indice-aventuras.js NO se carga en Fase 1 porque
+        // En-busca-del-tesoro.html tiene las aventuras hardcodeadas en su HTML.
+        // TODOS los datos de aventuras se cargan DESPUÉS de seleccionar aventura.
         // =====================================================================
         let DATOS_AVENTURAS = null;
         let AUDIOS_AVENTURAS = null;
@@ -2119,35 +2151,79 @@
         let INDICE_AVENTURAS = null;
         let MAPEO_IDIOMAS = null;
 
-        try {
-            const [coordenadasModule, audiosModule, retosModule, indiceModule] = await Promise.all([
-                import('./js/coordenadas-aventuras.js'),
-                import('./js/audios-aventuras.js'),
-                import('./js/retos-aventuras.js'),
-                import('./js/indice-aventuras.js')
-            ]);
-            DATOS_AVENTURAS = coordenadasModule.DATOS_AVENTURAS;
-            AUDIOS_AVENTURAS = audiosModule.AUDIOS_AVENTURAS;
-            RETOS_AVENTURAS = retosModule.RETOS_AVENTURAS;
-            INDICE_AVENTURAS = indiceModule.INDICE_AVENTURAS;
-            MAPEO_IDIOMAS = indiceModule.MAPEO_IDIOMAS;
-            console.info('[PADRE] ✅ Datos centralizados de aventuras cargados:', {
-                aventurasCoord: Object.keys(DATOS_AVENTURAS || {}),
-                aventurasAudio: Object.keys(AUDIOS_AVENTURAS || {}),
-                aventurasRetos: Object.keys(RETOS_AVENTURAS || {}),
-                indiceAventuras: Object.keys(INDICE_AVENTURAS || {}),
-                idiomasDisponibles: Object.keys(MAPEO_IDIOMAS || {})
-            });
-        } catch (datosError) {
-            console.error('[PADRE] ⚠️ Error cargando datos centralizados de aventuras:', datosError);
-        }
-
-        // Exponer globalmente para funciones no-módulo
-        window.__vv_DATOS_AVENTURAS = DATOS_AVENTURAS;
-        window.__vv_AUDIOS_AVENTURAS = AUDIOS_AVENTURAS;
-        window.__vv_RETOS_AVENTURAS = RETOS_AVENTURAS;
-        window.__vv_INDICE_AVENTURAS = INDICE_AVENTURAS;
-        window.__vv_MAPEO_IDIOMAS = MAPEO_IDIOMAS;
+        // Exponer globalmente - TODOS los datos se cargarán en Fase 2
+        window.__vv_DATOS_AVENTURAS = null;  // Se cargará en Fase 2
+        window.__vv_AUDIOS_AVENTURAS = null; // Se cargará en Fase 2
+        window.__vv_RETOS_AVENTURAS = null;  // Se cargará en Fase 2
+        window.__vv_INDICE_AVENTURAS = null; // Se cargará en Fase 2 (opcional, no usado por selección)
+        window.__vv_MAPEO_IDIOMAS = null;    // Se cargará en Fase 2 (opcional, no usado por selección)
+        
+        /**
+         * Carga diferida de datos pesados de aventura (Fase 2)
+         * Se llama después de que el usuario selecciona aventura e idioma
+         * Incluye: coordenadas, audios, retos, índice (solo DATOS puros)
+         * @returns {Promise<boolean>} true si se cargaron correctamente
+         */
+        window.__cargarDatosAventuraDiferidos = async function() {
+            const logPrefix = '[PADRE][CARGA_DIFERIDA]';
+            
+            // Si ya están cargados, no recargar
+            if (window.__vv_DATOS_AVENTURAS && window.__vv_AUDIOS_AVENTURAS && window.__vv_RETOS_AVENTURAS) {
+                console.info(`${logPrefix} Datos ya cargados, omitiendo recarga`);
+                return true;
+            }
+            
+            console.log(`%c${logPrefix} 🚀 Iniciando FASE 2: Carga diferida de DATOS...`, 'color: #ffff00; font-weight: bold');
+            const fase2Inicio = performance.now();
+            
+            try {
+                // =====================================================================
+                // FASE 2: Cargar SOLO módulos de DATOS puros en paralelo
+                // (sin imports cruzados, solo exportan objetos de datos)
+                // =====================================================================
+                const [
+                    coordenadasModule, 
+                    audiosModule, 
+                    retosModule, 
+                    indiceModule
+                ] = await Promise.all([
+                    import('./js/coordenadas-aventuras.js'),
+                    import('./js/audios-aventuras.js'),
+                    import('./js/retos-aventuras.js'),
+                    import('./js/indice-aventuras.js')
+                ]);
+                
+                // Asignar datos de aventuras
+                DATOS_AVENTURAS = coordenadasModule.DATOS_AVENTURAS;
+                AUDIOS_AVENTURAS = audiosModule.AUDIOS_AVENTURAS;
+                RETOS_AVENTURAS = retosModule.RETOS_AVENTURAS;
+                INDICE_AVENTURAS = indiceModule.INDICE_AVENTURAS;
+                MAPEO_IDIOMAS = indiceModule.MAPEO_IDIOMAS;
+                
+                // Exponer globalmente datos de aventuras
+                window.__vv_DATOS_AVENTURAS = DATOS_AVENTURAS;
+                window.__vv_AUDIOS_AVENTURAS = AUDIOS_AVENTURAS;
+                window.__vv_RETOS_AVENTURAS = RETOS_AVENTURAS;
+                window.__vv_INDICE_AVENTURAS = INDICE_AVENTURAS;
+                window.__vv_MAPEO_IDIOMAS = MAPEO_IDIOMAS;
+                
+                const fase2Fin = performance.now();
+                console.log(`%c${logPrefix} ✅ FASE 2 COMPLETADA - Datos de aventuras cargados (${Math.round(fase2Fin - fase2Inicio)}ms)`, 'color: #00ff00; font-weight: bold');
+                console.log(`${logPrefix} Módulos cargados: coordenadas-aventuras, audios-aventuras, retos-aventuras, indice-aventuras`);
+                console.info(`${logPrefix} Datos disponibles:`, {
+                    aventurasCoord: Object.keys(DATOS_AVENTURAS || {}),
+                    aventurasAudio: Object.keys(AUDIOS_AVENTURAS || {}),
+                    aventurasRetos: Object.keys(RETOS_AVENTURAS || {}),
+                    indiceAventuras: Object.keys(INDICE_AVENTURAS || {}),
+                    idiomasDisponibles: Object.keys(MAPEO_IDIOMAS || {})
+                });
+                
+                return true;
+            } catch (datosError) {
+                console.error(`${logPrefix} ❌ Error cargando datos de aventuras:`, datosError);
+                return false;
+            }
+        };
 
         // 🔥 AUTO-DISTRIBUCIÓN: Si ya hay una aventura seleccionada, marcar como pendiente hasta que el sistema esté listo
         if (window.aventuraSeleccionada && window.idiomaSeleccionado) {
@@ -2194,6 +2270,8 @@
         } catch (e) {
             console.warn('[PADRE] No se pudo inicializar mensajería automáticamente:', e && e.message ? e.message : e);
         }
+        
+        // Alias locales para módulos importados en Fase 1
         const validarDato = validarDato_S1;
         const inicializarMonitoreo = inicializarMonitoreo_S1;
         const CONFIG = CONFIG_S1;
@@ -2911,13 +2989,7 @@
                         }
                     }
 
-                    // Enviar ACK de aplicación de manejadores
-                    try {
-                        if (typeof enviarMensaje_S1 === 'function') {
-                            await enviarMensaje_S1({ destino: hijoOrigen, tipo: TIPOS_MENSAJE.SISTEMA.PADRE_APLICA_MANEJADORES, origen: getPadreId(), datos: { pedidoId, aplicados, timestamp: Date.now() } });
-                            logger.info(`${logPrefix2} PADRE_APLICA_MANEJADORES enviado a ${hijoOrigen}`);
-                        }
-                    } catch (err) { logger.warn(`${logPrefix2} Error enviando PADRE_APLICA_MANEJADORES a ${hijoOrigen}:`, err && err.message); }
+                    // NOTA: PADRE_APLICA_MANEJADORES eliminado (obsoleto)
 
                     // Resolver petición pendiente si existe
                     try {
@@ -2937,60 +3009,8 @@
             });
         } catch (err) { logger.warn('[PADRE] No se pudo registrar handler HIJO_MANEJADORES:', err && err.message); }
 
-        // ======= Helpers para migración con retries y telemetría =======
-        const MIGRATION_DEFAULT_TIMEOUT_MS = (TTL_LIMPIEZA && TTL_LIMPIEZA.MENSAJERIA && TTL_LIMPIEZA.MENSAJERIA.MOVIL) ? TTL_LIMPIEZA.MENSAJERIA.MOVIL : 400;
-        const MIGRATION_MAX_RETRIES = 2;
-
-        window.estadoPadre = window.estadoPadre || {};
-        window.estadoPadre.telemetria = window.estadoPadre.telemetria || { migraciones: { total:0, success:0, failed:0, retries:0, totalResponseTime:0 } };
-        window.estadoPadre.pendingMigraciones = window.estadoPadre.pendingMigraciones || new Map();
-
-        async function solicitarManejadoresConRetry(hijoId, opts = {}) {
-            const timeoutMs = opts.timeoutMs || MIGRATION_DEFAULT_TIMEOUT_MS;
-            const maxRetries = (typeof opts.maxRetries === 'number') ? opts.maxRetries : MIGRATION_MAX_RETRIES;
-            const pedidoId = opts.pedidoId || generarIdUnico();
-
-            window.estadoPadre.telemetria.migraciones.total++;
-            return new Promise(async (resolve, reject) => {
-                let attempts = 0;
-                let timer = null;
-
-                const attemptSend = async () => {
-                    attempts++;
-                    const entry = window.estadoPadre.pendingMigraciones.get(pedidoId) || {};
-                    entry.attempts = attempts;
-                    window.estadoPadre.pendingMigraciones.set(pedidoId, entry);
-
-                    try {
-                        logger.info && logger.info(`[PADRE][MIGRATION] solicitarManejadoresConRetry attempt=${attempts} pedidoId=${pedidoId} hijo=${hijoId} timeoutMs=${timeoutMs}`);
-                        if (typeof enviarMensaje_S1 === 'function') {
-                            await enviarMensaje_S1({ destino: hijoId, tipo: TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, origen: getPadreId(), datos: { pedidoId, timeoutMs } });
-                            logger.info(`[PADRE][MIGRATION] PADRE_PIDE_MANEJADORES enviado a ${hijoId} pedidoId=${pedidoId} intento=${attempts}`);
-                        }
-                    } catch (e) {
-                        logger.warn(`[PADRE][MIGRATION] Error enviando PADRE_PIDE_MANEJADORES a ${hijoId}:`, e && e.message);
-                    }
-
-                    timer = setTimeout(async () => {
-                        const pending = window.estadoPadre.pendingMigraciones.get(pedidoId);
-                        if (!pending || pending.resolved) return;
-                        if (attempts < maxRetries) {
-                            window.estadoPadre.telemetria.migraciones.retries++;
-                            await attemptSend();
-                        } else {
-                            window.estadoPadre.telemetria.migraciones.failed++;
-                            window.estadoPadre.pendingMigraciones.delete(pedidoId);
-                            reject(new Error('No response after retries'));
-                        }
-                    }, timeoutMs);
-                };
-
-                // Register resolve to be called by HIJO_MANEJADORES handler
-                window.estadoPadre.pendingMigraciones.set(pedidoId, { hijoId, attempts:0, resolve: (result)=>{ if (timer) clearTimeout(timer); window.estadoPadre.telemetria.migraciones.success++; window.estadoPadre.telemetria.migraciones.totalResponseTime += (Date.now() - (result && result.timestamp || Date.now())); try { logger && logger.info && logger.info(`[PADRE][MIGRATION] Received HIJO_MANEJADORES response for pedidoId=${pedidoId} hijo=${hijoId} manejadores=${(result && result.manejadores && result.manejadores.length) || 0}`); } catch (e) {} window.estadoPadre.pendingMigraciones.delete(pedidoId); resolve(result); }, reject });
-
-                await attemptSend();
-            });
-        }
+        // NOTA: solicitarManejadoresConRetry y PADRE_PIDE_MANEJADORES eliminados (obsoletos)
+        // El sistema actual usa state-manager centralizado sin necesidad de migración manual
 
         // ============================================================
         // FUNCIONES GPS CENTRALIZADAS EN EL PADRE
@@ -4427,19 +4447,8 @@
                     });
                 }
 
-                // Solicitar manifest (manejadores) al hijo para migración segura con retries
-                try {
-                    const pedidoId = generarIdUnico();
-                    try {
-                        const timeoutMs = (TTL_LIMPIEZA && TTL_LIMPIEZA.MENSAJERIA && TTL_LIMPIEZA.MENSAJERIA.MOVIL) ? TTL_LIMPIEZA.MENSAJERIA.MOVIL : 400;
-                        try {
-                            const resultado = await solicitarManejadoresConRetry(hijoId, { pedidoId, timeoutMs, maxRetries: 2 });
-                            logger.info(`${logPrefix} Migración OK pedidoId=${pedidoId}, aplicados=${JSON.stringify(resultado && resultado.aplicados || [])}`);
-                        } catch (err) {
-                            logger.warn(`${logPrefix} Migración fallida pedidoId=${pedidoId}:`, err && err.message);
-                        }
-                    } catch (e) { logger.warn(`${logPrefix} No se pudo iniciar migración a ${hijoId}:`, e && e.message); }
-                } catch (e) { logger.warn(`${logPrefix} Error construyendo pedido de manejadores:`, e && e.message); }
+                // NOTA: solicitarManejadoresConRetry eliminado (obsoleto)
+                // El sistema actual usa state-manager centralizado sin necesidad de migración manual
 
                 // Enviar PADRE_DATOS para completar el handshake (sigue siendo necesario)
                 try {
@@ -5149,6 +5158,12 @@
                         throw new Error(`Iframe ${iframe.id} no encontrado en DOM`);
                     }
 
+                    // ✅ Registrar iframe en mensajería para permitir envío de mensajes
+                    if (typeof registrarIframe_S1 === 'function') {
+                        registrarIframe_S1(iframe.id, iframeEl, { capacidades: iframe.capacidades || [] });
+                        logger.debug(`${CONFIG_PADRE.LOG_PREFIX} Iframe ${iframe.id} registrado en mensajería`);
+                    }
+
                     // Si tiene mostrarInicial, mostrarlo directamente; si no, ocultarlo
                     if (iframe.mostrarInicial) {
                         iframeEl.style.display = 'block';
@@ -5184,47 +5199,14 @@
                         iframeEl.addEventListener('load', onLoad, { once: true });
                         iframeEl.addEventListener('error', onError, { once: true });
 
-                        // Iniciar la carga DESPUÉS de registrar los listeners
                         logger.info(`${CONFIG_PADRE.LOG_PREFIX} Asignando src a ${iframe.id}: ${iframe.src}`);
                         iframeEl.src = iframe.src;
                     });
 
-                    // Solicitar migración de manejadores al hijo antes de enviar PADRE_LISTO
-                    try {
-                        logger.info(`[PADRE][MIGRATION] Esperando inicialización del iframe ${iframe.id}...`);
-                        // Agregar delay para permitir inicialización completa del iframe
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        logger.info(`[PADRE][MIGRATION] Solicitando manejadores a ${iframe.id}`);
-                        await solicitarManejadoresConRetry(iframe.id, { timeoutMs: MIGRATION_DEFAULT_TIMEOUT_MS, maxRetries: MIGRATION_MAX_RETRIES });
-                        logger.info(`[PADRE][MIGRATION] Manejadores recibidos/ACK de ${iframe.id}`);
-                    } catch (e) {
-                        logger.warn(`[PADRE][MIGRATION] No response a PADRE_PIDE_MANEJADORES de ${iframe.id}:`, e && e.message);
-                        // fallback diagnóstico: listar controladores centralizados para HIJO_LISTO
-                        try {
-                            if (window.__vv_stateManager && typeof window.__vv_stateManager.getControladoresPorTipo === 'function') {
-                                const central = await window.__vv_stateManager.getControladoresPorTipo(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO);
-                                console.log(`${CONFIG_PADRE.LOG_PREFIX} [MIGRATION][DEBUG] Controladores centralizados para HIJO_LISTO:`, central.map(c => c.id));
-                            }
-                        } catch (e2) { /* ignore */ }
-                    }
-
-                    // Enviar PADRE_LISTO
-                    logger.info(`Padre listo: enviando PADRE_LISTO a hijo ${iframe.id}`);
-                    if (typeof enviarMensaje_S1 === 'function') {
-                        await enviarMensaje_S1({
-                            destino: iframe.id,
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                            origen: CONFIG_PADRE.ID,
-                            datos: {
-                                version: CONFIG_PADRE.VERSION,
-                                timestamp: new Date().toISOString(),
-                                modo: window.estadoPadre.modo?.actual || MODOS.CASA
-                            }
-                        });
-                        logger.info(`${CONFIG_PADRE.LOG_PREFIX} PADRE_LISTO enviado a ${iframe.id}`);
-                    } else {
-                        logger.warn(`${CONFIG_PADRE.LOG_PREFIX} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframe.id}`);
-                    }
+                    // NOTA: No enviamos PADRE_DATOS manualmente aquí.
+                    // El hijo enviará HIJO_PREPARADO cuando esté listo, y el controlador
+                    // de HIJO_PREPARADO en el padre enviará PADRE_DATOS automáticamente.
+                    // Esto garantiza que el hijo haya registrado sus controladores antes.
 
                     // Esperar a que el hijo esté listo
                     logger.info(`${CONFIG_PADRE.LOG_PREFIX} Esperando HIJO_LISTO de ${iframe.id}...`);
@@ -5385,23 +5367,9 @@
                             iframeElement.src = src;
                         });
                         
-                        // Enviar PADRE_LISTO con flag de reconexión
-                        if (typeof enviarMensaje_S1 === 'function') {
-                            await enviarMensaje_S1({
-                                destino: id,
-                                tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                                origen: CONFIG_PADRE.ID,
-                                datos: {
-                                    version: CONFIG_PADRE.VERSION,
-                                    timestamp: new Date().toISOString(),
-                                    modo: window.estadoPadre.modo?.actual || MODOS.CASA,
-                                    reconexion: true,
-                                    intento: intento
-                                }
-                            });
-                        } else {
-                            logger.warn(`enviarMensaje_S1 no disponible para PADRE_LISTO reconexión a ${id}`);
-                        }
+                        // NOTA: No enviamos PADRE_DATOS manualmente en reconexión.
+                        // El hijo enviará HIJO_PREPARADO cuando esté listo, y el controlador
+                        // de HIJO_PREPARADO en el padre enviará PADRE_DATOS automáticamente.
                         
                         // Esperar HIJO_LISTO con timeout
                         await new Promise((resolve, reject) => {
@@ -5493,6 +5461,73 @@
         }
 
         // ============================================================
+        // VALIDACIÓN DE MENSAJERÍA (parte de FASE 1)
+        // Se ejecuta después de cargar infraestructura, antes de FASE 2
+        // ============================================================
+        /**
+         * Valida que window.mensajeria esté completamente inicializado
+         * antes de proceder a cargar datos y iframes.
+         * 
+         * PROBLEMA QUE RESUELVE:
+         * Los iframes se cargan y envían HIJO_PREPARADO antes de que 
+         * window.mensajeria esté listo, causando que los mensajes se pierdan.
+         * 
+         * SOLUCIÓN:
+         * Esperar bloqueadamente hasta que window.mensajeria.enviarMensaje
+         * sea una función disponible, garantizando que la comunicación
+         * padre↔hijos funcionará correctamente.
+         * 
+         * @returns {Promise<void>} Resuelve cuando mensajería está validada
+         * @throws {Error} Si mensajería no está disponible después de reintentos
+         */
+        async function validarMensajeriaFase1() {
+            const logPrefix = '[PADRE][FASE1-VALIDACION]';
+            const maxReintentos = 20;
+            const intervaloPorReintento = 200; // ms
+            let intentos = 0;
+            
+            logger.info(`${logPrefix} 🔄 Iniciando validación de mensajería...`);
+            
+            // Esperar hasta que window.mensajeria y su método enviarMensaje estén disponibles
+            while (!window.mensajeria || typeof window.mensajeria.enviarMensaje !== 'function') {
+                intentos++;
+                
+                if (intentos >= maxReintentos) {
+                    const errorMsg = `window.mensajeria no disponible después de ${maxReintentos} reintentos (${maxReintentos * intervaloPorReintento / 1000}s)`;
+                    logger.error(`${logPrefix} ❌ ${errorMsg}`);
+                    throw new Error(errorMsg);
+                }
+                
+                logger.info(`${logPrefix} ⏳ Esperando mensajería... (intento ${intentos}/${maxReintentos})`);
+                await new Promise(r => setTimeout(r, intervaloPorReintento));
+            }
+            
+            // Validar también que window.estadoPadre existe
+            if (!window.estadoPadre) {
+                logger.warn(`${logPrefix} ⚠️ window.estadoPadre no existe, creando estructura básica...`);
+                window.estadoPadre = {
+                    modo: { actual: MODOS.CASA },
+                    hijosInicializados: new Set(),
+                    hijosPreparados: new Set(),
+                    hijosListos: new Set(),
+                    estadoHijos: new Map()
+                };
+            }
+            
+            // Verificar que enviarMensaje_S1 también esté disponible (alias usado en iframes)
+            if (typeof enviarMensaje_S1 !== 'function') {
+                logger.warn(`${logPrefix} ⚠️ enviarMensaje_S1 no disponible como función global`);
+            }
+            
+            logger.success(`${logPrefix} ✅ Mensajería validada correctamente`);
+            logger.info(`${logPrefix} 📊 Validación exitosa en ${intentos} intento(s)`);
+            logger.info(`${logPrefix} ✅ enviarMensaje: ${typeof window.mensajeria.enviarMensaje}`);
+            logger.info(`${logPrefix} ✅ registrarControlador: ${typeof window.mensajeria.registrarControlador}`);
+            
+            return;
+        }
+
+        // ============================================================
         // EJECUTAR INICIALIZACIÓN AUTOMÁTICA
         // ============================================================
         (async function ejecutarInicializacionAutomatica() {
@@ -5509,14 +5544,119 @@
                 // 2. Pequeña pausa para asegurar que el mapa esté completamente renderizado
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                // 3. Cargar SOLO iframe de selección (En-busca-del-tesoro.html)
-                logger.info(`${logPrefix} Iniciando carga de iframe de selección...`);
-                updateLoadingStatus('Cargando componentes...', 'Inicializando pantalla de selección');
-                await cargarIframeSoloSeleccion();
-                logger.success(`${logPrefix} ✅ Iframe de selección cargado - esperando selección de aventura`);
+                // 2.5. Validar que mensajería esté lista (parte final de FASE 1)
+                logger.info(`${logPrefix} 🔄 Validando mensajería...`);
+                await validarMensajeriaFase1();
+                logger.success(`${logPrefix} ✅ Mensajería validada`);
                 
-                // GPS y resto de iframes se cargarán DESPUÉS de seleccionar aventura
-                logger.info(`${logPrefix} ⏳ GPS y componentes adicionales se cargarán tras seleccionar aventura...`);
+                // ============================================================
+                // 📦 FASE 2: CARGAR DATOS DE AVENTURAS (archivos .js)
+                // Los datos deben estar completamente cargados ANTES de FASE 3
+                // ============================================================
+                logger.info(`${logPrefix} 🚀 Ejecutando FASE 2: Carga de datos de aventuras...`);
+                updateLoadingStatus('Cargando datos...', 'Preparando información de aventuras');
+                try {
+                    if (typeof window.__cargarDatosAventuraDiferidos === 'function') {
+                        const datosCargados = await window.__cargarDatosAventuraDiferidos();
+                        if (datosCargados) {
+                            logger.success(`${logPrefix} ✅ FASE 2 COMPLETADA - Datos de aventuras listos`);
+                            logger.info(`${logPrefix} 📊 Datos cargados: coordenadas, audios, retos, índice`);
+                        } else {
+                            logger.error(`${logPrefix} ❌ FASE 2 falló - Los datos no se cargaron correctamente`);
+                        }
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ Función __cargarDatosAventuraDiferidos no disponible`);
+                    }
+                } catch (fase2Error) {
+                    logger.error(`${logPrefix} ❌ Error en FASE 2:`, fase2Error);
+                }
+                
+                // ============================================================
+                // 📄 FASE 3: CARGAR IFRAMES HTML (necesitan datos de FASE 2)
+                // ============================================================
+                logger.info(`${logPrefix} 🚀 Ejecutando FASE 3: Carga de iframes HTML...`);
+                updateLoadingStatus('Cargando componentes...', 'Inicializando pantalla de selección');
+                // 1. Cargar iframe de selección primero
+                await cargarIframeSoloSeleccion();
+                logger.success(`${logPrefix} ✅ FASE 3.1 COMPLETADA - Iframe de selección cargado`);
+
+                // 2. Cargar el resto de iframes hijos en secuencia
+                const iframesHijos = [
+                    { id: 'hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                    { id: 'opciones', src: 'botones-y-subfunciones-opciones.html' },
+                    { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                    { id: 'hijo3', src: 'audio-hijo3.html' },
+                    { id: 'hijo4', src: 'retos-hijo4.html' },
+                    { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                ];
+
+                for (const iframe of iframesHijos) {
+                    logger.info(`${logPrefix} Cargando iframe hijo: ${iframe.id}`);
+                    try {
+                        const iframeEl = document.getElementById(iframe.id);
+                        if (!iframeEl) {
+                            throw new Error(`Iframe hijo ${iframe.id} no encontrado en DOM`);
+                        }
+                        // Registrar iframe en mensajería si corresponde
+                        if (typeof registrarIframe_S1 === 'function') {
+                            registrarIframe_S1(iframe.id, iframeEl, { capacidades: iframe.capacidades || [] });
+                            logger.debug(`${logPrefix} Iframe hijo ${iframe.id} registrado en mensajería`);
+                        }
+                        // Ocultar inicialmente
+                        iframeEl.style.display = 'none';
+                        iframeEl.style.visibility = 'hidden';
+                        // Esperar a que el iframe cargue
+                        await new Promise((resolve, reject) => {
+                            const timeoutFallback = setTimeout(() => {
+                                logger.warn(`${logPrefix} ⚠️ Timeout de carga para hijo ${iframe.id}, continuando...`);
+                                resolve();
+                            }, ajustarTimeoutPorConexion_S1(10000));
+                            const onLoad = () => {
+                                clearTimeout(timeoutFallback);
+                                iframeEl.removeEventListener('load', onLoad);
+                                iframeEl.removeEventListener('error', onError);
+                                logger.info(`${logPrefix} ✅ Hijo ${iframe.id} cargado (evento onload)`);
+                                resolve();
+                            };
+                            const onError = (err) => {
+                                clearTimeout(timeoutFallback);
+                                iframeEl.removeEventListener('load', onLoad);
+                                iframeEl.removeEventListener('error', onError);
+                                logger.error(`${logPrefix} ❌ Error de carga para hijo ${iframe.id}:`, err);
+                                resolve();
+                            };
+                            iframeEl.addEventListener('load', onLoad, { once: true });
+                            iframeEl.addEventListener('error', onError, { once: true });
+                            logger.info(`${logPrefix} Asignando src a hijo ${iframe.id}: ${iframe.src}`);
+                            iframeEl.src = iframe.src;
+                        });
+                        // Esperar a que el hijo esté listo
+                        logger.info(`${logPrefix} Esperando HIJO_LISTO de hijo ${iframe.id}...`);
+                        await new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => {
+                                reject(new Error(`Timeout esperando HIJO_LISTO de hijo ${iframe.id}`));
+                            }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
+                            const check = () => {
+                                if (window.estadoPadre.hijosInicializados.has(iframe.id)) {
+                                    clearTimeout(timeout);
+                                    logger.info(`${logPrefix} HIJO_LISTO recibido de hijo ${iframe.id}`);
+                                    resolve();
+                                } else {
+                                    setTimeout(check, 100);
+                                }
+                            };
+                            check();
+                        });
+                        logger.success(`${logPrefix} ✅ Hijo ${iframe.id} listo y confirmado.`);
+                        // Mostrar el iframe
+                        iframeEl.style.display = '';
+                        iframeEl.style.visibility = 'visible';
+                    } catch (error) {
+                        logger.error(`${logPrefix} ❌ Error cargando hijo ${iframe.id}: ${error.message}`);
+                        logger.warn(`${logPrefix} Continuando con siguiente hijo...`);
+                    }
+                }
+                logger.success(`${logPrefix} ✅ FASE 3 COMPLETADA - Todos los iframes hijos cargados y confirmados`);
                 
                 // 4.5. 🗺️ ENVIAR CAMBIO_PARADA INICIAL para dibujar ruta/polylines en el mapa
                 logger.info(`${logPrefix} 📍 Configurando parada inicial P-0...`);
@@ -5623,24 +5763,11 @@
                     iframeEl.style.display !== 'none' && iframeEl.style.visibility !== 'hidden') {
                     logger.info(`${logPrefix} ✅ hijo5 ya está cargado y visible`);
                     
-                    // Enviar PADRE_LISTO a hijo5
-                    logger.info(`${logPrefix} Enviando PADRE_LISTO a hijo5`);
-                    if (typeof enviarMensaje_S1 === 'function') {
-                        await enviarMensaje_S1({
-                            destino: iframeCasa.id,
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                            origen: CONFIG_PADRE.ID,
-                            datos: {
-                                version: CONFIG_PADRE.VERSION,
-                                timestamp: new Date().toISOString(),
-                                modo: window.estadoPadre.modo?.actual || MODOS.CASA
-                            }
-                        });
-                    } else {
-                        logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframeCasa.id}`);
-                    }
+                    // NOTA: No enviamos PADRE_DATOS manualmente aquí.
+                    // El hijo ya debería haber enviado HIJO_PREPARADO y recibido PADRE_DATOS
+                    // del controlador de HIJO_PREPARADO. Verificamos si ya está listo.
 
-                    // Esperar a que hijo5 esté listo
+                    // Esperar a que hijo5 esté listo (puede que ya lo esté)
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
                             reject(new Error(`Timeout esperando HIJO_LISTO de ${iframeCasa.id}`));
@@ -5698,22 +5825,9 @@
                     iframeEl.addEventListener('error', onError, { once: true });
                 });
 
-                // Ahora enviar PADRE_LISTO
-                logger.info(`${logPrefix} Enviando PADRE_LISTO a hijo5`);
-                if (typeof enviarMensaje_S1 === 'function') {
-                    await enviarMensaje_S1({
-                        destino: iframeCasa.id,
-                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                        origen: CONFIG_PADRE.ID,
-                        datos: {
-                            version: CONFIG_PADRE.VERSION,
-                            timestamp: new Date().toISOString(),
-                            modo: window.estadoPadre.modo?.actual || MODOS.CASA
-                        }
-                    });
-                } else {
-                    logger.warn(`${logPrefix} enviarMensaje_S1 no disponible para PADRE_LISTO a ${iframeCasa.id}`);
-                }
+                // NOTA: No enviamos PADRE_DATOS manualmente aquí.
+                // El hijo enviará HIJO_PREPARADO cuando esté listo, y el controlador
+                // de HIJO_PREPARADO en el padre enviará PADRE_DATOS automáticamente.
 
                 // Esperar a que hijo5 esté listo
                 await new Promise((resolve, reject) => {
@@ -5808,27 +5922,10 @@
                         iframeEl.src = iframe.src;
                     });
 
-                    // Solicitar manejadores
-                    try {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        await solicitarManejadoresConRetry(iframe.id, { timeoutMs: MIGRATION_DEFAULT_TIMEOUT_MS, maxRetries: MIGRATION_MAX_RETRIES });
-                    } catch (e) {
-                        logger.warn(`${logPrefix} No response a PADRE_PIDE_MANEJADORES de ${iframe.id}:`, e && e.message);
-                    }
-
-                    // Enviar PADRE_LISTO
-                    if (typeof enviarMensaje_S1 === 'function') {
-                        await enviarMensaje_S1({
-                            destino: iframe.id,
-                            tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_LISTO,
-                            origen: CONFIG_PADRE.ID,
-                            datos: {
-                                version: CONFIG_PADRE.VERSION,
-                                timestamp: new Date().toISOString(),
-                                modo: window.estadoPadre.modo?.actual || MODOS.CASA
-                            }
-                        });
-                    }
+                    // NOTA: No enviamos PADRE_DATOS manualmente aquí.
+                    // El hijo enviará HIJO_PREPARADO cuando esté listo, y el controlador
+                    // de HIJO_PREPARADO en el padre enviará PADRE_DATOS automáticamente.
+                    // Esto garantiza que el hijo haya registrado sus controladores antes.
 
                     // Esperar HIJO_LISTO
                     await new Promise((resolve, reject) => {
@@ -6725,11 +6822,35 @@
         });
 
         // ============================================================
-        // ADDITIONAL CONTROLLER REGISTRATIONS (wait for DOM ready)
+        // ADDITIONAL CONTROLLER REGISTRATIONS
         // These use window.registrarControladorSeguro which is defined 
-        // in Script 1's DOMContentLoaded, so we must wait for it
+        // in Script 1's DOMContentLoaded.
+        // Since modules execute deferred (after DOM is ready), 
+        // DOMContentLoaded has ALREADY fired - execute immediately
         // ============================================================
-        document.addEventListener('DOMContentLoaded', async () => {
+        (async function registrarControladoresScript2() {
+            // Wait a tick to ensure Script 1's DOMContentLoaded has run
+            await new Promise(resolve => setTimeout(resolve, 0));
+            
+            // Double-check registrarControladorSeguro is available
+            if (typeof window.registrarControladorSeguro !== 'function') {
+                console.error('[SCRIPT2] ⚠️ registrarControladorSeguro no disponible, esperando...');
+                await new Promise(resolve => {
+                    const check = () => {
+                        if (typeof window.registrarControladorSeguro === 'function') {
+                            resolve();
+                        } else {
+                            setTimeout(check, 50);
+                        }
+                    };
+                    check();
+                });
+            }
+            
+            // Local alias to ensure TIPOS_MENSAJE is available in this scope
+            const TIPOS_MENSAJE = window.TIPOS_MENSAJE || TIPOS_MENSAJE_S2;
+            
+            console.log('[SCRIPT2] 🚀 Registrando controladores adicionales de Script 2...');
         // ============================================================
         // CONTROLADOR: RETO.OCULTAR
         // Oculta el iframe de retos cuando el usuario hace click en "Continuar"
@@ -8944,7 +9065,25 @@
                 
                 logger.debug(`${logPrefix} Aventura almacenada en estado global: ${aventura}`);
                 
-                // 🔥 DISTRIBUIR DATOS A LOS HIJOS
+                // � FASE 2: CARGAR DATOS DIFERIDOS DE AVENTURA
+                // Cargar coordenadas, audios y retos AHORA que el usuario seleccionó
+                logger.info(`${logPrefix} 🚀 Iniciando Fase 2: Cargando datos de aventura...`);
+                try {
+                    if (typeof window.__cargarDatosAventuraDiferidos === 'function') {
+                        const datosCargados = await window.__cargarDatosAventuraDiferidos();
+                        if (datosCargados) {
+                            logger.success(`${logPrefix} ✅ Datos de aventura cargados correctamente (Fase 2)`);
+                        } else {
+                            logger.error(`${logPrefix} ❌ Error cargando datos de aventura`);
+                        }
+                    } else {
+                        logger.warn(`${logPrefix} ⚠️ Función de carga diferida no disponible`);
+                    }
+                } catch (cargaError) {
+                    logger.error(`${logPrefix} ❌ Error en carga diferida:`, cargaError);
+                }
+                
+                // �🔥 DISTRIBUIR DATOS A LOS HIJOS
                 // Enviar coordenadas, audios y retos a los hijos correspondientes
                 try {
                     logger.info(`${logPrefix} Distribuyendo datos de aventura ${aventura} (${idioma}) a los hijos...`);
@@ -9357,7 +9496,8 @@
         // con funcionalidad completa incluyendo ACK, migración de manejadores y PADRE_DATOS.
         // Se omite el registro duplicado aquí para evitar conflictos.
 
-        }); // End DOMContentLoaded for additional controller registrations
+        console.log('[SCRIPT2] ✅ Controladores adicionales de Script 2 registrados');
+        })(); // End registrarControladoresScript2 IIFE
 
         logger.info(`${(CONFIG_PADRE && CONFIG_PADRE.LOG_PREFIX) || '[PADRE]'} ✅ Controladores Script 2 registrados`);
 
@@ -9476,64 +9616,93 @@
 
     <!-- Add JavaScript to manage iframe visibility -->
     <script type="module">
-        // Import the messaging system and utils
+
+        // Importar sistema de mensajería y utilidades
         const { TIPOS_MENSAJE: TIPOS_MENSAJE_IFRAME } = await import('./js/constants.js');
         const { CONFIG: CONFIG_IFRAME } = await import('./js/config.js');
         const loggerIframe = (await import('./js/logger.js')).default;
         const { coordinarAccion } = await import('./js/app.js');
         // mensajeria.js ya importado en Script 1 - usar window.mensajeria
         const { registrarControlador: registrarControladorIframe, enviarMensaje: enviarMensajeIframe } = window.mensajeria;
-        
+
+        // Función utilitaria para cargar iframes y enviar PADRE_DATOS solo después de onload real
+        async function cargarIframeConDatos(iframeId, src, datosPadre) {
+            return new Promise((resolve, reject) => {
+                const iframe = document.getElementById(iframeId);
+                if (!iframe) return reject(new Error(`No se encontró el iframe ${iframeId}`));
+                let enviado = false;
+                // Si el iframe ya tiene src, solo esperar onload
+                if (!iframe.src || iframe.src === '' || iframe.src === 'about:blank') {
+                    iframe.src = src;
+                }
+                // Eliminar cualquier handler previo para evitar duplicados
+                iframe.onload = null;
+                iframe.addEventListener('load', async function onLoadReal() {
+                    if (enviado) return; // Evitar duplicados
+                    enviado = true;
+                    try {
+                        // Esperar a que contentWindow esté realmente disponible
+                        if (!iframe.contentWindow) {
+                            // Esperar brevemente si el navegador tarda en asignar contentWindow
+                            await new Promise(res => setTimeout(res, 50));
+                        }
+                        await enviarMensajeIframe({
+                            tipo: TIPOS_MENSAJE_IFRAME.PADRE_DATOS,
+                            datos: datosPadre,
+                            destino: iframeId
+                        }, iframe.contentWindow);
+                        loggerIframe.info(`[PADRE] PADRE_DATOS enviado a ${iframeId} tras onload real`);
+                        resolve();
+                    } catch (err) {
+                        loggerIframe.error(`[PADRE] Error enviando PADRE_DATOS a ${iframeId}:`, err);
+                        reject(err);
+                    }
+                }, { once: true });
+            });
+        }
+
+        // Función para cargar todos los hijos de forma segura (esperando onload real)
+        window.cargarTodosLosHijosConDatos = async function(hijosConfig, datosPadre) {
+            // hijosConfig: [{ id: 'hijo2', src: 'coordenadas-hijo2.html' }, ...]
+            for (const hijo of hijosConfig) {
+                try {
+                    await cargarIframeConDatos(hijo.id, hijo.src, datosPadre);
+                } catch (err) {
+                    loggerIframe.error(`[PADRE] Error cargando hijo ${hijo.id}:`, err);
+                }
+            }
+        };
+
         // Functions to manage hijo4 visibility through the centralized messaging system
         window.mostrarHijo4 = async function() {
             const hijo4 = document.getElementById('hijo4');
             const backdrop = document.getElementById('backdrop');
-            
+
             if (hijo4 && backdrop) {
-                // Asegurarse de que el iframe esté cargado
-                if (!hijo4.src || hijo4.src === '' || hijo4.src === 'about:blank') {
-                    logger.info('Cargando hijo4 por primera vez...');
-                    hijo4.src = 'retos-hijo4.html';
-                    
-                    // Esperar a que se cargue
-                    await new Promise((resolve) => {
-                        const onLoad = () => {
-                            hijo4.removeEventListener('load', onLoad);
-                            logger.info('Hijo4 cargado exitosamente');
-                            resolve();
-                        };
-                        hijo4.addEventListener('load', onLoad);
-                        
-                        // Timeout de seguridad
-                        setTimeout(() => {
-                            hijo4.removeEventListener('load', onLoad);
-                            logger.warn('Timeout esperando carga de hijo4');
-                            resolve();
-                        }, 5000);
-                    });
-                }
-                
+                // Asegurarse de que el iframe esté cargado y PADRE_DATOS enviado
+                await cargarIframeConDatos('hijo4', 'retos-hijo4.html', window.__vv_DATOS_PADRE || {});
+
                 // First display elements
                 backdrop.style.display = 'block';
                 hijo4.style.display = 'block';
-                
+
                 // Force reflow
                 void hijo4.offsetWidth;
-                
+
                 // Then add visible class for transition
                 backdrop.classList.add('visible');
                 hijo4.classList.add('visible');
-                
+
                 // Focus for accessibility
                 setTimeout(() => {
                     hijo4.focus();
                 }, 100);
-                
+
                 // Usar sistema de coordinación para mostrar retos
                 try {
                     await coordinarAccion('mostrar_retos', [{
                         componente: 'hijo4',
-                        tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                        tipo: TIPOS_MENSAJE_IFRAME.UI.NOTIFICACION,
                         datos: {
                             accion: 'mostrar_retos',
                             elemento: 'hijo4',
@@ -9541,35 +9710,35 @@
                         }
                     }]);
                 } catch (error) {
-                    console.error('Error coordinando mostrar retos:', error);
+                    loggerIframe.error('Error coordinando mostrar retos:', error);
                 }
-                
+
                 if (window.logger?.info) {
                     window.logger.info('Hijo4 (challenges) shown');
                 }
             }
         };
-        
+
         window.ocultarHijo4 = async function() {
             const hijo4 = document.getElementById('hijo4');
             const backdrop = document.getElementById('backdrop');
-            
+
             if (hijo4 && backdrop) {
                 // Remove visible class first
                 hijo4.classList.remove('visible');
                 backdrop.classList.remove('visible');
-                
+
                 // Hide completely after transition
                 setTimeout(() => {
                     hijo4.style.display = 'none';
                     backdrop.style.display = 'none';
                 }, 300);
-                
+
                 // Usar sistema de coordinación para ocultar retos
                 try {
                     await coordinarAccion('ocultar_retos', [{
                         componente: 'hijo4',
-                        tipo: TIPOS_MENSAJE.UI.NOTIFICACION,
+                        tipo: TIPOS_MENSAJE_IFRAME.UI.NOTIFICACION,
                         datos: {
                             accion: 'ocultar_retos',
                             elemento: 'hijo4',
@@ -9577,9 +9746,9 @@
                         }
                     }]);
                 } catch (error) {
-                    console.error('Error coordinando ocultar retos:', error);
+                    loggerIframe.error('Error coordinando ocultar retos:', error);
                 }
-                
+
                 if (window.logger?.info) {
                     window.logger.info('Hijo4 (challenges) hidden');
                 }
