@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Puzzle Genérico</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .test-container {
+            margin-bottom: 30px;
+        }
+        iframe {
+            border: 2px solid #ccc;
+            width: 100%;
+            height: 600px;
+        }
+        .info {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test de Puzzle Genérico</h1>
+    
+    <div class="info">
+        <h3>Objetivo del Test:</h3>
+        <p>Verificar que el nuevo sistema de puzzles centralizado funciona correctamente:</p>
+        <ul>
+            <li>✅ Puzzle.html carga con parámetro ?id=PZ-XX</li>
+            <li>✅ puzzles-data.js proporciona la configuración correcta</li>
+            <li>✅ La imagen se carga correctamente</li>
+            <li>✅ El puzzle es jugable</li>
+            <li>✅ La comunicación con postMessage funciona</li>
+        </ul>
+    </div>
+
+    <div class="test-container">
+        <h2>Puzzle 1: Plaza de la Virgen (PZ-8)</h2>
+        <iframe id="puzzle8" src="Puzzle.html?id=PZ-8"></iframe>
+    </div>
+
+    <div class="test-container">
+        <h2>Puzzle 2: Plaza de Toros (PZ-18)</h2>
+        <iframe id="puzzle18" src="Puzzle.html?id=PZ-18"></iframe>
+    </div>
+
+    <div class="test-container">
+        <h2>Puzzle 3: Lonja (PZ-26)</h2>
+        <iframe id="puzzle26" src="Puzzle.html?id=PZ-26"></iframe>
+    </div>
+
+    <div class="test-container">
+        <h2>Test de Error: ID Inválido</h2>
+        <iframe id="puzzleError" src="Puzzle.html?id=INVALID"></iframe>
+    </div>
+
+    <div id="messages" class="info">
+        <h3>Mensajes recibidos de los puzzles:</h3>
+        <div id="messageLog"></div>
+    </div>
+
+    <script>
+        // Escuchar mensajes de los puzzles
+        window.addEventListener('message', (event) => {
+            const log = document.getElementById('messageLog');
+            const time = new Date().toLocaleTimeString();
+            const msg = document.createElement('div');
+            msg.className = 'success';
+            msg.textContent = `[${time}] Mensaje recibido: ${event.data}`;
+            log.appendChild(msg);
+            console.log('Message from puzzle:', event.data);
+        });
+
+        console.log('Test page loaded. Listening for puzzle messages...');
+    </script>
+</body>
+</html>

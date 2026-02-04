@@ -70,7 +70,7 @@ export const RETOS_AVENTURAS = {
                 id: "PZ-8",
                 tipo: "puzzle",
                 pregunta: "8. Plaza de la Virgen",
-                src: "P8_puzzle_plaza_virgen.html"
+                src: "Puzzle.html?id=PZ-8"
             },
             {
                 reto: 9,
@@ -152,7 +152,7 @@ export const RETOS_AVENTURAS = {
                 id: "PZ-18",
                 tipo: "puzzle",
                 pregunta: "18. Plaza de Toros y Estación del Norte",
-                src: "P18_puzzle_plaza_de_Toros_y_estacion_norte.html"
+                src: "Puzzle.html?id=PZ-18"
             },
             {
                 reto: 19,
@@ -218,7 +218,7 @@ export const RETOS_AVENTURAS = {
                 id: "PZ-26",
                 tipo: "puzzle",
                 pregunta: "26. Lonja de la Seda",
-                src: "P26_puzzle_lonja.html"
+                src: "Puzzle.html?id=PZ-26"
             },
             {
                 reto: 27,
