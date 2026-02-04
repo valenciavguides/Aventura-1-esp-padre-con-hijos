@@ -218,11 +218,12 @@
       aventuraSeleccionada = aventura;
       aventuraDescripcion = descripcion;
       aventuraTiempo = tiempo;
-      // Update confirmation screen
-      document.getElementById('aventura-nombre-confirmacion').textContent = aventura.replace('Aventura', 'Aventura ');
+      // Update confirmation screen - format adventure name with space before number
+      const nombreFormateado = aventura.replace(/Aventura(\d+)/, 'Aventura $1');
+      document.getElementById('aventura-nombre-confirmacion').textContent = nombreFormateado;
       document.getElementById('aventura-descripcion-confirmacion').textContent = descripcion;
       document.getElementById('aventura-tiempo-confirmacion').textContent = 'Tiempo máximo: ' + tiempo;
-      mostrar(8); // Go to adventure confirmation screen
+      mostrar(8); // Go to adventure confirmation screen (P8)
     }
     
     // Confirm adventure selection - notify padre to start loading iframes
@@ -241,7 +242,8 @@
           }
         }, '*');
       }
-      mostrar(7); // Go to quiz screen first (before puzzle)
+      // Go to screen 7 (reto interactivo / quiz) before puzzle (screen 9)
+      mostrar(7);
     }
     
     function verificar() {
