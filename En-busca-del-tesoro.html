@@ -40,6 +40,9 @@
     .x.incorrecto { display: inline; color: red; }
     .aventuras-lista { display: flex; flex-direction: column; gap: 10px; width: 80%; max-width: 400px; }
     .aventuras-lista .btn { margin-top: 10px; }
+    .btn-arrow { font-size: 28px; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .puzzle-container { width: 100%; height: 90vh; max-width: 600px; }
+    .audio-controls { margin-top: 20px; width: 80%; max-width: 300px; }
   </style>
 </head>
 <body>
@@ -49,38 +52,11 @@
     <div class="free-demo">FREE DEMO</div>
     <img src="fotos-botones/Logo redondo.jpg" class="logo-redondo">
     <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
-    <button class="btn" onclick="mostrar(3)">Continuar</button>
+    <button class="btn btn-arrow" onclick="mostrar(2)">→</button>
   </div>
 
-  <!-- P2: Términos y Condiciones -->
+  <!-- P2: Selección de idioma -->
   <div class="pantalla" id="pantalla2">
-    <div class="free-demo">FREE DEMO</div>
-    <p>Por favor, lee los <a href="terminos y condiciones/español" target="_blank">Términos y Condiciones</a> antes de continuar.</p>
-    <!--
-    <h2>Términos y Condiciones</h2>
-    <div class="texto-box"><pre style="white-space: pre-wrap;">
-Términos y Condiciones, Política de Cookies y Aviso de Privacidad – ValènciaVGuides
-
-ValènciaVGuides es una aplicación de audioguía geolocalizada en tiempo real propiedad exclusiva de "València be guides", titular de la marca registrada número 3.666.948 en el Boletín Oficial de la Propiedad Industrial. Todos los derechos de propiedad intelectual e industrial sobre los contenidos, imágenes, textos, software y diseño de esta aplicación están reservados, siendo prohibida su reproducción, distribución, cesión o explotación comercial sin la previa autorización escrita de "València be guides". Cualquier incumplimiento será objeto de las acciones legales pertinentes conforme a lo establecido en la Ley 22/1987, de 11 de noviembre, de Propiedad Intelectual, así como en la legislación civil y penal vigente.
-
-El acceso y uso de la aplicación se realiza sin necesidad de creación de cuenta y queda estrictamente limitado a un uso personal y no comercial. El usuario asume plena responsabilidad por el uso que haga de la aplicación y de los servicios que ésta facilita, exonerando expresamente a "València be guides" de cualquier responsabilidad derivada de accidentes, daños personales, materiales, pérdidas o gastos adicionales que puedan surgir durante el uso o la experiencia facilitada, incluyendo pero no limitado a entradas en museos, transporte, restaurantes u otros servicios externos.
-
-La aplicación incorpora publicidad gestionada por terceros, sobre cuyos contenidos "València be guides" no ejerce control ni asume responsabilidad alguna, quedando eximida de cualquier obligación derivada de dichos contenidos publicitarios.
-
-Para la gestión de la publicidad y el envío de correos electrónicos de confirmación relacionados con las compras efectuadas, se emplean cookies. Estas cookies permiten mejorar la experiencia del usuario, asegurar la funcionalidad de la aplicación, personalizar los anuncios y facilitar la comunicación directa mediante correo electrónico. El usuario puede rechazar o eliminar estas cookies mediante la configuración de su navegador, si bien debe tener en cuenta que dicha acción puede afectar a la funcionalidad integral de la aplicación, incluyendo la recepción de comunicaciones y la personalización de la publicidad.
-
-En materia de protección de datos personales, se informa que se recoge exclusivamente el correo electrónico del usuario para fines de confirmación de compra y comunicaciones relacionadas. El tratamiento de dichos datos se realiza conforme al Reglamento (UE) 2016/679 del Parlamento Europeo y del Consejo, de 27 de abril de 2016 (Reglamento General de Protección de Datos - RGPD), y la Ley Orgánica 3/2018, de 5 de diciembre, de Protección de Datos Personales y garantía de los derechos digitales (LOPDGDD), garantizando que no serán cedidos a terceros sin consentimiento explícit o salvo por imperativo legal. El usuario podrá ejercer en todo momento sus derechos de acceso, rectificación, supresión, limitación del tratamiento, portabilidad y oposición mediante solicitud escrita dirigida a "València be guides".
-
-Estos términos y condiciones, así como las políticas de privacidad y cookies, se rigen por la legislación española y europea vigente, sometiéndose las partes a la jurisdicción exclusiva de los tribunales competentes de València, España, para la resolución de cualquier controversia derivada del uso de esta aplicación. "València be guides" se reserva el derecho de modificar unilateralmente estos términos, así como de ejercer todas las acciones legales que correspondan para la protección de sus derechos, incluyendo reclamaciones civiles y penales frente a usos no autorizados, vulneraciones de la propiedad intelectual o explotación indebida de su contenido.
-
-El usuario declara haber leído, comprendido y aceptado íntegramente las presentes condiciones para la utilización de ValènciaVGuides.
-</pre></div>
-    -->
-    <button class="btn" onclick="aceptarTerminos()">Aceptar</button>
-  </div>
-
-  <!-- P3: Selección de idioma -->
-  <div class="pantalla" id="pantalla3">
     <div class="free-demo">FREE DEMO</div>
     <h2>Selecciona tu idioma</h2>
     <div class="banderas">
@@ -93,26 +69,39 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
     </div>
   </div>
 
+  <!-- P3: Términos y Condiciones -->
+  <div class="pantalla" id="pantalla3">
+    <div class="free-demo">FREE DEMO</div>
+    <p>Por favor, lee los <a href="terminos y condiciones/español" target="_blank">Términos y Condiciones</a> antes de continuar.</p>
+    <button class="btn" onclick="aceptarTerminos()">Aceptar</button>
+  </div>
+
   <!-- P4: Audio Intro -->
   <div class="pantalla" id="pantalla4">
     <div class="free-demo">FREE DEMO</div>
     <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
     <h3>Audio de introducción</h3>
-    <!-- Audio file not found: INTRO/Español/Intro ESPAÑOL 1.mp3 -->
-    <!-- <audio class="audio-controls" controls autoplay>
+    <audio id="audioIntro" class="audio-controls" controls>
       <source src="INTRO/Español/Intro ESPAÑOL 1.mp3" type="audio/mpeg">
       Tu navegador no soporta el audio.
-    </audio> -->
-    <p>Audio no disponible (archivo faltante)</p>
-    <button class="btn" onclick="mostrar(5)">Siguiente</button>
+    </audio>
+    <p id="audioStatus">Escucha el audio para continuar</p>
+    <button class="btn btn-arrow" id="btnAudioNext" onclick="mostrar(5)" disabled>→</button>
   </div>
 
-  <!-- P5: Menú previo al reto -->
+  <!-- P5: Elección de Aventura -->
   <div class="pantalla" id="pantalla5">
     <div class="free-demo">FREE DEMO</div>
-    <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
-    <h3>Menú de opciones</h3>
-    <button class="btn" onclick="mostrar(6)">Retos</button>
+    <h2>Elección de Aventura</h2>
+    <div class="aventuras-lista">
+      <button class="btn" onclick="seleccionarAventura('Aventura1')">Aventura 1<br><small>València histórica 1<br>Tiempo máximo: 60h</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura 2<br><small>Soon</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura 3<br><small>Soon</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura 4<br><small>Soon</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura 5<br><small>Soon</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura Fallas<br><small>Soon</small></button>
+      <button class="btn" disabled style="opacity:0.5;">Aventura 34Km<br><small>Soon</small></button>
+    </div>
   </div>
 
   <!-- P6: Reto interactivo -->
@@ -130,9 +119,18 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
     </div>
   </div>
 
+  <!-- P7: Puzzle interactivo -->
+  <div class="pantalla" id="pantalla7">
+    <div class="free-demo">FREE DEMO</div>
+    <div class="puzzle-container">
+      <iframe id="puzzleFrame" src="Puzzle.html?id=PZ-logo&aventura=Intro" style="width:100%; height:80vh; border:none;"></iframe>
+    </div>
+  </div>
+
   <script>
     let idiomaSeleccionado = "";
     let aventuraSeleccionada = "";
+    let audioHasEnded = false;
     
     function mostrar(id) {
       document.querySelectorAll(".pantalla").forEach(p => p.classList.remove("visible"));
@@ -146,7 +144,7 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         caja.style.borderColor = "green";
         seleccion.nextElementSibling.classList.add("tick", "correcto");
         alert("🎉 ¡Correcto!");
-        // Después del reto demo, pasar a elección de aventura
+        // Después del reto demo, pasar al puzzle interactivo
         setTimeout(() => mostrar(7), 1000);
       } else {
         caja.style.borderColor = "red";
@@ -154,6 +152,41 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         navigator.vibrate?.(300);
       }
     }
+    
+    // Audio intro handling - enable button after audio ends
+    document.addEventListener('DOMContentLoaded', function() {
+      const audioIntro = document.getElementById('audioIntro');
+      const btnAudioNext = document.getElementById('btnAudioNext');
+      const audioStatus = document.getElementById('audioStatus');
+      
+      if (audioIntro && btnAudioNext) {
+        // Enable button when audio ends
+        audioIntro.addEventListener('ended', function() {
+          audioHasEnded = true;
+          btnAudioNext.disabled = false;
+          if (audioStatus) audioStatus.textContent = 'Audio completado - Puedes continuar';
+        });
+        
+        // Handle audio error (file not found)
+        audioIntro.addEventListener('error', function() {
+          audioHasEnded = true;
+          btnAudioNext.disabled = false;
+          if (audioStatus) audioStatus.textContent = 'Audio no disponible - Puedes continuar';
+        });
+      }
+    });
+    
+    // Listen for puzzle completion messages
+    window.addEventListener('message', function(event) {
+      if (event.data === 'puzzle-state-completed' || event.data === 'advance-to-next') {
+        // Puzzle completed, advance to screen 8
+        mostrar(8);
+      }
+      if (event.data === 'puzzle-state-timeout') {
+        // Puzzle timed out, also advance to screen 8
+        mostrar(8);
+      }
+    });
   </script>
 
   <!-- MÓDULO DE MENSAJERÍA - Comunicación con el Padre -->
@@ -868,12 +901,12 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             
             logger.debug(`[SELECCION] Mensaje IDIOMA_SELECCIONADO enviado al padre`);
             
-            // Navegar a la siguiente pantalla
-            mostrar(2);
+            // Navegar a términos y condiciones (pantalla 3)
+            mostrar(3);
         } catch (error) {
             logger.error(`[SELECCION] Error seleccionando idioma:`, error);
             // Continuar con navegación aunque falle el mensaje
-            mostrar(4);
+            mostrar(3);
         }
     };
 
@@ -902,11 +935,11 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             
             logger.debug(`[SELECCION] Mensaje AVENTURA_SELECCIONADA enviado al padre`);
             
-            // Navegar a pantalla de mapa/inicio
-            mostrar(8);
+            // Navegar a pantalla del reto interactivo (pantalla 6)
+            mostrar(6);
         } catch (error) {
             logger.error(`[SELECCION] Error seleccionando aventura:`, error);
-            mostrar(8);
+            mostrar(6);
         }
     };
 
@@ -968,10 +1001,11 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                 }
             });
             
-            mostrar(7);
+            // Navegar a pantalla de audio intro (pantalla 4)
+            mostrar(4);
         } catch (error) {
             logger.error(`[SELECCION] Error aceptando términos:`, error);
-            mostrar(7);
+            mostrar(4);
         }
     };
 
@@ -991,21 +1025,6 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
         // Aquí se puede agregar lógica adicional que necesite ejecutarse después de la confirmación del padre
     }
   </script>
-
-<!-- P7: Elección de Aventura -->
-<div class="pantalla" id="pantalla7">
-  <div class="free-demo">FREE DEMO</div>
-  <h2>Elección de Aventura</h2>
-  <div class="aventuras-lista">
-    <button class="btn" onclick="seleccionarAventura('Aventura1')">Aventura 1<br><small>València histórica 1<br>Tiempo máximo: 60h</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 2<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 3<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 4<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 5<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura Fallas<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 34Km<br><small>Soon</small></button>
-  </div>
-</div>
 
 <!-- P8: Mapa e inicio -->
 <div class="pantalla" id="pantalla8" style="background-color:orange;">

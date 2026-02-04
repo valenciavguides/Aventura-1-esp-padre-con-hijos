@@ -12,7 +12,8 @@ export const DATOS_PUZZLES = {
             tiempo: 180,
             filas: 3,
             columnas: 3
-        },
+        }
+    },
     Aventura1: {
         "PZ-8": {
             id: "PZ-8",
