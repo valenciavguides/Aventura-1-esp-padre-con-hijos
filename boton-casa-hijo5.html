@@ -470,68 +470,8 @@
     import { TIPOS_MENSAJE } from './js/constants.js';
     import logger from './js/logger.js';
 
-    // RESPALDO: listener para handshake de migración (PADRE_PIDE_MANEJADORES)
-    (function(){
-        async function sendManifest(msg) {
-            try {
-                const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
-                const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
-                const payload = { 
-                    pedidoId: msg?.datos?.pedidoId || ('p_' + Date.now()), 
-                    manejadores: tipos, 
-                    timestamp: Date.now() 
-                };
-                
-                try { 
-                    (window.logger || console).info && (window.logger || console).info(`[hijo5] sendManifest pedidoId=${payload.pedidoId} manejadores=${tipos.length}`, tipos.map(t => t.tipo)); 
-                } catch (e) {}
-                
-                const origen = 'hijo5';
-                
-                // Enviar respuesta al padre
-                const response = {
-                    tipo: 'SISTEMA.HIJO_MANEJADORES',
-                    datos: payload,
-                    origen: origen,
-                    destino: 'padre',
-                    timestamp: Date.now()
-                };
-                
-                try {
-                    if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
-                        await window.mensajeria.enviarMensaje(response);
-                        (window.logger || console).info && (window.logger || console).info('[hijo5] HIJO_MANEJADORES enviado vía mensajeria');
-                    } else {
-                        window.parent.postMessage(response, window.location.origin);
-                        (window.logger || console).info && (window.logger || console).info('[hijo5] HIJO_MANEJADORES enviado vía postMessage');
-                    }
-                } catch (e) { 
-                    try { 
-                        window.parent.postMessage(response, '*');
-                        (window.logger || console).warn && (window.logger || console).warn('[hijo5] HIJO_MANEJADORES enviado con wildcard origin:', e && e.message);
-                    } catch(e2) {
-                        (window.logger || console).error && (window.logger || console).error('[hijo5] Error enviando HIJO_MANEJADORES:', e2 && e2.message);
-                    }
-                }
-            } catch (e) { 
-                (window.logger || console).warn('[hijo5] Error enviando manifest', e && e.message); 
-            }
-        }
-
-        window.addEventListener('message', async (ev) => {
-            try {
-                const m = ev.data || {};
-                if (m && (m.tipo === 'SISTEMA.PADRE_PIDE_MANEJADORES' || (m.tipo && m.tipo.endsWith && m.tipo.endsWith('PADRE_PIDE_MANEJADORES')))) {
-                    try { 
-                        (window.logger || console).info && (window.logger || console).info(`[hijo5] PADRE_PIDE_MANEJADORES recibido pedidoId=${m?.datos?.pedidoId} origen=${m?.origen || 'unknown'}`);
-                        await sendManifest(m);
-                    } catch (e) {
-                        (window.logger || console).error && (window.logger || console).error('[hijo5] Error procesando PADRE_PIDE_MANEJADORES:', e && e.message);
-                    }
-                }
-            } catch (e) {}
-        });
-    })();
+    // NOTA: Bloque IIFE "RESPALDO" para PADRE_PIDE_MANEJADORES eliminado (obsoleto).
+    // El sistema actual usa state-manager centralizado sin necesidad de migración manual.
 
     import { normalizarParadas } from './js/utils.js';
     import { BOTONES_CASA_AVENTURAS } from './js/botones-casa-aventuras.js';
@@ -1013,74 +953,17 @@
                     }
                 }
 
-                // Enviar HIJO_LISTO directamente (solo si no se ha enviado antes)
-                if (!estado.hijoListoEnviado) {
-                    logger.info(`Hijo hijo5 enviando HIJO_LISTO`);
-                    await enviarMensaje({
-                        destino: getPadreId(),
-                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        datos: {
-                            componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                            version: '1.0.0',
-                            capacidades: ['modo-selector', 'gps', 'paradas-list'],
-                            timestamp: Date.now()
-                        }
-                    });
-                    estado.hijoListoEnviado = true;
-                    logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
-                } else {
-                    logger.debug(`${logPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
-                }
-
             } catch (error) {
                 logger.error(`${logPrefix} Error procesando PADRE_DATOS:`, error);
             }
-        });
 
-        // ============================================================
-        // CONTROLADOR: SISTEMA.PADRE_PIDE_MANEJADORES
-        // ============================================================
-        registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, async (mensaje) => {
-            const controladorPrefix = `[hijo5][PADRE_PIDE_MANEJADORES]`;
-            try {
-                logger.info(`${controladorPrefix} Solicitud de manejadores recibida`);
-                
-                // Obtener lista de manejadores registrados
-                const manejadores = [];
-                if (window.mensajeria && window.mensajeria.getControladoresRegistrados) {
-                    const registrados = window.mensajeria.getControladoresRegistrados();
-                    for (const [tipo, info] of registrados) {
-                        manejadores.push({ tipo, version: '1' });
-                    }
-                }
-                
-                // Incluir manejadores locales en cola de migración
-                if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.size) {
-                    for (const tipo of window.__CONTROLADOR_REGISTRADOS) {
-                        if (!manejadores.find(m => m.tipo === tipo)) {
-                            manejadores.push({ tipo, version: '1' });
-                        }
-                    }
-                }
-                
-                logger.info(`${controladorPrefix} Enviando ${manejadores.length} manejadores`);
-                
-                // Enviar respuesta
-                await enviarMensaje({
-                    destino: mensaje.origen,
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        pedidoId: mensaje.datos.pedidoId,
-                        manejadores,
-                        timestamp: Date.now()
-                    }
+            // Enviar HIJO_LISTO para completar handshake
+            if (!estado.hijoListoEnviado) {
+                estado.hijoListoEnviado = true;
+                await enviarMensaje(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, {
+                    componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                    iframeId: CONFIG_HIJO.IFRAME_ID
                 });
-                
-                logger.info(`${controladorPrefix} Respuesta enviada`);
-            } catch (error) {
-                logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
             }
         });
 
