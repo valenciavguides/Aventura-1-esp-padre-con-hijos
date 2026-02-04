@@ -612,12 +612,13 @@ if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro ==
                         const res = await safeRegistrar(tipo, handler, opciones);
                         (window.logger || console).info && (window.logger || console).info(`[HIJO] registrarControlador delegated to mensajeria for ${tipo}`);
                         return res;
-                    } catch (err) {
-                        (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControlador failed for ${tipo}: ${err && err.message}`);
+                    } catch (error) {
+                        logger.error(`${logPrefix} Error:`, error);
+                        actualizarEstado('Error actualizando parada', 'error');
                     }
                 }
             } catch (e) {
-                (window.logger || console).warn && (window.logger || console).warn(`[HIJO] registrarControladorSeguro central attempt error for ${tipo}: ${e && e.message}`);
+                (window.logger || console).warn && (window.logger || console).warn(`[HIJO] Error in registration attempts for ${tipo}: ${e && e.message}`);
             }
 
             // If we reached here the handler remains tracked locally in __CONTROLADOR_REGISTRADOS
@@ -626,7 +627,7 @@ if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro ==
         } catch (e) {
             (window.logger || console).error(`[HIJO] Error registrando controlador seguro ${tipo}:`, e && e.message);
         }
-    };
+    }
 
     // Helper: safeRegistrar delegates to registrarControladorSeguro when available
     if (typeof window !== 'undefined' && typeof window.safeRegistrar === 'undefined') {
@@ -641,76 +642,12 @@ if (typeof window !== 'undefined' && typeof window.registrarControladorSeguro ==
     }
 }
 
-// NOTA: El bloque IIFE "Respaldo" para PADRE_PIDE_MANEJADORES fue eliminado.
-// El controlador registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, ...)
-// más abajo en este archivo maneja correctamente este mensaje sin duplicación.
+// NOTA: Bloque IIFE "RESPALDO" para PADRE_PIDE_MANEJADORES eliminado (obsoleto).
+// El sistema actual usa state-manager centralizado sin necesidad de migración manual.
 
 import { resolverIdsParada, getPadreId } from './js/utils.js';
 import { TIPOS_MENSAJE } from './js/constants.js';
 import logger from './js/logger.js';
-
-// RESPALDO: listener para handshake de migración (PADRE_PIDE_MANEJADORES)
-(function(){
-    async function sendManifest(msg) {
-        try {
-            const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
-            const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
-            const payload = { 
-                pedidoId: msg?.datos?.pedidoId || ('p_' + Date.now()), 
-                manejadores: tipos, 
-                timestamp: Date.now() 
-            };
-            
-            try { 
-                (window.logger || console).info && (window.logger || console).info(`[hijo2] sendManifest pedidoId=${payload.pedidoId} manejadores=${tipos.length}`, tipos.map(t => t.tipo)); 
-            } catch (e) {}
-            
-            const origen = 'hijo2';
-            
-            // Enviar respuesta al padre
-            const response = {
-                tipo: 'SISTEMA.HIJO_MANEJADORES',
-                datos: payload,
-                origen: origen,
-                destino: 'padre',
-                timestamp: Date.now()
-            };
-            
-            try {
-                if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
-                    await window.mensajeria.enviarMensaje(response);
-                    (window.logger || console).info && (window.logger || console).info('[hijo2] HIJO_MANEJADORES enviado vía mensajeria');
-                } else {
-                    window.parent.postMessage(response, window.location.origin);
-                    (window.logger || console).info && (window.logger || console).info('[hijo2] HIJO_MANEJADORES enviado vía postMessage');
-                }
-            } catch (e) { 
-                try { 
-                    window.parent.postMessage(response, '*');
-                    (window.logger || console).warn && (window.logger || console).warn('[hijo2] HIJO_MANEJADORES enviado con wildcard origin:', e && e.message);
-                } catch(e2) {
-                    (window.logger || console).error && (window.logger || console).error('[hijo2] Error enviando HIJO_MANEJADORES:', e2 && e2.message);
-                }
-            }
-        } catch (e) { 
-            (window.logger || console).warn('[hijo2] Error enviando manifest', e && e.message); 
-        }
-    }
-
-    window.addEventListener('message', async (ev) => {
-        try {
-            const m = ev.data || {};
-            if (m && (m.tipo === 'SISTEMA.PADRE_PIDE_MANEJADORES' || (m.tipo && m.tipo.endsWith && m.tipo.endsWith('PADRE_PIDE_MANEJADORES')))) {
-                try { 
-                    (window.logger || console).info && (window.logger || console).info(`[hijo2] PADRE_PIDE_MANEJADORES recibido pedidoId=${m?.datos?.pedidoId} origen=${m?.origen || 'unknown'}`);
-                    await sendManifest(m);
-                } catch (e) {
-                    (window.logger || console).error && (window.logger || console).error('[hijo2] Error procesando PADRE_PIDE_MANEJADORES:', e && e.message);
-                }
-            }
-        } catch (e) {}
-    });
-})();
 
 const CONFIG_HIJO = {
     IFRAME_ID: 'hijo2',
@@ -1660,77 +1597,22 @@ try {
                 }
             }
 
-            // Enviar HIJO_LISTO directamente después de procesar datos (solo si no se ha enviado antes)
-            if (!estadoComponente.hijoListoEnviado) {
-                logger.info(`Hijo ${CONFIG_HIJO.IFRAME_ID} enviando HIJO_LISTO`);
-                await enviarMensaje({
-                    destino: getPadreId(),
-                    tipo: TIPOS_MENSAJE.SISTEMA.HIJO_LISTO,
-                    origen: CONFIG_HIJO.IFRAME_ID,
-                    datos: {
-                        componenteId: CONFIG_HIJO.COMPONENTE_ID,
-                        coordenadasDisponibles: obtenerCoordenadasParadas().length,
-                        capacidades: ['navegacion', 'coordenadas'],
-                        timestamp: Date.now()
-                    }
-                });
-                estadoComponente.hijoListoEnviado = true;
-                estadoComponente.inicializado = true;
-                logger.info(`${logPrefix} HIJO_LISTO enviado al padre`);
-            } else {
-                logger.debug(`${logPrefix} HIJO_LISTO ya enviado previamente, omitiendo duplicado`);
-            }
-
         } catch (error) {
             logger.error(`${logPrefix} Error procesando PADRE_DATOS:`, error);
         }
-    });
 
-    // ============================================================
-    // CONTROLADOR: SISTEMA.PADRE_PIDE_MANEJADORES
-    // ============================================================
-    registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, async (mensaje) => {
-        const controladorPrefix = `[hijo2][PADRE_PIDE_MANEJADORES]`;
-        try {
-            logger.info(`${controladorPrefix} Solicitud de manejadores recibida`);
-            
-            // Obtener lista de manejadores registrados
-            const manejadores = [];
-            if (window.mensajeria && window.mensajeria.getControladoresRegistrados) {
-                const registrados = window.mensajeria.getControladoresRegistrados();
-                for (const [tipo, info] of registrados) {
-                    manejadores.push({ tipo, version: '1' });
-                }
-            }
-            
-            // Incluir manejadores locales en cola de migración
-            if (window.__CONTROLADOR_REGISTRADOS && window.__CONTROLADOR_REGISTRADOS.size) {
-                for (const tipo of window.__CONTROLADOR_REGISTRADOS) {
-                    if (!manejadores.find(m => m.tipo === tipo)) {
-                        manejadores.push({ tipo, version: '1' });
-                    }
-                }
-            }
-            
-            logger.info(`${controladorPrefix} Enviando ${manejadores.length} manejadores`);
-            
-            // Enviar respuesta
-            await enviarMensaje({
-                destino: mensaje.origen,
-                tipo: TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                datos: {
-                    pedidoId: mensaje.datos.pedidoId,
-                    manejadores,
-                    timestamp: Date.now()
-                }
+        // Enviar HIJO_LISTO para completar handshake
+        if (!estadoComponente.hijoListoEnviado) {
+            estadoComponente.hijoListoEnviado = true;
+            await enviarMensaje(TIPOS_MENSAJE.SISTEMA.HIJO_LISTO, {
+                componenteId: CONFIG_HIJO.COMPONENTE_ID,
+                iframeId: CONFIG_HIJO.IFRAME_ID
             });
-            
-            logger.info(`${controladorPrefix} Respuesta enviada`);
-        } catch (error) {
-            logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
         }
     });
+
+    // NOTA: Controlador SISTEMA.PADRE_PIDE_MANEJADORES eliminado (obsoleto).
+    // El sistema actual usa state-manager centralizado sin necesidad de migración manual.
 
     /**
      * Controlador: SISTEMA.PADRE_CONFIRMA_HIJO_LISTO
@@ -2042,570 +1924,8 @@ try {
      *     tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST,
      *     origen: 'padre',
      *     destino: 'hijo2',
-     *     datos: { paradaId: 'TR-2' }
-     * });
-     */
-    registrarControladorSeguro(TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_REQUEST, async (mensaje) => {
-        const logPrefix = `[hijo2][COORDENADAS_PARADAS_REQUEST][${mensaje?.origen || 'desconocido'}]`;
-
-        try {
-            logger.debug(`${logPrefix} ===== SOLICITUD RECIBIDA =====`);
-            logger.debug(`${logPrefix} Datos completos del mensaje:`, mensaje.datos);
-            logger.debug(`${logPrefix} paradaId recibido: ${mensaje.datos?.paradaId}`);
-            logger.debug(`${logPrefix} contexto: ${mensaje.datos?.contexto}`);
-            logger.debug(`${logPrefix} incluirRutas: ${mensaje.datos?.incluirRutas}`);
-
-            // Validar que el array existe (usa datos centralizados)
-            const coordenadasActuales = obtenerCoordenadasParadas();
-            if (!coordenadasActuales || coordenadasActuales.length === 0) {
-                throw new Error('Array de coordenadas no disponible o vacío - ¿Se inició la aventura correctamente?');
+    // ...existing code...
             }
-
-            const { paradaId, contexto, modo } = mensaje.datos || {};
-            let coordenadasFiltradas = coordenadasActuales;
-            let mensajeInfo = 'coordenadas completas';
-
-            logger.debug(`${logPrefix} Total coordenadas disponibles: ${coordenadasActuales.length}`);
-            logger.debug(`${logPrefix} IDs disponibles:`, coordenadasActuales.map(c => c.id));
-
-            // Si se especifica paradaId, filtrar por ese ID específico
-            if (paradaId) {
-                logger.info(`${logPrefix} FILTRANDO POR paradaId: ${paradaId}`);
-                coordenadasFiltradas = coordenadasActuales.filter(coord => coord.id === paradaId);
-                mensajeInfo = `coordenadas filtradas para ${paradaId}`;
-
-                logger.info(`${logPrefix} FILTRANDO: paradaId=${paradaId}, total antes=${coordenadasActuales.length}, despues=${coordenadasFiltradas.length}`);
-                logger.debug(`${logPrefix} Coordenadas encontradas:`, coordenadasFiltradas.map(c => ({id: c.id, tipo: c.tipo, nombre: c.nombre})));
-
-                // Si no se encontraron coordenadas para el paradaId solicitado, enviar error
-                if (coordenadasFiltradas.length === 0) {
-                    logger.warn(`${logPrefix} No se encontraron coordenadas para paradaId: ${paradaId}`);
-                    await enviarMensaje({
-                        tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        destino: mensaje.origen,
-                        datos: {
-                            coordenadas: [],
-                            total: 0,
-                            exito: false,
-                            error: `No se encontraron coordenadas para paradaId: ${paradaId}`,
-                            paradaId: paradaId,
-                            mensajeOriginal: mensaje.id
-                        }
-                    });
-                    return;
-                }
-
-                // Para cambios individuales en modo casa, antiguamente se simplificaban tramos a un solo punto
-                // Si la solicitud explícitamente pide rutas (`incluirRutas: true`) respetamos la estructura completa
-                if (contexto === 'cambio_parada_individual' && coordenadasFiltradas.length === 1) {
-                    const coord = coordenadasFiltradas[0];
-                    const solicitarRutas = mensaje.datos?.incluirRutas === true;
-                    if (coord.tipo === 'tramo' && coord.fin && !solicitarRutas) {
-                        // Convertir tramo a un solo punto usando las coordenadas finales
-                        coordenadasFiltradas = [{
-                            id: coord.id,
-                            tipo: 'tramo',
-                            parada: coord.tramo, // Usar el número de tramo como parada
-                            nombre: coord.nombre,
-                            coordenadas: coord.fin // Usar punto final como coordenadas del marcador
-                        }];
-                        logger.debug(`${logPrefix} Tramo simplificado a punto único:`, coordenadasFiltradas[0]);
-                    } else if (coord.tipo === 'tramo' && solicitarRutas) {
-                        logger.debug(`${logPrefix} Solicitud incluye rutas; devolviendo tramo completo con inicio/waypoints/fin`);
-                        // Dejar coord tal cual (inicio/waypoints/fin) para que el mapa dibuje la polyline
-                    }
-                }
-            } 
-            // Si es inicialización en modo casa, no devolver coordenadas
-            else if (contexto === 'inicializacion' && modo === 'CASA') {
-                coordenadasFiltradas = [];
-                mensajeInfo = 'modo casa inicial - sin coordenadas';
-                logger.debug(`${logPrefix} Modo casa inicial: no se devuelven coordenadas`);
-            }
-
-            // Enviar RESPONSE con las coordenadas (filtradas o completas)
-            logger.info(`${logPrefix} ===== ENVIANDO RESPONSE =====`);
-            logger.info(`${logPrefix} Enviando ${coordenadasFiltradas.length} ${mensajeInfo}`);
-            logger.debug(`${logPrefix} Datos del response:`, {
-                total: coordenadasFiltradas.length,
-                exito: true,
-                paradaId: paradaId,
-                coordenadasIds: coordenadasFiltradas.map(c => c.id),
-                destino: mensaje.origen
-            });
-
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: {
-                    coordenadas: coordenadasFiltradas,
-                    total: coordenadasFiltradas.length,
-                    exito: true,
-                    paradaId: paradaId, // Incluir el paradaId solicitado para contexto
-                    mensajeOriginal: mensaje.id
-                }
-            });
-
-            logger.info(`${logPrefix} Response enviado exitosamente`);
-        } catch (error) {
-            logger.error(`${logPrefix} Error:`, error);
-            
-            // Enviar RESPONSE con error
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.DATOS.COORDENADAS_PARADAS_RESPONSE,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: {
-                    coordenadas: [],
-                    total: 0,
-                    exito: false,
-                    error: error.message,
-                    mensajeOriginal: mensaje.id
-                }
-            });
-        }
-    });
-
-    // ❌ CONTROLADOR SOLICITAR_PARADA (singular) ELIMINADO - OBSOLETO
-    // El sistema usa SOLICITAR_PARADAS (plural) para obtener arrays completos
-    // y COORDENADAS_PARADAS_REQUEST para solicitudes específicas
-    
-    /**
-     * Función auxiliar para calcular completitud de una parada
-     * @param {Object} parada - Objeto de parada
-     * @returns {number} Porcentaje de completitud (0-100)
-     */
-    function calcularCompleitud(parada) {
-        let puntos = 0;
-        let total = 5;
-        
-        if (parada.nombre) puntos++;
-        if (parada.coordenadas) puntos++;
-        if (parada.audio) puntos++;
-        if (parada.imagen || parada.video) puntos++;
-        if (parada.waypoints && parada.waypoints.length > 0) puntos++;
-        
-        return Math.round((puntos / total) * 100);
-    }
-
-    /**
-     * Controlador: DATOS.SOLICITAR_PARADAS
-     * Descripción: Busca paradas cercanas a una coordenada geográfica usando la fórmula Haversine
-     *              con filtros avanzados opcionales para búsqueda flexible
-     * Origen esperado: padre (funciones-mapa.js), otros componentes
-     * Respuesta: DATOS.RESPUESTA_PARADAS
-     * 
-     * Datos recibidos: { 
-     *     lat: number (requerido),
-     *     lng: number (requerido),
-     *     radio?: number (default: 50 metros),
-     *     filtro?: string (texto para buscar en nombre/ID),
-     *     tipo?: 'parada'|'tramo' (filtrar por tipo),
-     *     ordenPor?: 'distancia'|'nombre'|'id' (default: 'distancia'),
-     *     orden?: 'asc'|'desc' (default: 'asc'),
-     *     limite?: number (default: sin límite),
-     *     incluirEstadisticas?: boolean (default: false),
-     *     soloConAudio?: boolean (default: false),
-     *     soloConImagen?: boolean (default: false),
-     *     soloConVideo?: boolean (default: false)
-     * }
-     * 
-     * Datos enviados: { 
-     *     paradas: Array,
-     *     total: number,
-     *     radio: number,
-     *     ubicacionBusqueda: {lat, lng},
-     *     filtrosAplicados: Object,
-     *     estadisticas?: Object,
-     *     exito: boolean,
-     *     mensajeOriginal: string
-     * }
-     * 
-     * Cada parada incluye: { ...paradaOriginal, distancia: number (en metros) }
-     * 
-     * Ejemplo de uso básico:
-     * await enviarMensaje({
-     *     tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS,
-     *     origen: 'padre',
-     *     destino: 'hijo2',
-     *     datos: { lat: 39.47876, lng: -0.37626, radio: 100 }
-     * });
-     * 
-     * Ejemplo de uso avanzado:
-     * await enviarMensaje({
-     *     tipo: TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS,
-     *     origen: 'padre',
-     *     destino: 'hijo2',
-     *     datos: { 
-     *         lat: 39.47876, 
-     *         lng: -0.37626, 
-     *         radio: 200,
-     *         filtro: 'Serranos',
-     *         tipo: 'parada',
-     *         ordenPor: 'nombre',
-     *         limite: 10,
-     *         incluirEstadisticas: true,
-     *         soloConAudio: true
-     *     }
-     * });
-     */
-    registrarControladorSeguro(TIPOS_MENSAJE.DATOS.SOLICITAR_PARADAS, async (mensaje) => {
-        const logPrefix = `[hijo2][SOLICITAR_PARADAS][${mensaje?.origen || 'desconocido'}]`;
-        
-        try {
-            const { 
-                lat, 
-                lng, 
-                radio = 50,
-                filtro = null,
-                tipo = null,
-                ordenPor = 'distancia',
-                orden = 'asc',
-                limite = null,
-                incluirEstadisticas = false,
-                soloConAudio = false,
-                soloConImagen = false,
-                soloConVideo = false
-            } = mensaje.datos;
-            
-            // Validar parámetros requeridos
-            if (lat === undefined || lng === undefined) {
-                throw new Error('Parámetros requeridos: lat, lng');
-            }
-            
-            if (typeof lat !== 'number' || typeof lng !== 'number') {
-                throw new Error('lat y lng deben ser números');
-            }
-            
-            if (radio <= 0) {
-                throw new Error('radio debe ser mayor a 0');
-            }
-            
-            // Validar ordenPor
-            const ordenesValidos = ['distancia', 'nombre', 'id'];
-            if (!ordenesValidos.includes(ordenPor)) {
-                throw new Error(`ordenPor debe ser uno de: ${ordenesValidos.join(', ')}`);
-            }
-            
-            // Validar orden
-            if (orden !== 'asc' && orden !== 'desc') {
-                throw new Error("orden debe ser 'asc' o 'desc'");
-            }
-            
-            logger.debug(`${logPrefix} Buscando paradas`, {
-                lat, lng, radio,
-                filtro: filtro || 'ninguno',
-                tipo: tipo || 'todos',
-                ordenPor,
-                orden,
-                limite: limite || 'sin límite'
-            });
-            
-            /**
-             * Función Haversine para calcular distancia en metros entre dos puntos geográficos
-             * @param {number} lat1 - Latitud del punto 1
-             * @param {number} lon1 - Longitud del punto 1
-             * @param {number} lat2 - Latitud del punto 2
-             * @param {number} lon2 - Longitud del punto 2
-             * @returns {number} Distancia en metros
-             */
-            const calcularDistancia = (lat1, lon1, lat2, lon2) => {
-                const R = 6371000; // Radio de la Tierra en metros
-                const φ1 = lat1 * Math.PI / 180;
-                const φ2 = lat2 * Math.PI / 180;
-                const Δφ = (lat2 - lat1) * Math.PI / 180;
-                const Δλ = (lon2 - lon1) * Math.PI / 180;
-                
-                const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                         Math.cos(φ1) * Math.cos(φ2) *
-                         Math.sin(Δλ/2) * Math.sin(Δλ/2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                
-                return R * c; // Distancia en metros
-            };
-            
-            // Filtrar paradas con coordenadas válidas y calcular distancias
-            let paradasProcesadas = obtenerCoordenadasParadas()
-                .filter(parada => {
-                    // Solo paradas con coordenadas definidas
-                    return parada.coordenadas && 
-                           parada.coordenadas.lat !== undefined && 
-                           parada.coordenadas.lng !== undefined;
-                })
-                .map(parada => {
-                    // Calcular distancia para cada parada
-                    const distancia = calcularDistancia(
-                        lat, lng,
-                        parada.coordenadas.lat, parada.coordenadas.lng
-                    );
-                    return { ...parada, distancia };
-                });
-            
-            // Aplicar filtro por radio
-            paradasProcesadas = paradasProcesadas.filter(parada => parada.distancia <= radio);
-            
-            // Aplicar filtro de texto si se proporciona
-            if (filtro && filtro.trim() !== '') {
-                const terminoBusqueda = filtro.toLowerCase().trim();
-                paradasProcesadas = paradasProcesadas.filter(parada => {
-                    const nombre = (parada.nombre || '').toLowerCase();
-                    const id = (parada.id || '').toLowerCase();
-                    return nombre.includes(terminoBusqueda) || id.includes(terminoBusqueda);
-                });
-            }
-            
-            // Aplicar filtro por tipo si se proporciona
-            if (tipo) {
-                paradasProcesadas = paradasProcesadas.filter(parada => {
-                    const tipoParada = parada.tipo || (parada.id?.startsWith('P-') ? 'parada' : 'tramo');
-                    return tipoParada === tipo;
-                });
-            }
-            
-            // Aplicar filtros de contenido multimedia
-            if (soloConAudio) {
-                paradasProcesadas = paradasProcesadas.filter(parada => !!parada.audio);
-            }
-            
-            if (soloConImagen) {
-                paradasProcesadas = paradasProcesadas.filter(parada => !!parada.imagen);
-            }
-            
-            if (soloConVideo) {
-                paradasProcesadas = paradasProcesadas.filter(parada => !!parada.video);
-            }
-            
-            // Ordenar según parámetros
-            paradasProcesadas.sort((a, b) => {
-                let valorA, valorB;
-                
-                switch (ordenPor) {
-                    case 'distancia':
-                        valorA = a.distancia;
-                        valorB = b.distancia;
-                        break;
-                    case 'nombre':
-                        valorA = (a.nombre || '').toLowerCase();
-                        valorB = (b.nombre || '').toLowerCase();
-                        break;
-                    case 'id':
-                        valorA = a.id || '';
-                        valorB = b.id || '';
-                        break;
-                    default:
-                        valorA = a.distancia;
-                        valorB = b.distancia;
-                }
-                
-                // Comparar valores
-                let resultado = 0;
-                if (typeof valorA === 'string' && typeof valorB === 'string') {
-                    resultado = valorA.localeCompare(valorB);
-                } else {
-                    resultado = valorA > valorB ? 1 : valorA < valorB ? -1 : 0;
-                }
-                
-                // Aplicar orden (asc/desc)
-                return orden === 'desc' ? -resultado : resultado;
-            });
-            
-            // Aplicar límite si se proporciona
-            const totalSinLimite = paradasProcesadas.length;
-            if (limite && limite > 0) {
-                paradasProcesadas = paradasProcesadas.slice(0, limite);
-            }
-            
-            // Preparar estadísticas si se solicitan
-            let estadisticas = null;
-            if (incluirEstadisticas) {
-                estadisticas = {
-                    totalEncontradas: totalSinLimite,
-                    devueltas: paradasProcesadas.length,
-                    conAudio: paradasProcesadas.filter(p => !!p.audio).length,
-                    conImagen: paradasProcesadas.filter(p => !!p.imagen).length,
-                    conVideo: paradasProcesadas.filter(p => !!p.video).length,
-                    porTipo: {
-                        paradas: paradasProcesadas.filter(p => {
-                            const t = p.tipo || (p.id?.startsWith('P-') ? 'parada' : 'tramo');
-                            return t === 'parada';
-                        }).length,
-                        tramos: paradasProcesadas.filter(p => {
-                            const t = p.tipo || (p.id?.startsWith('P-') ? 'parada' : 'tramo');
-                            return t === 'tramo';
-                        }).length
-                    },
-                    distanciaPromedio: paradasProcesadas.length > 0 
-                        ? Math.round(paradasProcesadas.reduce((sum, p) => sum + p.distancia, 0) / paradasProcesadas.length)
-                        : 0,
-                    distanciaMinima: paradasProcesadas.length > 0 
-                        ? Math.round(Math.min(...paradasProcesadas.map(p => p.distancia)))
-                        : 0,
-                    distanciaMaxima: paradasProcesadas.length > 0 
-                        ? Math.round(Math.max(...paradasProcesadas.map(p => p.distancia)))
-                        : 0
-                };
-            }
-            
-            // Preparar objeto de filtros aplicados
-            const filtrosAplicados = {
-                radio,
-                filtroTexto: filtro || null,
-                tipo: tipo || null,
-                ordenPor,
-                orden,
-                limite: limite || null,
-                soloConAudio,
-                soloConImagen,
-                soloConVideo
-            };
-            
-            // Enviar RESPONSE con paradas encontradas
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: {
-                    paradas: paradasProcesadas,
-                    total: paradasProcesadas.length,
-                    totalSinLimite,
-                    radio: radio,
-                    ubicacionBusqueda: { lat, lng },
-                    filtrosAplicados,
-                    estadisticas,
-                    exito: true,
-                    mensajeOriginal: mensaje.id
-                }
-            });
-            
-            if (paradasProcesadas.length > 0) {
-                const masProxima = paradasProcesadas[0];
-                logger.info(`${logPrefix} ${paradasProcesadas.length} paradas encontradas (${totalSinLimite} antes de límite)`, {
-                    masProxima: masProxima.nombre,
-                    distancia: `${Math.round(masProxima.distancia)}m`,
-                    filtrosAplicados: Object.keys(filtrosAplicados).filter(k => filtrosAplicados[k] !== null && filtrosAplicados[k] !== false).length
-                });
-            } else {
-                logger.warn(`${logPrefix} No se encontraron paradas con los filtros aplicados`, filtrosAplicados);
-            }
-        } catch (error) {
-            logger.error(`${logPrefix} Error:`, error);
-            
-            // Enviar RESPONSE con error
-            await enviarMensaje({
-                tipo: TIPOS_MENSAJE.DATOS.RESPUESTA_PARADAS,
-                origen: CONFIG_HIJO.IFRAME_ID,
-                destino: mensaje.origen,
-                datos: {
-                    paradas: [],
-                    total: 0,
-                    exito: false,
-                    error: error.message,
-                    mensajeOriginal: mensaje.id
-                }
-            });
-        }
-    });
-
-    // ==================== CONTROLADORES DE NAVEGACIÓN ====================
-    
-    /**
-     * Controlador: NAVEGACION.CAMBIO_PARADA
-     * Descripción: Actualiza la parada actual en el estado interno de hijo2
-     * Origen esperado: padre
-     * Respuesta: No requiere (notificación unidireccional)
-     * 
-     * Datos recibidos: { 
-     *     paradaId: string, 
-     *     parada: number|string, 
-     *     nombre?: string,
-     *     imagen?: string,
-     *     video?: string,
-     *     coordenadas?: object
-     * }
-     * 
-     * Nota: Este controlador mantiene sincronizado el estado de hijo2 con la parada
-     * actual del sistema, permitiendo que los botones envíen contexto correcto
-     */
-    registrarControladorSeguro(TIPOS_MENSAJE.NAVEGACION.CAMBIO_PARADA, async (mensaje) => {
-        const logPrefix = `[hijo2][CAMBIO_PARADA][${mensaje?.origen || 'desconocido'}]`;
-        
-        try {
-            const resolved = resolverIdsParada(mensaje.datos || {});
-            const paradaId = resolved.paradaId || mensaje.datos?.paradaId;
-            const paradaIdLegacy = mensaje.datos?.parada_id || mensaje.datos?.parada || mensaje.datos?.id || null;
-            const { parada, nombre, imagen, video, coordenadas } = mensaje.datos;
-            
-            logger.debug(`${logPrefix} Recibido:`, { paradaId, parada, nombre, imagen, video, coordenadas });
-            
-            // ✅ LIMPIAR ID si viene con prefijo (ej: "padre-P-1" → "P-1")
-            const idLimpio = (paradaId || paradaIdLegacy)?.toString().replace(/^padre-/, '') || paradaId || paradaIdLegacy;
-            
-            logger.debug(`${logPrefix} ID limpio: "${idLimpio}" (original: "${paradaId}")`);
-            
-            // ✅ ACTUALIZAR AMBOS: paradaActual E idParadaActual (con ID limpio)
-            estadoComponente.paradaActual = parada;
-            estadoComponente.idParadaActual = idLimpio;
-            
-            // ✅ ALMACENAR DATOS MULTIMEDIA para los botones
-            if (imagen !== undefined || video !== undefined || coordenadas !== undefined) {
-                logger.debug(`${logPrefix} Procesando datos multimedia:`, { imagen, video, coordenadas });
-                
-                // Actualizar datos en coordenadas globales si existe (usando ID limpio)
-                if (window.__vv_coordenadasAventura) {
-                    const paradaIndex = window.__vv_coordenadasAventura.findIndex(p => p.id === idLimpio);
-                    logger.debug(`${logPrefix} Buscando parada "${idLimpio}" en coordenadas globales, índice encontrado: ${paradaIndex}`);
-                    
-                    if (paradaIndex >= 0) {
-                        if (imagen !== undefined) {
-                            window.__vv_coordenadasAventura[paradaIndex].imagen = imagen;
-                            logger.debug(`${logPrefix} Imagen actualizada en coordenadas globales[${paradaIndex}]: ${imagen}`);
-                        }
-                        if (video !== undefined) {
-                            window.__vv_coordenadasAventura[paradaIndex].video = video;
-                            logger.debug(`${logPrefix} Video actualizado en coordenadas globales[${paradaIndex}]: ${video}`);
-                        }
-                        if (coordenadas !== undefined) {
-                            window.__vv_coordenadasAventura[paradaIndex].coordenadas = coordenadas;
-                            logger.debug(`${logPrefix} Coordenadas actualizadas en coordenadas globales[${paradaIndex}]`);
-                        }
-                    } else {
-                        logger.warn(`${logPrefix} No se encontró parada "${idLimpio}" en coordenadas globales`);
-                    }
-                } else {
-                    logger.warn(`${logPrefix} coordenadas globales no existe`);
-                }
-                
-                logger.debug(`${logPrefix} Datos multimedia actualizados:`, { imagen, video, coordenadas });
-            }
-            
-            // Detectar tipo de parada por el ID (usando ID limpio)
-            if (idLimpio) {
-                estadoComponente.tipoParadaActual = idLimpio.startsWith('TR-') ? 'tramo' : 'parada';
-            }
-            
-            // Actualizar UI con información de la parada
-            const textoParada = nombre || `Parada ${parada || idLimpio}`;
-            actualizarEstado(textoParada, 'info');
-            
-            // Actualizar estados de botones según nueva parada
-            actualizarEstadoBotones();
-            
-            logger.info(`${logPrefix} Estado actualizado:`, {
-                paradaActual: estadoComponente.paradaActual,
-                idParadaActual: estadoComponente.idParadaActual,
-                tipoParadaActual: estadoComponente.tipoParadaActual,
-                textoParada,
-                idOriginal: paradaId,
-                idLimpio: idLimpio,
-                multimediaRecibida: { imagen: !!imagen, video: !!video, coordenadas: !!coordenadas }
-            });
-        } catch (error) {
-            logger.error(`${logPrefix} Error:`, error);
-            actualizarEstado('Error actualizando parada', 'error');
-        }
-    });
 
     /**
      * Controlador: SISTEMA.HEARTBEAT
@@ -2990,24 +2310,7 @@ try {
         logger.warn('[hijo2] Error enviando HIJO_PREPARADO:', e && e.message ? e.message : e);
     }
 
-} catch (error) {
-    logger.error(`[hijo2] Error durante la inicialización:`, error);
-    actualizarEstado('Error de inicialización', 'error');
-    
-    try {
-        await enviarMensaje({
-            destino: getPadreId(),
-            tipo: TIPOS_MENSAJE.SISTEMA.ERROR,
-            origen: CONFIG_HIJO.IFRAME_ID,
-            datos: { 
-                error: error.message,
-                componente: CONFIG_HIJO.COMPONENTE_ID
-            }
-        });
-    } catch (notifyError) {
-        logger.error(`[hijo2] Error notificando fallo:`, notifyError);
-    }
-}
+// Removed stray closing catch block after initialization. The initialization try/catch above is sufficient.
 
 // Implementar pagehide para limpiar recursos
 window.addEventListener('pagehide', () => {
@@ -3053,6 +2356,10 @@ window.addEventListener('pagehide', () => {
             logger.warn(`${logPrefix} Error procesando NOTIFICACION:`, err);
         }
     });
+} catch (error) {
+    logger.error('[hijo2] Error durante la inicialización:', error);
+    actualizarEstado('Error de inicialización', 'error');
+}
     </script>
 </body>
 </html>
