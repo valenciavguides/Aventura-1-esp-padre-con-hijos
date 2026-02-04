@@ -381,68 +381,8 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
     import { getPadreId } from './js/utils.js';
     import logger from './js/logger.js';
 
-// Respaldo: listener para handshake de migración (PADRE_PIDE_MANEJADORES / PADRE_APLICA_MANEJADORES)
-(function(){
-    async function sendManifest(msg) {
-        try {
-            if (typeof migrarManejadoresTempranos === 'function') { try { (window.logger || console).info && (window.logger || console).info('[HIJO] Invoking migrarManejadoresTempranos()'); migrarManejadoresTempranos(); } catch(_){} }
-            const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
-            const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
-            const payload = { pedidoId: msg?.datos?.pedidoId || ('p_' + Date.now()), manejadores: tipos, timestamp: Date.now() };
-            try { (window.logger || console).info && (window.logger || console).info(`[HIJO] sendManifest pedidoId=${payload.pedidoId} manejadores=${tipos.length}`, tipos.map(t => t.tipo)); } catch (e) {}
-            const origen = (typeof CONFIG_HIJO !== 'undefined' && CONFIG_HIJO.IFRAME_ID) || window.name || 'seleccion';
-            
-            // Enviar respuesta al padre usando múltiples métodos para garantizar entrega
-            const response = {
-                tipo: 'SISTEMA.HIJO_MANEJADORES',
-                datos: payload,
-                origen: origen,
-                destino: 'padre',  // Destino fijo
-                timestamp: Date.now()
-            };
-            
-            try {
-                // Método 1: usar window.mensajeria si está disponible
-                if (window.mensajeria && typeof window.mensajeria.enviarMensaje === 'function') {
-                    await window.mensajeria.enviarMensaje(response);
-                    (window.logger || console).info && (window.logger || console).info('[HIJO] HIJO_MANEJADORES enviado vía mensajeria');
-                } else {
-                    // Método 2: postMessage directo como fallback
-                    window.parent.postMessage(response, window.location.origin);
-                    (window.logger || console).info && (window.logger || console).info('[HIJO] HIJO_MANEJADORES enviado vía postMessage');
-                }
-            } catch (e) { 
-                try { 
-                    // Método 3: postMessage directo como último recurso
-                    window.parent.postMessage(response, '*');
-                    (window.logger || console).warn && (window.logger || console).warn('[HIJO] HIJO_MANEJADORES enviado vía postMessage con wildcard origin debido a error:', e && e.message);
-                } catch(e2) {
-                    (window.logger || console).error && (window.logger || console).error('[HIJO] Error enviando HIJO_MANEJADORES:', e2 && e2.message);
-                }
-            }
-        } catch (e) { (window.logger || console).warn('[HIJO] Error enviando manifest', e && e.message); }
-    }
-
-    window.addEventListener('message', async (ev) => {
-        try {
-            const m = ev.data || {};
-            if (m && (m.tipo === 'SISTEMA.PADRE_PIDE_MANEJADORES' || (m.tipo && m.tipo.endsWith && m.tipo.endsWith('PADRE_PIDE_MANEJADORES')) || m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES))) {
-                try { 
-                    (window.logger || console).info && (window.logger || console).info(`[HIJO] PADRE_PIDE_MANEJADORES recibido pedidoId=${m?.datos?.pedidoId} origen=${m?.origen || 'unknown'}`);
-                    await sendManifest(m);
-                } catch (e) {
-                    (window.logger || console).error && (window.logger || console).error('[HIJO] Error procesando PADRE_PIDE_MANEJADORES:', e && e.message);
-                }
-            } else if (m && m.tipo === (window.TIPOS_MENSAJE && window.TIPOS_MENSAJE.SISTEMA && window.TIPOS_MENSAJE.SISTEMA.PADRE_APLICA_MANEJADORES)) {
-                const aplicados = (m && m.datos && m.datos.aplicados) || [];
-                if (window.__CONTROLADOR_REGISTRADOS && aplicados.length) {
-                    aplicados.forEach(t => { try { window.__CONTROLADOR_REGISTRADOS.delete(t); } catch(_){} });
-                    (window.logger || console).info && (window.logger || console).info('[HIJO] Manejadores marcados como migrados:', aplicados);
-                }
-            }
-        } catch (e) { /* ignore */ }
-    });
-})();
+    // NOTA: Bloque IIFE "RESPALDO" para PADRE_PIDE_MANEJADORES eliminado (obsoleto).
+    // El sistema actual usa state-manager centralizado sin necesidad de migración manual.
 
     // ============================================================
     // CONFIGURACIÓN DEL COMPONENTE
@@ -584,46 +524,10 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
             logger.debug(`${logPrefix} Registrando controladores...`);
 
             // ============================================================
-            // CONTROLADOR 1: SISTEMA.PADRE_LISTO (mantenido para compatibilidad)
-            // ============================================================
-            // NOTA: HIJO_LISTO ahora se envía en PADRE_DATOS para consistencia con otros hijos
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_LISTO, async (mensaje) => {
-                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_LISTO]`;
-                
-                try {
-                    if (!mensaje || !mensaje.origen) {
-                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
-                        return;
-                    }
-
-                    logger.info(`${controladorPrefix} Padre listo confirmado desde ${mensaje.origen}`);
-                    estadoComponente.padreConectado = true;
-
-                    // ✅ PROCESAR DATOS INICIALES DEL PADRE
-                    if (mensaje.datos) {
-                        const { modo, paradaActual } = mensaje.datos;
-
-                        if (modo) {
-                            logger.debug(`${controladorPrefix} Modo inicial: ${modo}`);
-                        }
-
-                        if (paradaActual) {
-                            logger.debug(`${controladorPrefix} Parada actual: ${paradaActual}`);
-                        }
-                    }
-
-                    // HIJO_LISTO se envía en PADRE_DATOS para consistencia
-                    logger.debug(`${controladorPrefix} Datos procesados (HIJO_LISTO se envía en PADRE_DATOS)`);
-
-                } catch (error) {
-                    logger.error(`${controladorPrefix} Error procesando PADRE_LISTO:`, error);
-                }
-            });
-
-            // ============================================================
             // CONTROLADOR: SISTEMA.PADRE_DATOS
+            // Este es el controlador principal para la comunicación padre->hijo
+            // NOTA: PADRE_LISTO fue eliminado (obsoleto) - usar solo PADRE_DATOS
             // ============================================================
-            // Este es el punto de envío estandarizado de HIJO_LISTO para todos los hijos
             registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_DATOS, async (mensaje) => {
                 const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_DATOS]`;
                 
@@ -733,53 +637,6 @@ El usuario declara haber leído, comprendido y aceptado íntegramente las presen
                         exito: false,
                         error: error.message
                     };
-                }
-            });
-
-            // ============================================================
-            // CONTROLADOR: SISTEMA.PADRE_PIDE_MANEJADORES
-            // ============================================================
-            registrarControladorSeguro(TIPOS_MENSAJE.SISTEMA.PADRE_PIDE_MANEJADORES, async (mensaje) => {
-                const controladorPrefix = `${CONFIG_HIJO.LOG_PREFIX}[PADRE_PIDE_MANEJADORES]`;
-                
-                try {
-                    if (!mensaje || !mensaje.origen) {
-                        logger.error(`${controladorPrefix} Mensaje sin origen válido`, mensaje);
-                        return;
-                    }
-
-                    logger.info(`${controladorPrefix} Solicitud de manejadores recibida desde ${mensaje.origen}`);
-
-                    // Ejecutar migración local para incluir registros tempranos
-                    const migrar = window.mensajeria && window.mensajeria.migrarManejadoresTempranos;
-                    if (typeof migrar === 'function') {
-                        try { migrar(); } catch (e) { logger.warn(`${controladorPrefix} Error en migrarManejadoresTempranos:`, e); }
-                    }
-
-                    // Obtener lista de manejadores registrados (locales y tempranos)
-                    const vv = window.__CONTROLADOR_REGISTRADOS || new Set();
-                    const tipos = Array.from(vv).map(t => ({ tipo: t, version: '1' }));
-                    
-                    const payload = { 
-                        pedidoId: mensaje?.datos?.pedidoId || (Date.now() + '_' + Math.random()).toString(), 
-                        manejadores: tipos, 
-                        timestamp: Date.now() 
-                    };
-
-                    logger.info(`${controladorPrefix} Enviando manifest con ${tipos.length} manejadores`);
-
-                    // Enviar respuesta al padre
-                    await enviarMensaje({
-                        destino: mensaje.origen,
-                        tipo: TIPOS_MENSAJE.SISTEMA.HIJO_MANEJADORES,
-                        origen: CONFIG_HIJO.IFRAME_ID,
-                        datos: payload
-                    });
-
-                    logger.info(`${controladorPrefix} Manifest enviado al padre`);
-
-                } catch (error) {
-                    logger.error(`${controladorPrefix} Error procesando PADRE_PIDE_MANEJADORES:`, error);
                 }
             });
 
