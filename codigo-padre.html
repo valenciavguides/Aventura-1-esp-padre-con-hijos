@@ -5160,7 +5160,7 @@
         window.esHijoCargado = function(id) {
             const estaCargado = window.__HIJOS_CARGADOS && window.__HIJOS_CARGADOS.has(id);
             const iframeEl = document.getElementById(id);
-            const tieneSrc = iframeEl && iframeEl.src && iframeEl.src !== '' && !iframeEl.src.endsWith('/');
+            const tieneSrc = iframeEl && iframeEl.src && iframeEl.src !== '';
             const tieneContentWindow = iframeEl && iframeEl.contentWindow;
             return estaCargado && tieneSrc && tieneContentWindow;
         };
@@ -10090,13 +10090,9 @@
                 const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                 for (const h of hijosCriticos) {
                     try {
-                        // ✅ Verificar que el hijo está cargado antes de enviar mensaje
-                        const iframeEl = document.getElementById(h);
-                        const estaCargado = window.__HIJOS_CARGADOS && window.__HIJOS_CARGADOS.has(h);
-                        const tieneSrc = iframeEl && iframeEl.src && iframeEl.src !== '' && !iframeEl.src.endsWith('/');
-                        
-                        if (!estaCargado || !tieneSrc) {
-                            console.debug(`[PADRE] Saltando HEARTBEAT para ${h} - no cargado aún (estaCargado=${estaCargado}, tieneSrc=${tieneSrc})`);
+                        // ✅ Usar función centralizada para verificar si el hijo está cargado
+                        if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(h)) {
+                            console.debug(`[PADRE] Saltando HEARTBEAT para ${h} - no cargado aún`);
                             continue;
                         }
                         
