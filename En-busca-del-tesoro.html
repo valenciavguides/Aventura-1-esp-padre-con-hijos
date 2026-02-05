@@ -563,6 +563,11 @@
             console.warn(`${CONFIG_HIJO.IFRAME_ID} mostrarUI ignorado: esperando PADRE_CONFIRMA_HIJO_LISTO`); 
             return; 
         } 
+        // Usar flag para evitar múltiples ejecuciones
+        if (window._uiMostrada) {
+            return;
+        }
+        window._uiMostrada = true;
         try { 
             if (document.body) document.body.style.display = _originalDisplay || 'block'; 
             console.log(`${CONFIG_HIJO.IFRAME_ID} UI visible tras PADRE_CONFIRMA_HIJO_LISTO`); 
@@ -633,6 +638,16 @@
                 logger.error(`${logPrefix} Error enviando HIJO_PREPARADO:`, error);
             }
 
+            // Timeout de seguridad: Si después de 3 segundos no recibimos PADRE_CONFIRMA_HIJO_LISTO, 
+            // mostramos la UI de todos modos para que los botones sean clicables
+            setTimeout(() => {
+                if (!window._uiConfirmado) {
+                    logger.warn(`${logPrefix} Timeout: PADRE_CONFIRMA_HIJO_LISTO no recibido. Mostrando UI de emergencia.`);
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                }
+            }, 3000);
+
         } catch (error) {
             logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
             
@@ -651,6 +666,15 @@
             } catch (notifyError) {
                 logger.error(`${logPrefix} Error notificando fallo al padre:`, notifyError);
             }
+            
+            // En caso de error, mostrar UI de todos modos después de un breve delay
+            setTimeout(() => {
+                if (!window._uiConfirmado) {
+                    logger.warn(`${logPrefix} Mostrando UI tras error de inicialización`);
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                }
+            }, 1000);
         }
     }
 
