@@ -424,7 +424,20 @@ function enviarMensajeInterno(mensaje, destino) {
         
         // Si es padre
         if (tipoComponente === 'padre') {
-            // Destino específico
+            // Detectar 'broadcast' PRIMERO
+            if (!destino || destino === 'broadcast') {
+                let enviados = 0;
+                for (const [id, iframeInfo] of iframesRegistrados) {
+                    const targetWindow = iframeInfo?.elemento?.contentWindow || iframeInfo?.contentWindow;
+                    if (targetWindow) {
+                        targetWindow.postMessage(mensaje, '*');
+                        enviados++;
+                    }
+                }
+                return enviados > 0;
+            }
+            
+            // Destino específico (ID de iframe)
             if (typeof destino === 'string') {
                 const iframeInfo = iframesRegistrados.get(destino);
                 // Usar elemento.contentWindow para asegurar referencia actual
@@ -442,17 +455,6 @@ function enviarMensajeInterno(mensaje, destino) {
                 destino.postMessage(mensaje, '*');
                 return true;
             }
-            
-            // Broadcast a todos los iframes
-            let enviados = 0;
-            for (const [id, iframeInfo] of iframesRegistrados) {
-                const targetWindow = iframeInfo?.elemento?.contentWindow || iframeInfo?.contentWindow;
-                if (targetWindow) {
-                    targetWindow.postMessage(mensaje, '*');
-                    enviados++;
-                }
-            }
-            return enviados > 0;
         }
         
         // Fallback: postMessage genérico
