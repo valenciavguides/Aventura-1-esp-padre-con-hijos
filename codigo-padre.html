@@ -5309,6 +5309,7 @@
 
                 // Esperar a que el hijo esté listo
                 logger.info(`${logPrefix} Esperando HIJO_LISTO de ${id}...`);
+                let hijoListoRecibido = false;
                 await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         logger.warn(`${logPrefix} ⚠️ Timeout esperando HIJO_LISTO de ${id}`);
@@ -5318,6 +5319,7 @@
                     const check = () => {
                         if (window.estadoPadre.hijosInicializados.has(id)) {
                             clearTimeout(timeout);
+                            hijoListoRecibido = true;
                             logger.info(`${logPrefix} HIJO_LISTO recibido de ${id}`);
                             resolve();
                         } else {
@@ -5326,6 +5328,27 @@
                     };
                     check();
                 });
+
+                // Si HIJO_LISTO no fue recibido (timeout), enviar PADRE_CONFIRMA_HIJO_LISTO de todos modos
+                // para que el hijo pueda mostrar su UI
+                if (!hijoListoRecibido) {
+                    try {
+                        if (typeof enviarMensaje_S1 === 'function') {
+                            await enviarMensaje_S1({
+                                destino: id,
+                                tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                                origen: getPadreId(),
+                                datos: {
+                                    timestamp: Date.now(),
+                                    mensaje: 'Hijo confirmado como listo (fallback tras timeout)'
+                                }
+                            });
+                            logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${id} (fallback tras timeout)`);
+                        }
+                    } catch (error) {
+                        logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${id}:`, error);
+                    }
+                }
 
                 logger.success(`${logPrefix} ✅ ${id} listo y confirmado`);
                 
@@ -6168,6 +6191,27 @@
                 } catch (error) {
                     logger.error(`${logPrefix} ❌ Error cargando ${iframe.id}: ${error.message}`);
                     hijosFallidos.push({ id: iframe.id, error: error.message });
+                    
+                    // Si fue un timeout esperando HIJO_LISTO, enviar PADRE_CONFIRMA_HIJO_LISTO de todos modos
+                    // para que el hijo pueda mostrar su UI
+                    if (error.message.includes('Timeout esperando HIJO_LISTO')) {
+                        try {
+                            if (typeof enviarMensaje_S1 === 'function') {
+                                await enviarMensaje_S1({
+                                    destino: iframe.id,
+                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                                    origen: getPadreId(),
+                                    datos: {
+                                        timestamp: Date.now(),
+                                        mensaje: 'Hijo confirmado como listo (fallback tras timeout)'
+                                    }
+                                });
+                                logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${iframe.id} (fallback tras timeout)`);
+                            }
+                        } catch (fallbackError) {
+                            logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${iframe.id}:`, fallbackError);
+                        }
+                    }
                 }
             }
 
