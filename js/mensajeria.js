@@ -148,6 +148,7 @@ function exponerAPIGlobal() {
         broadcastToCapability,
         hijosConCapability,
         marcarScript2Listo,
+        procesarMensajeDirecto,
         
         // Funciones de consulta
         getControladoresRegistrados,
@@ -527,6 +528,51 @@ function manejarMensajeEntrante(event) {
 }
 
 /**
+ * Procesa un mensaje directamente (sin event object)
+ * Usado para procesar mensajes encolados tempranamente
+ * @param {Object} mensaje - Mensaje a procesar
+ * @returns {Promise<*>} Resultado del handler o undefined
+ */
+export async function procesarMensajeDirecto(mensaje) {
+    // Validar mensaje
+    if (!mensaje || typeof mensaje !== 'object' || !mensaje.tipo) {
+        logger.warn('[mensajeria] procesarMensajeDirecto: mensaje inválido');
+        return;
+    }
+    
+    // Ignorar mensajes propios
+    if (mensaje.origen === componenteId) {
+        return;
+    }
+    
+    logger.debug(`[mensajeria] Procesando mensaje directo: ${mensaje.tipo}`, { origen: mensaje.origen });
+    
+    // Verificar si es una confirmación
+    if (mensaje.tipo === TIPOS_MENSAJE.SISTEMA.CONFIRMACION && mensaje.idOriginal) {
+        manejarConfirmacion(mensaje);
+        return;
+    }
+    
+    // Buscar handler registrado
+    const manejadores = obtenerMapaManejadores();
+    const handler = manejadores.get(mensaje.tipo);
+    
+    if (handler) {
+        try {
+            // Pass full message as first arg to match state-manager and handler signatures
+            const resultado = await handler(mensaje);
+            logger.info(`[mensajeria] Mensaje directo procesado: ${mensaje.tipo}`);
+            return resultado;
+        } catch (error) {
+            logger.error(`[mensajeria] Error en handler para mensaje directo ${mensaje.tipo}: ${error.message}`);
+            throw error;
+        }
+    } else {
+        logger.warn(`[mensajeria] Sin handler para mensaje directo: ${mensaje.tipo}`);
+    }
+}
+
+/**
  * Maneja una confirmación recibida
  * @param {Object} mensaje - Mensaje de confirmación
  */
@@ -770,6 +816,7 @@ export default {
     registrarIframe,
     obtenerIframe,
     registrarCapacidades,
+    procesarMensajeDirecto,
     getDiagnostico,
     limpiar
 };

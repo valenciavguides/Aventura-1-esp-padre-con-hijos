@@ -105,11 +105,84 @@
             }
         };
 
+        // ============================================================
+        // COLA DE MENSAJES TEMPRANOS - Captura mensajes críticos antes de que mensajeria esté lista
+        // ============================================================
+        window.__earlyMessageQueue = window.__earlyMessageQueue || [];
+        window.__mensajeriaReady = false;
+
+        // Función para procesar mensajes tempranos cuando mensajeria esté lista
+        window.__processEarlyMessages = async function() {
+            if (!window.__earlyMessageQueue || window.__earlyMessageQueue.length === 0) return;
+            
+            console.log(`[PADRE][EARLY_QUEUE] Procesando ${window.__earlyMessageQueue.length} mensajes tempranos...`);
+            
+            const queue = [...window.__earlyMessageQueue];
+            window.__earlyMessageQueue = [];
+            
+            for (const msg of queue) {
+                try {
+                    // Re-dispatch the message through the mensajeria system
+                    if (window.mensajeria && typeof window.mensajeria.procesarMensajeDirecto === 'function') {
+                        await window.mensajeria.procesarMensajeDirecto(msg);
+                    } else {
+                        // Fallback: dispatch as custom event for any listeners
+                        console.warn(`[PADRE][EARLY_QUEUE] mensajeria.procesarMensajeDirecto no disponible, mensaje ${msg.tipo} podría perderse`);
+                        window.dispatchEvent(new CustomEvent('earlyMessage', { detail: msg }));
+                    }
+                    console.log(`[PADRE][EARLY_QUEUE] Mensaje procesado: ${msg.tipo} de ${msg.origen}`);
+                } catch (e) {
+                    console.warn(`[PADRE][EARLY_QUEUE] Error procesando mensaje temprano ${msg.tipo}:`, e);
+                }
+            }
+        };
+
+        // Escuchar el evento de mensajeria lista para procesar cola
+        // NOTA: Este evento se dispara dos veces - una cuando el módulo carga y otra cuando se inicializa
+        // Solo procesamos cuando mensajeria está realmente inicializado
+        let __earlyQueueProcessed = false;
+        window.addEventListener('mensajeriaReady', async () => {
+            // Solo procesar si mensajeria está completamente inicializada Y no hemos procesado aún
+            if (__earlyQueueProcessed) return;
+            if (!window.mensajeria || !window.mensajeria.estaInicializado || !window.mensajeria.estaInicializado()) {
+                // Todavía no está inicializado, esperar al próximo evento
+                return;
+            }
+            
+            __earlyQueueProcessed = true;
+            window.__mensajeriaReady = true;
+            console.log('[PADRE][EARLY_QUEUE] mensajeriaReady recibido y mensajeria inicializada');
+            
+            // Pequeño delay para asegurar que todos los controladores estén registrados
+            setTimeout(() => {
+                window.__processEarlyMessages();
+            }, 100);
+        });
+
         // Listen for child readiness messages to ensure paradas styling is applied
         window.addEventListener('message', async (ev) => {
             try {
                 const data = ev && ev.data;
                 if (!data || !data.tipo) return;
+                
+                // ============================================================
+                // CAPTURA DE MENSAJES CRÍTICOS TEMPRANOS
+                // Encolar HIJO_PREPARADO y HIJO_LISTO si mensajeria no está lista
+                // ============================================================
+                const criticalMessageTypes = [
+                    'SISTEMA.HIJO_PREPARADO',
+                    'SISTEMA.HIJO_LISTO'
+                ];
+                
+                if (criticalMessageTypes.includes(data.tipo)) {
+                    if (!window.__mensajeriaReady) {
+                        // Mensajeria no está lista - encolar el mensaje
+                        console.log(`[PADRE][EARLY_QUEUE] Encolando mensaje temprano: ${data.tipo} de ${data.origen || 'desconocido'}`);
+                        window.__earlyMessageQueue.push(data);
+                        return; // No procesar ahora, se procesará cuando mensajeria esté lista
+                    }
+                    // Si mensajeria está lista, dejar que el flujo normal lo maneje
+                }
                 if (data.tipo === 'VV:PARADAS:READY' || data.tipo === 'VV:PARADAS:SHOWN') {
                     const iframe = document.getElementById('hijo5');
                     if (!iframe) return;
@@ -5654,9 +5727,16 @@
         // Wait for Leaflet to load and initialize map
         function waitForLeafletAndInitialize() {
             return new Promise((resolve) => {
+                const MAX_WAIT_MS = 10000; // 10 seconds max wait for Leaflet
+                const startTime = Date.now();
+                
                 const checkLeaflet = () => {
                     if (typeof L !== 'undefined' && L.map) {
                         initializeMap().then(resolve).catch(resolve); // Resolve even on error to continue app init
+                    } else if (Date.now() - startTime > MAX_WAIT_MS) {
+                        // Timeout reached - continue without Leaflet
+                        console.warn('[PADRE] Leaflet no disponible después de 10s, continuando sin mapa');
+                        resolve(); // Resolve to allow app to continue
                     } else {
                         setTimeout(checkLeaflet, 100);
                     }
