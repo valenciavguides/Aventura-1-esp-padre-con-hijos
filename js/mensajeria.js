@@ -478,7 +478,7 @@ function enviarMensajeInterno(mensaje, destino) {
  * Manejador principal de mensajes entrantes
  * @param {MessageEvent} event - Evento de mensaje
  */
-function manejarMensajeEntrante(event) {
+async function manejarMensajeEntrante(event) {
     const mensaje = event.data;
     
     // Ignorar mensajes inválidos
@@ -516,7 +516,9 @@ function manejarMensajeEntrante(event) {
             
             // Enviar confirmación si se requiere
             if (mensaje.requiereConfirmacion) {
-                enviarConfirmacion(mensaje, resultado, event.source);
+                // Await the result if it's a Promise to avoid sending Promise objects via postMessage
+                const resultadoResuelto = resultado instanceof Promise ? await resultado : resultado;
+                enviarConfirmacion(mensaje, resultadoResuelto, event.source);
             }
         } catch (error) {
             logger.error(`[mensajeria] Error en handler para ${mensaje.tipo}: ${error.message}`);
