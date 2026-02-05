@@ -1957,10 +1957,11 @@
         allow="geolocation" onload="handleIframeLoad('hijo2-coordenadas')" onerror="handleIframeError('hijo2-coordenadas', event)"></iframe>
     
     <!-- Retos iframe -->
+    <!-- NOTA: Inicia oculto. La visibilidad se controla desde mostrarHijo4/ocultarHijo4. -->
     <iframe id="hijo4" src=""
         title="Retos y preguntas"
         aria-label="Ventana de retos y preguntas"
-        style="display: none;"
+        style="display: none; visibility: hidden;"
         onload="handleIframeLoad('hijo4-retos')" onerror="handleIframeError('hijo4-retos', event)"></iframe>
 
 
@@ -9943,9 +9944,10 @@
                 // Asegurarse de que el iframe esté cargado y PADRE_DATOS enviado
                 await cargarIframeConDatos('hijo4', 'retos-hijo4.html', window.__vv_DATOS_PADRE || {});
 
-                // First display elements
+                // First display elements (both display and visibility for consistency)
                 backdrop.style.display = 'block';
                 hijo4.style.display = 'block';
+                hijo4.style.visibility = 'visible';
 
                 // Force reflow
                 void hijo4.offsetWidth;
@@ -9989,9 +9991,10 @@
                 hijo4.classList.remove('visible');
                 backdrop.classList.remove('visible');
 
-                // Hide completely after transition
+                // Hide completely after transition (both display and visibility for consistency)
                 setTimeout(() => {
                     hijo4.style.display = 'none';
+                    hijo4.style.visibility = 'hidden';
                     backdrop.style.display = 'none';
                 }, 300);
 
