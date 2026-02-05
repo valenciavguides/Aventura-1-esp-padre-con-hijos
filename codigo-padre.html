@@ -289,6 +289,22 @@
             if (window.logger?.debug) {
                 window.logger.debug(msg);
             }
+            
+            // Registrar el iframe en el sistema de mensajería
+            try {
+                const iframe = document.getElementById(iframeId);
+                if (iframe && window.mensajeria && window.mensajeria.registrarIframe) {
+                    const registrado = window.mensajeria.registrarIframe(iframeId, iframe);
+                    if (registrado) {
+                        console.log(`[PADRE] Iframe registrado en mensajería: ${iframeId}`);
+                    } else {
+                        console.warn(`[PADRE] No se pudo registrar iframe: ${iframeId}`);
+                    }
+                }
+            } catch (regError) {
+                console.warn(`[PADRE] Error registrando iframe ${iframeId}:`, regError && regError.message);
+            }
+            
             try {
                 // Special handling for hijo5: make iframe background transparent
                 // while ensuring the internal "paradas" / horizontal scroll container
@@ -1903,25 +1919,25 @@
     <iframe id="seleccion" src=""
         title="Selección de idioma y aventura"
         aria-label="Página de selección de idioma y aventura"
-        style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:2000; border:none; display:none; visibility:hidden; background:#fff;"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:2000; border:none; display:block; visibility:visible; background:#fff;"
         onload="handleIframeLoad('seleccion')" onerror="handleIframeError('seleccion', event)"></iframe>
     
     <iframe id="hijo1-hamburguesa" src=""
         title="Menú Hamburguesa"
         aria-label="Menú de navegación hamburguesa"
-        style="position:fixed; left:1.2vw; bottom:10px; height: 320px; width:67px; z-index:1502; pointer-events:auto; display:none; visibility:hidden;"
+        style="position:fixed; left:1.2vw; bottom:10px; height: 320px; width:67px; z-index:1502; pointer-events:auto; display:block; visibility:visible;"
         onload="handleIframeLoad('hijo1-hamburguesa')" onerror="handleIframeError('hijo1-hamburguesa', event)"></iframe>
     
     <iframe id="hijo1-opciones" src=""
         title="Opciones de usuario"
         aria-label="Opciones y configuración"
-        style="position:fixed; right:1.2vw; bottom:10px; height: 320px; width:67px; z-index:1502; pointer-events:auto; display:none; visibility:hidden;"
+        style="position:fixed; right:1.2vw; bottom:10px; height: 320px; width:67px; z-index:1502; pointer-events:auto; display:block; visibility:visible;"
         onload="handleIframeLoad('hijo1-opciones')" onerror="handleIframeError('hijo1-opciones', event)"></iframe>
     
     <iframe id="hijo5" src=""
         title="Botón Casa"
         aria-label="Botón para cambiar entre modo Casa y Aventura"
-        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:none; visibility:hidden; background: transparent;"
+        style="position:fixed; left:10px; top:10px; height:100px; width:99%; z-index:1000000; pointer-events:auto; transition:width 0.3s; display:block; visibility:visible; background: transparent;"
         onload="handleIframeLoad('hijo5')" onerror="handleIframeError('hijo5', event)"></iframe>
     
         <!-- Optional: sistema-ui for monitoring / important notifications
@@ -1942,7 +1958,7 @@
         title="Audio de la aventura"
         aria-label="Reproductor de audio de la aventura con botón de retos"
         class="iframe-trapezoid-inverse"
-        style="display:none; visibility:hidden;"
+        style="display:block; visibility:visible;"
         onload="handleIframeLoad('hijo3-audio')" onerror="handleIframeError('hijo3-audio', event)"></iframe>
     
     <!-- Inverse trapezoid-shaped coordinates component -->
@@ -1951,7 +1967,7 @@
     <iframe id="hijo2" src=""
         title="Botones de coordenadas"
         aria-label="Botones de navegación y coordenadas"
-        style="position:fixed; bottom:141px; left:50%; transform:translateX(calc(-50% + 5px)); height:150px !important; width:337px !important; z-index:1501; pointer-events:auto; display:none; visibility:hidden; overflow:hidden !important;"
+        style="position:fixed; bottom:141px; left:50%; transform:translateX(calc(-50% + 5px)); height:150px !important; width:337px !important; z-index:1501; pointer-events:auto; display:block; visibility:visible; overflow:hidden !important;"
         class="iframe-trapezoid"
         scrolling="no"
         allow="geolocation" onload="handleIframeLoad('hijo2-coordenadas')" onerror="handleIframeError('hijo2-coordenadas', event)"></iframe>
@@ -1961,7 +1977,7 @@
     <iframe id="hijo4" src=""
         title="Retos y preguntas"
         aria-label="Ventana de retos y preguntas"
-        style="display: none; visibility: hidden;"
+        style="display: block; visibility: visible;"
         onload="handleIframeLoad('hijo4-retos')" onerror="handleIframeError('hijo4-retos', event)"></iframe>
 
 
