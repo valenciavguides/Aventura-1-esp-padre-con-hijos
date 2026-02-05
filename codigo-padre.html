@@ -5245,6 +5245,35 @@
         };
 
         /**
+         * Código de error para timeout de HIJO_LISTO
+         */
+        const HIJO_LISTO_TIMEOUT_CODE = 'HIJO_LISTO_TIMEOUT';
+
+        /**
+         * Envía PADRE_CONFIRMA_HIJO_LISTO como fallback cuando el handshake HIJO_LISTO no se completa
+         * @param {string} hijoId - ID del iframe hijo
+         * @param {string} logPrefix - Prefijo para logs
+         */
+        async function enviarPadreConfirmaFallback(hijoId, logPrefix) {
+            try {
+                if (typeof enviarMensaje_S1 === 'function') {
+                    await enviarMensaje_S1({
+                        destino: hijoId,
+                        tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
+                        origen: getPadreId(),
+                        datos: {
+                            timestamp: Date.now(),
+                            mensaje: 'Hijo confirmado como listo (fallback tras timeout)'
+                        }
+                    });
+                    logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${hijoId} (fallback tras timeout)`);
+                }
+            } catch (error) {
+                logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${hijoId}:`, error);
+            }
+        }
+
+        /**
          * Carga un iframe solo si no ha sido cargado previamente
          * @param {string} id - ID del iframe
          * @param {string} src - Ruta del archivo HTML a cargar
@@ -5332,22 +5361,7 @@
                 // Si HIJO_LISTO no fue recibido (timeout), enviar PADRE_CONFIRMA_HIJO_LISTO de todos modos
                 // para que el hijo pueda mostrar su UI
                 if (!hijoListoRecibido) {
-                    try {
-                        if (typeof enviarMensaje_S1 === 'function') {
-                            await enviarMensaje_S1({
-                                destino: id,
-                                tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                                origen: getPadreId(),
-                                datos: {
-                                    timestamp: Date.now(),
-                                    mensaje: 'Hijo confirmado como listo (fallback tras timeout)'
-                                }
-                            });
-                            logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${id} (fallback tras timeout)`);
-                        }
-                    } catch (error) {
-                        logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${id}:`, error);
-                    }
+                    await enviarPadreConfirmaFallback(id, logPrefix);
                 }
 
                 logger.success(`${logPrefix} ✅ ${id} listo y confirmado`);
@@ -6172,7 +6186,9 @@
                     // Esperar HIJO_LISTO
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => {
-                            reject(new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`));
+                            const error = new Error(`Timeout esperando HIJO_LISTO de ${iframe.id}`);
+                            error.code = HIJO_LISTO_TIMEOUT_CODE;
+                            reject(error);
                         }, ajustarTimeoutPorConexion_S1(CONFIG.MENSAJERIA.TIMEOUTS.CONFIRMACION));
 
                         const check = () => {
@@ -6194,23 +6210,8 @@
                     
                     // Si fue un timeout esperando HIJO_LISTO, enviar PADRE_CONFIRMA_HIJO_LISTO de todos modos
                     // para que el hijo pueda mostrar su UI
-                    if (error.message.includes('Timeout esperando HIJO_LISTO')) {
-                        try {
-                            if (typeof enviarMensaje_S1 === 'function') {
-                                await enviarMensaje_S1({
-                                    destino: iframe.id,
-                                    tipo: TIPOS_MENSAJE_S1.SISTEMA.PADRE_CONFIRMA_HIJO_LISTO,
-                                    origen: getPadreId(),
-                                    datos: {
-                                        timestamp: Date.now(),
-                                        mensaje: 'Hijo confirmado como listo (fallback tras timeout)'
-                                    }
-                                });
-                                logger.info(`${logPrefix} PADRE_CONFIRMA_HIJO_LISTO enviado a ${iframe.id} (fallback tras timeout)`);
-                            }
-                        } catch (fallbackError) {
-                            logger.error(`${logPrefix} Error enviando PADRE_CONFIRMA_HIJO_LISTO a ${iframe.id}:`, fallbackError);
-                        }
+                    if (error.code === HIJO_LISTO_TIMEOUT_CODE) {
+                        await enviarPadreConfirmaFallback(iframe.id, logPrefix);
                     }
                 }
             }
