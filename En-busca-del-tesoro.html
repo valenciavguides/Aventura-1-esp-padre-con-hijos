@@ -633,6 +633,16 @@
                 logger.error(`${logPrefix} Error enviando HIJO_PREPARADO:`, error);
             }
 
+            // Timeout de seguridad: Si después de 3 segundos no recibimos PADRE_CONFIRMA_HIJO_LISTO, 
+            // mostramos la UI de todos modos para que los botones sean clickeables
+            setTimeout(() => {
+                if (!window._uiConfirmado) {
+                    logger.warn(`${logPrefix} Timeout: PADRE_CONFIRMA_HIJO_LISTO no recibido. Mostrando UI de emergencia.`);
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                }
+            }, 3000);
+
         } catch (error) {
             logger.error(`${logPrefix} Error crítico durante inicialización:`, error);
             
@@ -651,6 +661,15 @@
             } catch (notifyError) {
                 logger.error(`${logPrefix} Error notificando fallo al padre:`, notifyError);
             }
+            
+            // En caso de error, mostrar UI de todos modos después de un breve delay
+            setTimeout(() => {
+                if (!window._uiConfirmado) {
+                    logger.warn(`${logPrefix} Mostrando UI tras error de inicialización`);
+                    window._uiConfirmado = true;
+                    mostrarUI();
+                }
+            }, 1000);
         }
     }
 
