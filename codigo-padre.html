@@ -1946,10 +1946,12 @@
         onload="handleIframeLoad('hijo3-audio')" onerror="handleIframeError('hijo3-audio', event)"></iframe>
     
     <!-- Inverse trapezoid-shaped coordinates component -->
+    <!-- NOTA: Inicia oculto (display:none; visibility:hidden) para evitar parpadeo.
+         La visibilidad se controla desde INICIAR_AVENTURA después de cargar completamente. -->
     <iframe id="hijo2" src=""
         title="Botones de coordenadas"
         aria-label="Botones de navegación y coordenadas"
-        style="position:fixed; bottom:141px; left:50%; transform:translateX(calc(-50% + 5px)); height:150px !important; width:337px !important; z-index:1501; pointer-events:auto; display:block; visibility:visible; overflow:hidden !important;"
+        style="position:fixed; bottom:141px; left:50%; transform:translateX(calc(-50% + 5px)); height:150px !important; width:337px !important; z-index:1501; pointer-events:auto; display:none; visibility:hidden; overflow:hidden !important;"
         class="iframe-trapezoid"
         scrolling="no"
         allow="geolocation" onload="handleIframeLoad('hijo2-coordenadas')" onerror="handleIframeError('hijo2-coordenadas', event)"></iframe>
