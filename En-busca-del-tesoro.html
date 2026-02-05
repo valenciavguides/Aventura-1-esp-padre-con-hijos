@@ -226,6 +226,19 @@
       mostrar(7); // Go to quiz screen (P7) first, then adventure confirmation (P8)
     }
     
+    // Mapping of first puzzle IDs for each adventure
+    // TODO: Update placeholder values when puzzles are defined for each adventure
+    const PRIMER_PUZZLE_AVENTURA = {
+      'Intro': 'PZ-logo',
+      'Aventura1': 'PZ-8',  // Plaza de la Virgen
+      'Aventura2': 'PZ-logo',  // TODO: Replace when Aventura2 puzzles are defined
+      'Aventura3': 'PZ-logo',  // TODO: Replace when Aventura3 puzzles are defined
+      'Aventura4': 'PZ-logo',  // TODO: Replace when Aventura4 puzzles are defined
+      'Aventura5': 'PZ-logo',  // TODO: Replace when Aventura5 puzzles are defined
+      'AventuraFallas': 'PZ-logo',  // TODO: Replace when AventuraFallas puzzles are defined
+      'Aventura34km': 'PZ-logo'  // TODO: Replace when Aventura34km puzzles are defined
+    };
+
     // Confirm adventure selection - notify padre to start loading iframes
     function confirmarAventura() {
       console.log('[SELECCION] Aventura confirmada:', aventuraSeleccionada);
@@ -242,6 +255,16 @@
           }
         }, '*');
       }
+      
+      // Update puzzle iframe with correct puzzle for the selected adventure
+      const puzzleFrame = document.getElementById('puzzleFrame');
+      if (puzzleFrame) {
+        const puzzleId = PRIMER_PUZZLE_AVENTURA[aventuraSeleccionada] || 'PZ-logo';
+        const aventura = aventuraSeleccionada || 'Intro';
+        puzzleFrame.src = `Puzzle.html?id=${puzzleId}&aventura=${aventura}`;
+        console.log('[SELECCION] Puzzle cargado:', puzzleId, 'para aventura:', aventura);
+      }
+      
       // Go to screen 9 (puzzle) after adventure confirmation
       mostrar(9);
     }
