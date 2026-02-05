@@ -2707,6 +2707,10 @@
                     const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                     for (const h of hijosCriticos) {
                         try {
+                            // ✅ Verificar que el hijo está cargado antes de enviar mensaje
+                            if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(h)) {
+                                continue; // Saltar hijos no cargados
+                            }
                             const padreIdRest = estado.elementoActual?.padreid || (estado.paradaActual ? `padre-${estado.paradaActual}` : null);
                             // Debug: store last Cambio Parada payload for diagnostics
                             window._lastCambioParada = { paradaId: estado.paradaActual || null, parada_id: estado.paradaActual || null, padreId: padreIdRest, padreid: padreIdRest, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), restaurado: true };
@@ -2781,6 +2785,10 @@
                     const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                     for (const h of hijosCriticos) {
                             try {
+                                // ✅ Verificar que el hijo está cargado antes de enviar mensaje
+                                if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(h)) {
+                                    continue; // Saltar hijos no cargados
+                                }
                                 // Debug: store last Cambio Parada payload for diagnostics
                                 window._lastCambioParada = { paradaId: estado.paradaActual, parada_id: estado.paradaActual, padreId: padreIdDefault, padreid: padreIdDefault, indiceProgreso: estado.indiceProgreso, timestamp: Date.now(), razon: 'default_parada' };
                                 if (typeof enviarMensaje_S1 === 'function') {
@@ -4692,6 +4700,11 @@
                     // Enviar SISTEMA.CAMBIO_MODO a cada hijo crítico
                     for (const hijoId of hijosCriticos) {
                         try {
+                            // ✅ Verificar que el hijo está cargado antes de enviar mensaje
+                            if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(hijoId)) {
+                                logger.debug(`${logPrefix} Saltando CAMBIO_MODO para ${hijoId} - no cargado aún`);
+                                continue;
+                            }
                             if (typeof enviarMensaje_S1 === 'function') {
                                 await enviarMensaje_S1({
                                     tipo: TIPOS_MENSAJE_S1.SISTEMA.CAMBIO_MODO,
@@ -4733,6 +4746,10 @@
                             } catch (e) { logger.error(`${logPrefix} Error iniciando heartbeat local via messaging:`, e); }
                             for (const h of hijosCriticos) {
                                 try {
+                                    // ✅ Verificar que el hijo está cargado antes de enviar HEARTBEAT_START
+                                    if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(h)) {
+                                        continue;
+                                    }
                                     if (typeof enviarMensaje_S1 === 'function') {
                                         await enviarMensaje_S1({
                                             tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_START,
@@ -4766,6 +4783,10 @@
 
                             for (const h of hijosCriticos) {
                                 try {
+                                    // ✅ Verificar que el hijo está cargado antes de enviar HEARTBEAT_PAUSE
+                                    if (typeof window.esHijoCargado === 'function' && !window.esHijoCargado(h)) {
+                                        continue;
+                                    }
                                     if (typeof enviarMensaje_S1 === 'function') {
                                         await enviarMensaje_S1({
                                             tipo: TIPOS_MENSAJE_S1.SISTEMA.HEARTBEAT_PAUSE,
@@ -5130,6 +5151,19 @@
         
         // Flag mutex para evitar cargas concurrentes
         window.__CARGA_EN_PROGRESO = window.__CARGA_EN_PROGRESO || false;
+
+        /**
+         * Verifica si un iframe hijo está cargado y listo para recibir mensajes
+         * @param {string} id - ID del iframe
+         * @returns {boolean} - true si está cargado y tiene contentWindow
+         */
+        window.esHijoCargado = function(id) {
+            const estaCargado = window.__HIJOS_CARGADOS && window.__HIJOS_CARGADOS.has(id);
+            const iframeEl = document.getElementById(id);
+            const tieneSrc = iframeEl && iframeEl.src && iframeEl.src !== '' && !iframeEl.src.endsWith('/');
+            const tieneContentWindow = iframeEl && iframeEl.contentWindow;
+            return estaCargado && tieneSrc && tieneContentWindow;
+        };
 
         /**
          * Carga un iframe solo si no ha sido cargado previamente
@@ -10051,10 +10085,21 @@
             }
 
             // Propagar control de heartbeat a hijos críticos según el modo inicial
+            // NOTA: Solo enviar a hijos que ya están cargados (tienen src asignado)
             try {
                 const hijosCriticos = ['hijo2', 'hijo3', 'hijo4', 'hijo5'];
                 for (const h of hijosCriticos) {
                     try {
+                        // ✅ Verificar que el hijo está cargado antes de enviar mensaje
+                        const iframeEl = document.getElementById(h);
+                        const estaCargado = window.__HIJOS_CARGADOS && window.__HIJOS_CARGADOS.has(h);
+                        const tieneSrc = iframeEl && iframeEl.src && iframeEl.src !== '' && !iframeEl.src.endsWith('/');
+                        
+                        if (!estaCargado || !tieneSrc) {
+                            console.debug(`[PADRE] Saltando HEARTBEAT para ${h} - no cargado aún (estaCargado=${estaCargado}, tieneSrc=${tieneSrc})`);
+                            continue;
+                        }
+                        
                         await enviarMensaje_S4({
                             tipo: modoInicial === MODOS_S4.AVENTURA ? TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_START : TIPOS_MENSAJE_S4.SISTEMA.HEARTBEAT_PAUSE,
                             origen: CONFIG_PADRE.ID,
