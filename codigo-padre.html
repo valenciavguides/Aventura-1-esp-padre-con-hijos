@@ -153,10 +153,13 @@
             window.__mensajeriaReady = true;
             console.log('[PADRE][EARLY_QUEUE] mensajeriaReady recibido y mensajeria inicializada');
             
-            // Pequeño delay para asegurar que todos los controladores estén registrados
+            // Delay de 100ms para asegurar que todos los controladores asíncronos estén registrados
+            // antes de procesar los mensajes encolados. Los controladores se registran en cascada
+            // después de inicializar mensajeria, por lo que necesitamos este buffer.
+            const HANDLER_REGISTRATION_DELAY_MS = 100;
             setTimeout(() => {
                 window.__processEarlyMessages();
-            }, 100);
+            }, HANDLER_REGISTRATION_DELAY_MS);
         });
 
         // Listen for child readiness messages to ensure paradas styling is applied
@@ -5727,7 +5730,7 @@
         // Wait for Leaflet to load and initialize map
         function waitForLeafletAndInitialize() {
             return new Promise((resolve) => {
-                const MAX_WAIT_MS = 10000; // 10 seconds max wait for Leaflet
+                const MAX_WAIT_MS = 10000; // 10 seconds maximum wait for Leaflet library to load
                 const startTime = Date.now();
                 
                 const checkLeaflet = () => {
