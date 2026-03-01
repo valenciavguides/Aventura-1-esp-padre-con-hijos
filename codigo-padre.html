@@ -9338,6 +9338,67 @@
                 estado.seleccion.idioma = idioma || 'es';
                 estado.seleccion.terminosAceptados = terminosAceptados;
                 estado.seleccion.iniciada = true;
+                
+                // =====================================================
+                // CARGAR IFRAMES HIJOS AHORA (diferido hasta selección)
+                // =====================================================
+                logger.info(`${logPrefix} 📦 Cargando iframes hijos...`);
+                
+                const iframesHijos = [
+                    { id: 'hijo1-hamburguesa', src: 'botones-y-subfunciones-hamburguesa.html' },
+                    { id: 'hijo1-opciones', src: 'botones-y-subfunciones-opciones.html' },
+                    { id: 'hijo2', src: 'coordenadas-hijo2.html' },
+                    { id: 'hijo3', src: 'audio-hijo3.html' },
+                    { id: 'hijo5', src: 'boton-casa-hijo5.html' }
+                ];
+                
+                // Cargar iframes en paralelo para mayor velocidad
+                const promesasCarga = iframesHijos.map(async (iframeConfig) => {
+                    const iframeEl = document.getElementById(iframeConfig.id);
+                    if (!iframeEl) {
+                        logger.warn(`${logPrefix} Iframe ${iframeConfig.id} no encontrado en DOM`);
+                        return false;
+                    }
+                    
+                    // Registrar en mensajería si corresponde
+                    if (typeof registrarIframe_S1 === 'function') {
+                        try {
+                            registrarIframe_S1(iframeConfig.id, iframeEl, { capacidades: [] });
+                        } catch (e) { /* ignore */ }
+                    }
+                    
+                    // Cargar el iframe
+                    return new Promise((resolve) => {
+                        const timeout = setTimeout(() => {
+                            logger.warn(`${logPrefix} ⚠️ Timeout cargando ${iframeConfig.id}`);
+                            resolve(false);
+                        }, 8000);
+                        
+                        const onLoad = () => {
+                            clearTimeout(timeout);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.info(`${logPrefix} ✅ ${iframeConfig.id} cargado`);
+                            resolve(true);
+                        };
+                        
+                        const onError = () => {
+                            clearTimeout(timeout);
+                            iframeEl.removeEventListener('load', onLoad);
+                            iframeEl.removeEventListener('error', onError);
+                            logger.error(`${logPrefix} ❌ Error cargando ${iframeConfig.id}`);
+                            resolve(false);
+                        };
+                        
+                        iframeEl.addEventListener('load', onLoad, { once: true });
+                        iframeEl.addEventListener('error', onError, { once: true });
+                        iframeEl.src = iframeConfig.src;
+                    });
+                });
+                
+                // Esperar a que todos los iframes carguen (o timeout)
+                await Promise.all(promesasCarga);
+                logger.success(`${logPrefix} ✅ Iframes hijos cargados`);
                 estado.seleccion.timestampInicio = timestamp;
                 
                 // =====================================================
