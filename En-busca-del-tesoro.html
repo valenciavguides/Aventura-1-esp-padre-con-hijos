@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -17,29 +16,96 @@
     }
   </script>
   
+  <script src="js/proteccion.js"></script>
   <script src="js/suppress-warnings.js"></script>
   <style>
-    body { margin: 0; font-family: 'Book Antiqua', serif; background-color: black; color: white; }
-    .pantalla { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; position: relative; text-align: center; padding: 20px; box-sizing: border-box; }
+        /* Escalado proporcional puro: 2.5% del menor lado del viewport */
+        html { font-size: 2.5vmin; }
+
+    * { font-family: Verdana, sans-serif !important; }
+    body { margin: 0; font-family: Verdana, sans-serif; background-color: #ff8c00; color: white; }
+    .pantalla { display: none; height: 100vh; width: 100vw; flex-direction: column; align-items: center; justify-content: center; position: relative; text-align: center; padding: 1.25rem; box-sizing: border-box; }
     .visible { display: flex; }
-    .logo-redondo { width: 120px; border-radius: 50%; }
-    .logo-alargado { width: 240px; margin-top: 15px; }
-    .btn { margin-top: 30px; padding: 10px 20px; font-size: 18px; background-color: white; color: black; border-radius: 25px; cursor: pointer; border: none; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .free-demo { position: absolute; top: 10px; left: 10px; background-color: red; color: white; padding: 5px 10px; font-weight: bold; font-size: 14px; border-radius: 5px; }
-    .texto-box { max-height: 300px; overflow-y: auto; border: 2px solid white; padding: 20px; margin-top: 20px; background-color: #111; border-radius: 10px; text-align: left; width: 80%; }
-    .banderas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 30px; }
+    .logo-redondo { width: 14rem; border-radius: 50%; }
+    .logo-alargado { width: 28rem; margin-top: 0.9375rem; }
+    .btn { 
+      margin-top: 1.875rem; padding: 0.9375rem 1.5625rem; font-size: 1.25rem; font-weight: bold;
+      background-color: white; color: black; 
+      border-radius: 1.5625rem; cursor: pointer; 
+      border: 0.1875rem solid black; 
+      transition: all 0.2s ease;
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+      min-width: 3.75rem; min-height: 3.75rem;
+    }
+    .btn:hover:not(:disabled) { transform: scale(1.05); box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.2); }
+    .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .btn.success { border-color: #28a745; }
+    .btn.error { border-color: #dc3545; }
+    .arrow-right { color: #28a745; font-size: 3rem; font-weight: bold; margin-top: -0.125rem; }
+    .checkmark { color: #28a745; font-size: 3rem; font-weight: bold; margin-top: -0.125rem; }
+    .cross { color: #dc3545; font-size: 3rem; font-weight: bold; margin-top: -0.125rem; }
+    .free-demo { position: absolute; top: 0.625rem; left: 0.625rem; background-color: red; color: white; padding: 0.3125rem 0.625rem; font-weight: bold; font-size: 0.875rem; border-radius: 0.3125rem; }
+    .texto-box { max-height: 18.75rem; overflow-y: auto; border: 0.125rem solid white; padding: 1.25rem; margin-top: 1.25rem; background-color: #111; border-radius: 0.625rem; text-align: left; width: 80%; }
+    .borde-azul { border: 0.25rem solid #0074d9; }
+    .banderas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; margin-top: 1.875rem; }
     .bandera-container { position: relative; }
-    .bandera { width: 120px; height: auto; border: 3px solid white; border-radius: 10px; cursor: pointer; }
-    .en-desarrollo { position: absolute; top: 10px; left: 10px; background-color: white; color: red; padding: 5px; font-size: 12px; font-weight: bold; transform: rotate(-20deg); }
-    .audio-controls { margin-top: 30px; }
-    .reto-box { background: white; color: black; border-radius: 20px; padding: 20px; border: 5px solid blue; width: 80%; max-width: 400px; }
-    .respuesta { margin: 10px 0; }
-    .tick, .x { display: none; font-weight: bold; }
-    .tick.correcto { display: inline; color: green; }
-    .x.incorrecto { display: inline; color: red; }
-    .aventuras-lista { display: flex; flex-direction: column; gap: 10px; width: 80%; max-width: 400px; }
-    .aventuras-lista .btn { margin-top: 10px; }
+    .bandera { width: clamp(9rem, 28vmin, 14rem); height: auto; border: none; border-radius: 0.625rem; cursor: pointer; }
+    #pantalla2 { overflow: hidden; }
+    .en-desarrollo { position: absolute; top: 0.625rem; left: 0.625rem; background-color: white; color: red; padding: 0.3125rem; font-size: 0.75rem; font-weight: bold; transform: rotate(-20deg); }
+    .audio-controls { margin-top: 1.875rem; }
+    .reto-box { background: white; color: black; border-radius: 1.25rem; padding: 1.25rem; border: 0.3125rem solid blue; width: 80%; max-width: 25rem; }
+    .respuesta { margin: 0.9rem 0; font-size: 1.3rem; display: flex; align-items: center; }
+    .reto-box input[type="radio"], .reto-box input[type="checkbox"] { transform: scale(2.0); flex-shrink: 0; margin-right: 0.8rem; cursor: pointer; }
+    .reto-box p { font-size: 1.4rem; }
+    #reto-r1-opciones, #reto-r2-opciones { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+    .tick, .x { display: none; font-weight: bold; font-size: 3rem; margin-top: -0.125rem; }
+    .tick.correcto { display: inline; color: #28a745; }
+    .x.incorrecto { display: inline; color: #dc3545; }
+    .visual-feedback { font-size: 2rem; font-weight: bold; }
+    .visual-feedback.success { color: #28a745; }
+    .visual-feedback.error { color: #dc3545; }
+    .aventuras-lista { display: flex; flex-direction: column; gap: clamp(0.15rem, 0.5vmin, 0.35rem); width: 90%; max-width: 90vw; flex: 1; }
+    .aventuras-lista .btn { margin-top: 0; min-height: 0; flex: 1; padding: 0.25rem 0.8rem; font-size: var(--btn-font-size, clamp(0.75rem, 3vmin, 1.8rem)); }
+    #pantalla6 { justify-content: flex-start; padding-top: 3rem; }
+    
+    /* Escalar controles de audio nativos - proporcional al viewport */
+    audio { 
+      width: 100% !important; 
+      height: clamp(4rem, 12vmin, 12rem) !important; 
+    }
+    audio::-webkit-media-controls-panel { height: 100% !important; }
+    /* Ocultar botón de descarga en todos los navegadores */
+    audio::-webkit-media-controls-download-button { display: none !important; }
+    audio::-webkit-media-controls-overflow-button { display: none !important; }
+    .audio-player-container { padding: clamp(0.5rem, 1.5vmin, 1.5rem) 0; width: 72vw; margin-left: 6vw; margin-right: 0; margin-top: clamp(0.5rem, 1.5vmin, 1.5rem); margin-bottom: clamp(0.5rem, 1.5vmin, 1.5rem); border: 0.25rem solid #0074d9; }
+      /* Solo texto legible - mismo tamaño que hijo2, sin afectar UI */
+      .texto-box,
+      #pantalla11 .audio-overlay,
+      .reto-box p,
+      .respuesta,
+      #reto-r1-pregunta, #reto-r2-pregunta,
+      #reto-r1-titulo, #reto-r2-titulo,
+      #aventura-seleccionada-texto,
+      #audio-warning-text {
+        font-size: clamp(16px, 5vmin, 24px) !important;
+      }
+
+      /* Scrollbar unificado para .texto-box y #pantalla11 .audio-overlay */
+      .texto-box,
+      #pantalla11 .audio-overlay {
+        scrollbar-color: #fff #222;
+        scrollbar-width: thin;
+      }
+      .texto-box::-webkit-scrollbar,
+      #pantalla11 .audio-overlay::-webkit-scrollbar {
+        width: 0.7rem;
+        background: #222;
+      }
+      .texto-box::-webkit-scrollbar-thumb,
+      #pantalla11 .audio-overlay::-webkit-scrollbar-thumb {
+        background: #fff;
+        border-radius: 0.5rem;
+      }
   </style>
 </head>
 <body>
@@ -47,106 +113,1124 @@
   <!-- P1: Bienvenida -->
   <div class="pantalla visible" id="pantalla1">
     <div class="free-demo">FREE DEMO</div>
-    <img src="fotos-botones/logo-redondo.png" class="logo-redondo">
-    <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
-    <button class="btn" onclick="mostrar(2)">Continuar</button>
+    <div class="logo-circular-bg">
+      <img src="imagenes/imagenes-aplicación/logo-redondo.png" class="logo-redondo">
+    </div>
+      <style>
+        .logo-circular-bg {
+          width: 20rem;
+          height: 20rem;
+          background: transparent;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: none;
+          margin: 0 auto 1.5rem auto;
+          border: none;
+        }
+        .logo-circular-bg .logo-redondo {
+          width: 90%;
+          height: 90%;
+          object-fit: contain;
+          border-radius: 0;
+          display: block;
+        }
+      </style>
+    <img src="imagenes/imagenes-aplicación/logo-alargado.png" class="logo-alargado">
+    <button class="btn" onclick="mostrar(2)" title="Continuar">
+      <span class="arrow-right">→</span>
+    </button>
   </div>
 
   <!-- P2: Selección de idioma -->
   <div class="pantalla" id="pantalla2">
-    <div class="free-demo">FREE DEMO</div>
-    <h2>Selecciona tu idioma</h2>
     <div class="banderas">
-      <div class="bandera-container"><img src="fotos-botones/Bandera España.png" class="bandera" onclick="seleccionarIdioma('es')"></div>
-      <div class="bandera-container"><img src="fotos-botones/Bandera habla inglesa.png" class="bandera"><div class="en-desarrollo">Soon coming</div></div>
-      <div class="bandera-container"><img src="fotos-botones/Bandera Francia.png" class="bandera"><div class="en-desarrollo">En développement</div></div>
-      <div class="bandera-container"><img src="fotos-botones/Bandera Italia.png" class="bandera"><div class="en-desarrollo">In sviluppo</div></div>
-      <div class="bandera-container"><img src="fotos-botones/Bandera Paises bajos.png" class="bandera"><div class="en-desarrollo">In ontwikkeling</div></div>
-      <div class="bandera-container"><img src="fotos-botones/Bandera Japon.png" class="bandera"><div class="en-desarrollo">開発中</div></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera España.png" class="bandera" onclick="seleccionarIdioma('es')"></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera habla inglesa.png" class="bandera" onclick="seleccionarIdioma('en')"></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera Francia.png" class="bandera" onclick="seleccionarIdioma('fr')"></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera Italia.png" class="bandera" onclick="seleccionarIdioma('it')"></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera Paises bajos.png" class="bandera" onclick="seleccionarIdioma('nl')"></div>
+      <div class="bandera-container"><img src="imagenes/imagenes-aplicación/Bandera Japon.png" class="bandera" onclick="seleccionarIdioma('ja')"></div>
     </div>
   </div>
 
   <!-- P3: Confirmación de idioma -->
   <div class="pantalla" id="pantalla3">
     <div class="free-demo">FREE DEMO</div>
-    <h2>¿Confirmas el idioma seleccionado?</h2>
-    <p id="idioma-seleccionado-texto">Español</p>
-    <div style="display:flex; gap:20px; justify-content:center;">
-      <button class="btn" onclick="confirmarIdioma()">Sí, continuar</button>
-      <button class="btn" style="background-color:#666;" onclick="mostrar(2)">No, cambiar</button>
+    <div style="display: flex; flex-direction: column; align-items: center; margin: 1.25rem 0;">
+      <img id="idioma-bandera-confirmacion" src="" alt="Bandera" style="width: 15rem; height: auto; border: none; border-radius: 0.625rem; margin-bottom: 0.9375rem;">
+    </div>
+    <div style="display:flex; gap:1.25rem; justify-content:center;">
+      <button class="btn success" onclick="confirmarIdioma()" title="Sí, confirmar">
+        <span class="checkmark">✓</span>
+      </button>
+      <button class="btn error" onclick="mostrar(2)" title="No, cambiar">
+        <span class="cross">✗</span>
+      </button>
     </div>
   </div>
 
-  <!-- P4: Términos y Condiciones -->
+
+  <!-- P4: Imagen "En Busca del Tesoro" según idioma -->
   <div class="pantalla" id="pantalla4">
     <div class="free-demo">FREE DEMO</div>
-    <p>Por favor, lee los <a href="terminos y condiciones/español" target="_blank">Términos y Condiciones</a> antes de continuar.</p>
-    <button class="btn" onclick="aceptarTerminos()">Aceptar</button>
+    <img src="imagenes/imagenes-aplicación/logo-alargado.png" class="logo-alargado">
+    <img id="en-busca-imagen" src="" alt="" style="width:80%; max-width:20rem; margin-top:1.5rem;">
+    <button class="btn" onclick="mostrar(5)" title="Continuar">
+      <span class="arrow-right">→</span>
+    </button>
   </div>
-
-  <!-- P5: Audio Intro -->
+  <!-- P5: Términos y Condiciones (carga dinámica desde js/terminos-aventuras.js) -->
   <div class="pantalla" id="pantalla5">
     <div class="free-demo">FREE DEMO</div>
-    <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
-    <h3>Audio de introducción</h3>
-    <!-- Audio file not found: INTRO/Español/Intro ESPAÑOL 1.mp3 -->
-    <!-- <audio class="audio-controls" controls autoplay>
-      <source src="INTRO/Español/Intro ESPAÑOL 1.mp3" type="audio/mpeg">
-      Tu navegador no soporta el audio.
-    </audio> -->
-    <p>Audio no disponible (archivo faltante)</p>
-    <button class="btn" onclick="mostrar(6)">Siguiente</button>
+    <div id="terminos-contenido" class="texto-box borde-azul" style="max-height:50vh; overflow-y:auto;" onscroll="checkTerminosScroll()">
+      <!-- Contenido cargado dinámicamente según idioma seleccionado -->
+      <p>Cargando términos...</p>
+    </div>
+    <div style="display:flex; gap:1.25rem; justify-content:center; margin-top:1.25rem;">
+      <button class="btn success" id="btn-aceptar-terminos" onclick="aceptarTerminos()" disabled title="Aceptar términos">
+        <span class="checkmark">✓</span>
+      </button>
+    </div>
   </div>
 
-  <!-- P6: Reto interactivo -->
+  <!-- P6: Elección de Aventura -->
   <div class="pantalla" id="pantalla6">
     <div class="free-demo">FREE DEMO</div>
-    <img src="fotos-botones/Logo alargado.jpg" class="logo-alargado">
-    <div class="reto-box" id="reto">
-      <h3>Reto Demo</h3>
-      <p>¿Cuántas Aventuras ofrece València be Guides?</p>
-      <div class="respuesta"><input type="radio" name="op" value="4"> 4 <span class="x">✖</span></div>
-      <div class="respuesta"><input type="radio" name="op" value="5"> 5 <span class="x">✖</span></div>
-      <div class="respuesta"><input type="radio" name="op" value="6"> 6 <span class="x">✖</span></div>
-      <div class="respuesta"><input type="radio" name="op" value="7"> 7 <span class="tick">✔</span></div>
-      <button class="btn" onclick="verificar()">Enviar</button>
+    <div class="aventuras-lista" id="aventuras-dinamicas">
+      <!-- Aventuras cargadas dinámicamente según idioma -->
+    </div>
+  </div>
+
+  <!-- P7: Confirmación de aventura -->
+  <div class="pantalla" id="pantalla7">
+    <div class="free-demo">FREE DEMO</div>
+    <div style="background:rgba(255,255,255,0.95); padding:2rem 3rem; border-radius:1.25rem; margin:1.25rem; max-width:90vw; box-shadow:0 0.375rem 1.25rem rgba(0,0,0,0.3); text-align:center; white-space:nowrap;">
+      <p id="aventura-seleccionada-texto" style="font-size:clamp(1.2rem, 4vmin, 2.5rem); color:#333; margin:0; font-weight: bold;">Aventura 1 - València histórica 1</p>
+    </div>
+    <div style="display:flex; gap:1.25rem; justify-content:center;">
+      <button class="btn success" onclick="confirmarAventura()" title="Sí, confirmar">
+        <span class="checkmark">✓</span>
+      </button>
+      <button class="btn error" onclick="mostrar(6)" title="No, cambiar">
+        <span class="cross">✗</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- P8: Reto R-1 (reto_id dinámico: R1-AvX-xx desde aventuras-ID-padre.js) -->
+  <div class="pantalla" id="pantalla8">
+    <div class="free-demo">FREE DEMO</div>
+    <img src="imagenes/imagenes-aplicación/logo-alargado.png" class="logo-alargado">
+    <div class="reto-box" id="reto-r1-box">
+      <h3 id="reto-r1-titulo">Reto 1</h3>
+      <p id="reto-r1-pregunta">Cargando reto...</p>
+      <div id="reto-r1-opciones"></div>
+      <button class="btn" id="btn-verificar-reto-r1" onclick="verificarRetoR1()" disabled title="Continuar">
+        <span class="arrow-right">→</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- P9: Puzzle (carga puzzle.html mediante iframe) -->
+  <div class="pantalla" id="pantalla9" style="padding:0; justify-content:center; align-items:center;">
+    <div class="free-demo">FREE DEMO</div>
+    <div style="position:relative; width:90vw; height:85vh; max-width:90vw;">
+      <div id="puzzle-container" style="width:100%; height:100%; border-radius:0.9375rem; overflow:hidden; box-shadow:0 0.25rem 1.25rem rgba(0,0,0,0.3);">
+        <iframe id="puzzle-iframe" src="" style="width:100%; height:100%; border:none;" title="Puzzle"></iframe>
+      </div>
+      <button class="btn" id="btn-continuar-puzzle" onclick="completarPuzzle()" disabled
+        style="opacity:1; position:absolute; right:-3.5rem; top:50%; transform:translateY(-50%);
+               width:7rem; height:7rem; min-width:0; min-height:0; padding:0;
+               border-radius:50%; margin:0; box-shadow:0 0.25rem 0.75rem rgba(0,0,0,0.4);
+               background:#cc0000; border:0.25rem solid #fff;"
+        title="Continuar">
+        <span class="arrow-right" style="font-size:3.5rem; margin:0; color:#fff; font-weight:900; text-shadow: 0 0 0.5rem rgba(0,0,0,0.5);">➜</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- P10: Video introductorio -->
+  <!-- TODO: Añadir la ruta del video introductorio cuando esté disponible -->
+  <div class="pantalla" id="pantalla10">
+    <div class="free-demo">FREE DEMO</div>
+    <div style="position:relative; width:90vw; height:80vh; background:#000; border:0.3125rem solid #00ff00; border-radius:0.9375rem; box-shadow:0 0.375rem 1.25rem rgba(0,0,0,0.3); overflow:hidden; display:flex; justify-content:center; align-items:center;">
+      <video id="video-intro-player" controls preload="metadata" style="width:100%; height:100%; object-fit:contain; display:none;">
+        <!-- TODO: Rellenar src con la ruta del video introductorio -->
+        <source id="video-intro-source" src="" type="video/mp4">
+        Tu navegador no soporta el elemento video.
+      </video>
+      <div id="video-intro-placeholder" style="display:flex; flex-direction:column; justify-content:center; align-items:center; width:100%; height:100%; gap:1rem;">
+        <div style="font-size:5rem; opacity:0.3;">🎬</div>
+        <p style="color:#999; font-size:1.1rem; text-align:center; margin:0; padding:0 1rem;">Video introductorio próximamente</p>
+      </div>
+    </div>
+    <button class="btn" onclick="mostrar(11)" title="Siguiente" style="margin-top:1rem;">
+      <span class="arrow-right">→</span>
+    </button>
+  </div>
+
+  <!-- P11: Audio intro + texto (padreid: "padre-intro", audio_id: audio-intro-xx, texto_id: txt-intro-xx) -->
+  <div class="pantalla" id="pantalla11">
+    <div class="free-demo">FREE DEMO</div>
+    <img src="imagenes/imagenes-aplicación/logo-alargado.png" class="logo-alargado" style="display:block; margin-left:auto; margin-right:auto; margin-top:0; margin-bottom:0;">
+    <div class="audio-btn-row" style="margin-top:0; margin-bottom:0.7rem;">
+      <div class="audio-player-container" style="background:rgba(255,255,255,0.95); border-radius:1.25rem; box-shadow:0 0.375rem 1.25rem rgba(0,0,0,0.3); margin-top:0; margin-bottom:0;">
+        <audio id="audio-intro-player" controls controlsList="nodownload">
+          <source id="audio-intro-source" src="" type="audio/mpeg">
+          Tu navegador no soporta el audio.
+        </audio>
+      </div>
+      <button class="btn" onclick="mostrar(12)" title="Siguiente" style="align-self:center; margin-top:-0.0125rem; position:absolute; right:7.5vw;">
+        <span class="arrow-right">→</span>
+      </button>
+    </div>
+    <div class="audio-overlay" id="texto-intro-contenido">
+      <div style="padding:1.2rem;">
+        <p>Cargando texto introductorio...</p>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    #pantalla11 {
+      justify-content: flex-start;
+      margin-top: 0;
+      padding: 10px 0 0 0 !important;
+      overflow-x: hidden !important;
+      overflow-y: hidden !important;
+    }
+    #pantalla11 .logo-alargado {
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+    }
+    #pantalla11 .audio-btn-row {
+      margin-top: 20px !important;
+      margin-bottom: 0 !important;
+    }
+    #pantalla11 .audio-player-container {
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      margin-left: 7.5vw !important;
+      margin-right: 0 !important;
+    }
+    #pantalla11 .audio-btn-row > .btn {
+      margin-top: 0 !important;
+    }
+    #pantalla11 .audio-overlay {
+      margin-top: 20px !important;
+      margin-bottom: 0 !important;
+    }
+    .audio-btn-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      width: 100%;
+    }
+    #pantalla11 .audio-overlay {
+      width: 85vw;
+      background: #f5a623;
+      border: 0.25rem solid #0074d9;
+      border-radius: 1.25rem;
+      margin-left: auto;
+      margin-right: auto;
+      color: #111;
+      box-shadow: 0 0.25rem 1.25rem rgba(0,0,0,0.08);
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
+      min-height: 4rem;
+      height: calc(100vh - 10px - 20px - 20px - 2.5rem);
+      max-height: calc(100vh - 10px - 20px - 20px - 2.5rem);
+      margin-bottom: 20px !important;
+    }
+  </style>
+
+  <!-- P12: Reto R-2 (padreid: "padre-intro", reto_id: R2-AvX-xx) -->
+  <!-- Sí/Yes/Oui/Sì/Ja/はい → P12 | No/NO/Non/Nee/いいえ → P1 -->
+  <div class="pantalla" id="pantalla12">
+    <div class="free-demo">FREE DEMO</div>
+    <img src="imagenes/imagenes-aplicación/logo-alargado.png" class="logo-alargado">
+    <div class="reto-box" id="reto-r2-box">
+      <h3 id="reto-r2-titulo">Reto 2</h3>
+      <p id="reto-r2-pregunta">Cargando reto...</p>
+      <div id="reto-r2-opciones"></div>
+      <button class="btn" id="btn-verificar-reto-r2" onclick="verificarRetoR2()" disabled title="Continuar">
+        <span class="arrow-right">→</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- P13: Pantalla de pago (desactivada de momento) -->
+  <div class="pantalla" id="pantalla13">
+    <div class="free-demo">FREE DEMO</div>
+    <div style="background:white; padding:1.875rem; border-radius:1.25rem; margin:1.25rem; max-width:31.25rem; box-shadow:0 0.375rem 1.5625rem rgba(0,0,0,0.4); text-align:center;">
+      <!-- TODO: Implementar pasarela de pago cuando se active -->
+      <div style="font-size:3rem; margin-bottom:1rem;">💳</div>
+      <p style="color:#333; font-size:1.2rem; font-weight:bold;">Pantalla de pago</p>
+      <p style="color:#666; font-size:0.9rem;">Próximamente</p>
+    </div>
+    <!-- De momento, saltar directamente a P13 -->
+    <button class="btn" onclick="mostrar(14)" title="Continuar" style="margin-top:1rem;">
+      <span class="arrow-right">→</span>
+    </button>
+  </div>
+
+  <!-- P14: Código de activación y email -->
+  <div class="pantalla" id="pantalla14" style="background-color:orange;">
+    <div class="free-demo">FREE DEMO</div>
+    <div style="background:white; padding:1.875rem; border-radius:1.25rem; margin:1.25rem; max-width:31.25rem; box-shadow:0 0.375rem 1.5625rem rgba(0,0,0,0.4);">
+      <div style="text-align:center; margin-bottom:1.25rem;">
+        <div style="display:flex; justify-content:center; align-items:flex-start; margin-bottom:0.625rem;">
+          <div style="font-size:3rem; margin-top:-0.125rem;">🔑</div>
+          <div style="font-size:3rem; margin-top:-0.125rem;">✒️</div>
+          <div style="font-size:3rem; margin-top:-0.125rem;">❓</div>
+        </div>
+      </div>
+      <div style="margin-bottom:1.25rem;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <span style="font-size:3rem; color:#666;">📧</span>
+          <div style="flex:1;">
+            <input type="email" id="input-email" placeholder="user@email.com" disabled style="width:100%; padding:0.75rem; border:0.125rem solid #ddd; border-radius:0.5rem; font-size:1rem; box-sizing:border-box; background:#f5f5f5; color:#999;">
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:1.5625rem;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <span style="font-size:3rem; color:#666; position:relative; top:-1.25rem;">🔐</span>
+          <div style="flex:1;">
+            <input type="text" id="input-codigo" placeholder="0000" maxlength="10" oninput="validarCodigo()" style="width:100%; padding:1.125rem; border:0.125rem solid #ddd; border-radius:0.75rem; font-size:1.75rem; text-align:center; letter-spacing:0.75rem; box-sizing:border-box; font-weight:bold;">
+            <div id="feedback-codigo" style="text-align:center; margin-top:0.5rem; font-size:2rem; height:2.5rem;"></div>
+          </div>
+        </div>
+      </div>
+      <button id="btn-iniciar-aventura" class="btn" onclick="iniciarAventura()" disabled title="Iniciar aventura">
+        <span class="arrow-right">→</span>
+        <span style="font-size:1.5rem;">🚀</span>
+      </button>
+    </div>
+    <div style="text-align:center; margin-top:0.9375rem;">
+      <div style="font-size:1rem; color:rgba(255,255,255,0.8);">🔑 → 0000</div>
+    </div>
+  </div>
+
+  <!-- Overlay: Mapa vintage de la aventura (se muestra al seleccionar aventura en P5) -->
+  <div id="mapa-vintage-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; background:rgba(0,0,0,0.95); justify-content:center; align-items:center;">
+    <div style="position:relative; width:90vw; height:90vh; background:white; border:0.3125rem solid #00ff00; border-radius:0.9375rem; box-shadow:0 0.9375rem 3.125rem rgba(0,0,0,0.7); overflow:visible;">
+      <button onclick="cerrarMapaVintage()" title="Cerrar mapa" style="position:absolute; top:-0.625rem; right:-0.625rem; width:3.75rem; height:3.75rem; background:#ff8c00; border:0.3125rem solid #ff0000; border-radius:50%; font-size:2.25rem; font-weight:bold; color:white; cursor:pointer; z-index:10000; display:flex; align-items:center; justify-content:center; box-shadow:0 0.25rem 0.75rem rgba(0,0,0,0.3);">&times;</button>
+      <img id="mapa-vintage-img" src="" alt="Mapa vintage" style="width:100%; height:100%; object-fit:contain; border-radius:0.625rem;">
+    </div>
+  </div>
+
+  <!-- Overlay: Aviso de audios no disponibles -->
+  <div id="audio-warning-overlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; background:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+    <div style="background:white; padding:2rem; border-radius:1.25rem; margin:1.25rem; max-width:90vw; box-shadow:0 0.375rem 1.5625rem rgba(0,0,0,0.5); text-align:center;">
+      <div style="font-size:3rem; margin-bottom:1rem;">🔇</div>
+      <p id="audio-warning-text" style="color:#333; font-size:1.1rem; line-height:1.5; margin:0 0 1.5rem 0;"></p>
+      <div style="display:flex; gap:1.25rem; justify-content:center;">
+        <button class="btn success" onclick="aceptarSinAudio()" style="min-width:5rem;">
+          <span id="audio-warning-yes" style="font-weight:bold;"></span>
+        </button>
+        <button class="btn error" onclick="rechazarSinAudio()" style="min-width:5rem;">
+          <span id="audio-warning-no" style="font-weight:bold;"></span>
+        </button>
+      </div>
     </div>
   </div>
 
   <script>
+    // ============================================================
+    // ESTADO GLOBAL DE SELECCIÓN
+    // ============================================================
     let idiomaSeleccionado = "";
     let aventuraSeleccionada = "";
+    let retoActualR1 = null;
+    let retoActualR2 = null;
+    let terminosCargados = false;
+    let audioCargado = false;
+    let textoCargado = false;
+    let retoCargadoR1 = false;
+    let retoCargadoR2 = false;
+    let puzzleCompletado = false;
+    let codigoValidado = false;
     
-    function mostrar(id) {
-      document.querySelectorAll(".pantalla").forEach(p => p.classList.remove("visible"));
-      document.getElementById("pantalla" + id).classList.add("visible");
+    // Datos cargados dinámicamente (se llenan desde los módulos)
+    let TERMINOS_DATOS = null;
+    let AUDIOS_DATOS = null;
+    let RETOS_DATOS = null;
+    let PUZZLES_DATOS = null;
+    let TEXTOS_DATOS = null;
+    let INDICE_AVENTURAS_DATOS = null;
+    let MAPEO_IDIOMAS_DATOS = null;
+    
+    // ============================================================
+    // FUNCIÓN: VERIFICAR SCROLL EN TÉRMINOS
+    // ============================================================
+    function checkTerminosScroll() {
+      const contenedor = document.getElementById('terminos-contenido');
+      const boton = document.getElementById('btn-aceptar-terminos');
+      if (contenedor && boton) {
+        const scrolledToBottom = contenedor.scrollTop + contenedor.clientHeight >= contenedor.scrollHeight - 5;
+        boton.disabled = !scrolledToBottom;
+        boton.style.opacity = scrolledToBottom ? '1' : '0.3';
+      }
     }
     
-    function confirmarIdioma() {
-      // Navegar a términos y condiciones
-      mostrar(4);
+    // ============================================================
+    // VERIFICAR SI UNA IMAGEN EXISTE (para puzzle)
+    // ============================================================
+    function verificarImagenExiste(url) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = url;
+      });
     }
     
-    function confirmarAventura() {
-      // Navegar al mapa e inicio
+    // ============================================================
+    // FUNCIÓN PRINCIPAL: MOSTRAR PANTALLA
+    // ============================================================
+    async function mostrar(id) {
+      // P8 (puzzle): verificar si la imagen del puzzle existe
+      if (id === 9) {
+        try {
+          const modulo = await import('./js/puzzles-aventuras.js');
+          PUZZLES_DATOS = modulo.PUZZLES_AVENTURAS;
+          const puzzleIntro = PUZZLES_DATOS?.INTRO?.['puzzle.html']?.puzzle_id?.find(p => p.id === 'PZ-intro');
+          const imagenPuzzle = puzzleIntro?.imagen || 'fotos-botones/logo-luna.jpg';
+          
+          const imagenExiste = await verificarImagenExiste(imagenPuzzle);
+          
+          if (!imagenExiste) {
+            console.warn('[SELECCION] Imagen del puzzle no encontrada:', imagenPuzzle, '- Saltando a P9');
+            puzzleCompletado = true;
+            notificarPadrePreparacion();
+            mostrar(10);
+            return;
+          }
+          console.log('[SELECCION] Imagen del puzzle encontrada:', imagenPuzzle);
+        } catch (error) {
+          console.warn('[SELECCION] Error verificando puzzle, saltando a P9:', error);
+          puzzleCompletado = true;
+          notificarPadrePreparacion();
+          mostrar(10);
+          return;
+        }
+      }
+      
+      // Pausar cualquier audio/video en reproducción al cambiar de pantalla
+      document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
+      document.querySelectorAll('video').forEach(v => { v.pause(); v.currentTime = 0; });
+      
+      // Ocultar todas las pantallas correctamente
+      document.querySelectorAll(".pantalla").forEach(p => {
+        p.classList.remove("visible");
+        p.style.display = "none";
+      });
+      const pantalla = document.getElementById("pantalla" + id);
+      if (pantalla) {
+        pantalla.classList.add("visible");
+        pantalla.style.display = "";
+        // Acciones específicas al mostrar ciertas pantallas
+        if (id === 5 && !terminosCargados) {
+          cargarTerminos();
+        } else if (id === 6) {
+          cargarAventurasDinamicamente();
+        } else if (id === 8 && !retoCargadoR1) {
+          cargarRetoR1();
+        } else if (id === 9) {
+          cargarPuzzle();
+          notificarPadrePreparacion();
+        } else if (id === 10) {
+          cargarVideoIntro();
+        } else if (id === 11) {
+          if (!audioCargado) cargarAudioIntro();
+          if (!textoCargado) cargarTextoIntro();
+        } else if (id === 12 && !retoCargadoR2) {
+          cargarRetoR2();
+        }
+      }
+    }
+    
+    // ============================================================
+    // P5: CARGAR TÉRMINOS DESDE js/terminos-aventuras.js
+    // ============================================================
+    async function cargarTerminos() {
+      const contenedor = document.getElementById('terminos-contenido');
+      try {
+        // Importar dinámicamente el módulo de términos
+        const modulo = await import('./js/terminos-aventuras.js');
+        TERMINOS_DATOS = modulo.TERMINOS_AVENTURAS;
+        
+        const idioma = idiomaSeleccionado || 'es';
+        const terminos = TERMINOS_DATOS?.terminos_idiomas?.[idioma];
+        
+        if (terminos && typeof terminos === 'string' && terminos.trim().length > 0) {
+          // El contenido ya es un string HTML
+          contenedor.innerHTML = terminos;
+          terminosCargados = true;
+          console.log('[SELECCION] Términos cargados para idioma:', idioma);
+        } else {
+          contenedor.innerHTML = '<p>Los términos para este idioma no están disponibles aún.</p>';
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando términos:', error);
+        contenedor.innerHTML = '<p>Error cargando términos. Por favor, continúa.</p>';
+      }
+    }
+    
+    // ============================================================
+    // P11: CARGAR AUDIO INTRO DESDE js/audios-aventuras.js
+    // (audio_id dinámico: audio-intro-xx según idioma)
+    // ============================================================
+    async function cargarAudioIntro() {
+      const audioPlayer = document.getElementById('audio-intro-player');
+      const audioSource = document.getElementById('audio-intro-source');
+      
+      try {
+        if (!AUDIOS_DATOS) {
+          const modulo = await import('./js/audios-aventuras.js');
+          AUDIOS_DATOS = modulo.AUDIOS_AVENTURAS;
+        }
+        
+        const idioma = idiomaSeleccionado || 'es';
+        const aventura = aventuraSeleccionada || 'Aventura1';
+        const audiosIdioma = AUDIOS_DATOS?.[aventura]?.[idioma];
+        
+        if (audiosIdioma && Array.isArray(audiosIdioma)) {
+          const audioIntro = audiosIdioma.find(a => a.id === `audio-intro-${idioma}`);
+          
+          if (audioIntro) {
+            audioSource.src = audioIntro.file;
+            audioPlayer.load();
+            audioCargado = true;
+            console.log('[SELECCION] Audio intro cargado:', audioIntro.file);
+          } else {
+            console.warn('[SELECCION] Audio intro no encontrado para id: audio-intro-' + idioma);
+          }
+        } else {
+          console.warn('[SELECCION] No hay audios para', aventura, idioma);
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando audio:', error);
+      }
+    }
+    
+    // ============================================================
+    // P8: CARGAR RETO R-1 DESDE js/retos-aventuras.js
+    // (reto_id dinámico: R1-AvX-xx según aventura e idioma)
+    // ============================================================
+    async function cargarRetoR1() {
+      const titulo = document.getElementById('reto-r1-titulo');
+      const pregunta = document.getElementById('reto-r1-pregunta');
+      const opciones = document.getElementById('reto-r1-opciones');
+      const caja = document.getElementById('reto-r1-box');
+      
+      try {
+        if (!RETOS_DATOS) {
+          const modulo = await import('./js/retos-aventuras.js');
+          RETOS_DATOS = modulo.RETOS_AVENTURAS;
+        }
+        
+        const idioma = idiomaSeleccionado || 'es';
+        const aventura = aventuraSeleccionada || 'Aventura1';
+        const retosIdioma = RETOS_DATOS?.[aventura]?.[idioma];
+        
+        if (retosIdioma && Array.isArray(retosIdioma)) {
+          // Buscar reto con número 1 (R1)
+          const retoR1 = retosIdioma.find(r => r.reto === 1);
+          
+          if (retoR1) {
+            retoActualR1 = retoR1;
+            titulo.textContent = `Reto ${retoR1.reto}`;
+            pregunta.textContent = retoR1.pregunta;
+            
+            opciones.innerHTML = '';
+            if (retoR1.opciones && Array.isArray(retoR1.opciones)) {
+              retoR1.opciones.forEach((opcion, index) => {
+                const div = document.createElement('div');
+                div.className = 'respuesta';
+                div.innerHTML = `
+                  <input type="radio" name="reto-r1" value="${opcion}" id="opcion-r1-${index}" onchange="habilitarBotonRetoR1()">
+                  <label for="opcion-r1-${index}">${opcion}</label>
+                  <span class="tick" style="display:none; color:#28a745;">✓</span>
+                  <span class="x" style="display:none; color:#dc3545;">✗</span>
+                `;
+                opciones.appendChild(div);
+              });
+            }
+            
+            retoCargadoR1 = true;
+            caja.style.borderColor = '#ccc';
+            console.log('[SELECCION] Reto R-1 cargado:', retoR1.id, retoR1.pregunta);
+          } else {
+            pregunta.textContent = 'Reto R-1 no encontrado';
+          }
+        } else {
+          pregunta.textContent = 'No hay retos para este idioma';
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando reto R1:', error);
+        pregunta.textContent = 'Error cargando reto';
+      }
+    }
+    
+    function habilitarBotonRetoR1() {
+      const seleccion = document.querySelector('input[name="reto-r1"]:checked');
+      const boton = document.getElementById('btn-verificar-reto-r1');
+      if (boton) {
+        boton.disabled = !seleccion;
+        boton.style.opacity = seleccion ? '1' : '0.3';
+      }
+    }
+    window.habilitarBotonRetoR1 = habilitarBotonRetoR1;
+
+    // ============================================================
+    // P8: VERIFICAR RESPUESTA DEL RETO R-1
+    // ============================================================
+    function verificarRetoR1() {
+      if (!retoActualR1) return;
+      
+      const seleccion = document.querySelector('input[name="reto-r1"]:checked');
+      const caja = document.getElementById('reto-r1-box');
+      const boton = document.getElementById('btn-verificar-reto-r1');
+      
+      if (!seleccion) return;
+      
+      const respuestaUsuario = seleccion.value;
+      const esCorrecta = retoActualR1.correctas && retoActualR1.correctas.includes(respuestaUsuario);
+      
+      const opcionDiv = seleccion.closest('.respuesta');
+      const tick = opcionDiv.querySelector('.tick');
+      const x = opcionDiv.querySelector('.x');
+      
+      if (esCorrecta) {
+        caja.style.borderColor = '#28a745';
+        tick.style.display = 'inline';
+        x.style.display = 'none';
+        boton.disabled = false;
+        boton.style.opacity = '1';
+        boton.classList.add('success');
+        document.querySelectorAll('input[name="reto-r1"]').forEach(input => { input.disabled = true; });
+        setTimeout(() => mostrar(9), 1500);
+      } else {
+        caja.style.borderColor = '#dc3545';
+        tick.style.display = 'none';
+        x.style.display = 'inline';
+        navigator.vibrate?.(300);
+        setTimeout(() => {
+          tick.style.display = 'none';
+          x.style.display = 'none';
+          caja.style.borderColor = '#ccc';
+        }, 2000);
+      }
+    }
+    
+    // ============================================================
+    // P10: CARGAR PUZZLE DESDE js/puzzles-aventuras.js
+    // ============================================================
+    async function cargarPuzzle() {
+      const iframe = document.getElementById('puzzle-iframe');
+      const btnContinuar = document.getElementById('btn-continuar-puzzle');
+      
+      try {
+        const modulo = await import('./js/puzzles-aventuras.js');
+        PUZZLES_DATOS = modulo.PUZZLES_AVENTURAS;
+        
+        // Buscar puzzle con id "PZ-intro" en INTRO
+        const puzzleIntro = PUZZLES_DATOS?.INTRO?.['puzzle.html']?.puzzle_id?.find(p => p.id === 'PZ-intro');
+        
+        if (puzzleIntro) {
+          // Cargar puzzle.html con aventura=INTRO para que encuentre PZ-intro
+          const imagenPuzzle = puzzleIntro.imagen || 'fotos-botones/logo-luna.jpg';
+          iframe.src = `puzzle.html?aventura=INTRO&id=${puzzleIntro.id}&noOverlay=1`;
+          console.log('[SELECCION] Puzzle cargado:', puzzleIntro.id, imagenPuzzle);
+          
+          // Escuchar mensajes de puzzle.html (envía strings planos)
+          // Secuencia: puzzle-state-completed/timeout → advance-to-next
+          // No eliminar listener hasta advance-to-next o navegación manual
+          window.addEventListener('message', function puzzleListener(event) {
+            const msg = event.data;
+            if (msg === 'puzzle-state-completed' || msg === 'puzzle-state-timeout') {
+              puzzleCompletado = true;
+              btnContinuar.disabled = false;
+              btnContinuar.style.opacity = '1';
+              btnContinuar.style.background = '#00aa00';
+            } else if (msg === 'advance-to-next') {
+              // El botón "continuar" interno de puzzle.html
+              puzzleCompletado = true;
+              window.removeEventListener('message', puzzleListener);
+              completarPuzzle();
+            }
+          });
+        } else {
+          // Habilitar botón de todas formas para no bloquear
+          btnContinuar.disabled = false;
+          btnContinuar.style.opacity = '1';
+          btnContinuar.style.background = '#00aa00';
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando puzzle:', error);
+        // Habilitar botón para no bloquear
+        btnContinuar.disabled = false;
+        btnContinuar.style.opacity = '1';
+      }
+    }
+    
+    // ============================================================
+    // P10: COMPLETAR PUZZLE Y CONTINUAR
+    // ============================================================
+    function completarPuzzle() {
       mostrar(10);
     }
     
-    function verificar() {
-      const seleccion = document.querySelector('input[name="op"]:checked');
-      const caja = document.getElementById("reto");
-      if (!seleccion) return;
-      if (seleccion.value === "7") {
-        caja.style.borderColor = "green";
-        seleccion.nextElementSibling.classList.add("tick", "correcto");
-        alert("🎉 ¡Correcto!");
-        // Después del reto demo, pasar a elección de aventura
-        setTimeout(() => mostrar(7), 1000);
-      } else {
-        caja.style.borderColor = "red";
-        seleccion.nextElementSibling.classList.add("x", "incorrecto");
-        navigator.vibrate?.(300);
+    // ============================================================
+    // P10: NOTIFICAR AL PADRE PARA PREPARAR LOS HIJOS
+    // Durante el puzzle, el padre tiene tiempo para comunicar
+    // idioma y aventura a los hijos 1,2,3,4,5
+    // ============================================================
+    function notificarPadrePreparacion() {
+      if (window.parent && window.parent !== window) {
+        console.log('[SELECCION] Notificando al padre para preparar hijos...');
+        window.parent.postMessage({
+          tipo: 'SELECCION.PREPARAR_HIJOS',
+          origen: 'seleccion',
+          destino: 'padre',
+          datos: {
+            idioma: idiomaSeleccionado || 'es',
+            aventura: aventuraSeleccionada || 'Aventura1',
+            timestamp: Date.now()
+          }
+        }, '*');
       }
+    }
+    
+    // ============================================================
+    // P11: VALIDAR CÓDIGO DE ACTIVACIÓN (CON FEEDBACK VISUAL)
+    // ============================================================
+    function validarCodigo() {
+      const inputCodigo = document.getElementById('input-codigo');
+      const inputEmail = document.getElementById('input-email');
+      const btnIniciar = document.getElementById('btn-iniciar-aventura');
+      const feedbackCodigo = document.getElementById('feedback-codigo');
+      
+      const codigo = inputCodigo.value.trim();
+      
+      // Código válido de prueba: "0000"
+      if (codigo === '0000') {
+        codigoValidado = true;
+        btnIniciar.disabled = false;
+        btnIniciar.style.opacity = '1';
+        btnIniciar.classList.add('success');
+        inputCodigo.style.borderColor = '#28a745';
+        if (inputEmail) inputEmail.style.borderColor = '#28a745';
+        feedbackCodigo.innerHTML = '<span class="visual-feedback success">✓</span>';
+      } else if (codigo.length >= 4) {
+        codigoValidado = false;
+        btnIniciar.disabled = true;
+        btnIniciar.style.opacity = '0.3';
+        btnIniciar.classList.remove('success');
+        btnIniciar.classList.add('error');
+        inputCodigo.style.borderColor = '#dc3545';
+        if (inputEmail) inputEmail.style.borderColor = '#dc3545';
+        feedbackCodigo.innerHTML = '<span class="visual-feedback error">✗</span>';
+      } else {
+        codigoValidado = false;
+        btnIniciar.disabled = true;
+        btnIniciar.style.opacity = '0.3';
+        btnIniciar.classList.remove('success', 'error');
+        inputCodigo.style.borderColor = '#ddd';
+        if (inputEmail) inputEmail.style.borderColor = '#ddd';
+        feedbackCodigo.innerHTML = '';
+      }
+    }
+    
+    // ============================================================
+    // FUNCIONES DE NAVEGACIÓN (actualizadas)
+    // ============================================================
+    function confirmarIdioma() {
+      terminosCargados = false; // Forzar recarga por si cambió el idioma
+      const EN_BUSCA_IMAGENES = { es: 'en-busca-español.png', en: 'en-busca-ingles.png', fr: 'en-busca-frances.png', it: 'en-busca-italiano.png', nl: 'en-busca-neerlandes.png', ja: 'en-busca-japones.png' };
+      const imgEl = document.getElementById('en-busca-imagen');
+      if (imgEl) imgEl.src = 'imagenes/imagenes-aplicación/' + (EN_BUSCA_IMAGENES[idiomaSeleccionado] || 'en-busca-español.png');
+      mostrar(4);
+    }
+    
+    // ============================================================
+    // TEXTOS DEL MODAL DE AVISO DE AUDIOS POR IDIOMA
+    // ============================================================
+    const AUDIO_WARNING_TEXTS = {
+      es: {
+        message: 'Los audios de esta aventura aún no están disponibles en este idioma. Sin embargo, puede disfrutar de los textos, imágenes, ubicaciones, retos y localización GPS. ¿Desea continuar?',
+        yes: 'SÍ',
+        no: 'NO'
+      },
+      en: {
+        message: 'Audio for this adventure is not yet available in this language. However, you can enjoy the texts, images, locations, challenges, and GPS navigation. Would you like to continue?',
+        yes: 'YES',
+        no: 'NO'
+      },
+      fr: {
+        message: 'Les audios de cette aventure ne sont pas encore disponibles dans cette langue. Cependant, vous pouvez profiter des textes, images, emplacements, défis et de la navigation GPS. Souhaitez-vous continuer ?',
+        yes: 'OUI',
+        no: 'NON'
+      },
+      it: {
+        message: 'Gli audio di questa avventura non sono ancora disponibili in questa lingua. Tuttavia, potete godervi i testi, le immagini, le posizioni, le sfide e la navigazione GPS. Desiderate continuare?',
+        yes: 'SÌ',
+        no: 'NO'
+      },
+      nl: {
+        message: 'De audio van dit avontuur is nog niet beschikbaar in deze taal. U kunt echter genieten van de teksten, afbeeldingen, locaties, uitdagingen en GPS-navigatie. Wilt u doorgaan?',
+        yes: 'JA',
+        no: 'NEE'
+      },
+      ja: {
+        message: 'このアドベンチャーの音声はまだこの言語でご利用いただけません。ただし、テキスト、画像、位置情報、チャレンジ、GPSナビゲーションはお楽しみいただけます。続けますか？',
+        yes: 'はい',
+        no: 'いいえ'
+      }
+    };
+
+    // ============================================================
+    // DETECCIÓN DE AUDIOS DISPONIBLES
+    // ============================================================
+    async function tieneAudiosDisponibles(aventura, idioma) {
+      try {
+        if (!AUDIOS_DATOS) {
+          const modulo = await import('./js/audios-aventuras.js');
+          AUDIOS_DATOS = modulo.AUDIOS_AVENTURAS;
+        }
+        const audiosIdioma = AUDIOS_DATOS?.[aventura]?.[idioma];
+        if (!audiosIdioma || !Array.isArray(audiosIdioma)) return false;
+        // Tiene audios si al menos un entry tiene file no vacío
+        return audiosIdioma.some(a => a.file && a.file.trim() !== '');
+      } catch (error) {
+        console.warn('[SELECCION] Error comprobando audios:', error);
+        return false;
+      }
+    }
+
+    function mostrarAvisoSinAudio(idioma) {
+      const textos = AUDIO_WARNING_TEXTS[idioma] || AUDIO_WARNING_TEXTS['es'];
+      document.getElementById('audio-warning-text').textContent = textos.message;
+      document.getElementById('audio-warning-yes').textContent = textos.yes;
+      document.getElementById('audio-warning-no').textContent = textos.no;
+      const overlay = document.getElementById('audio-warning-overlay');
+      overlay.style.display = 'flex';
+    }
+
+    function aceptarSinAudio() {
+      document.getElementById('audio-warning-overlay').style.display = 'none';
+      mostrar(8);
+    }
+
+    function rechazarSinAudio() {
+      document.getElementById('audio-warning-overlay').style.display = 'none';
+      mostrar(2);
+    }
+
+    async function confirmarAventura() {
+      const idioma = idiomaSeleccionado || 'es';
+      const aventura = aventuraSeleccionada || 'Aventura1';
+      const hayAudios = await tieneAudiosDisponibles(aventura, idioma);
+      if (hayAudios) {
+        mostrar(8);
+      } else {
+        mostrarAvisoSinAudio(idioma);
+      }
+    }
+    
+    // Función legacy para compatibilidad (ya no usada)
+    function verificar() {
+      verificarRetoR1();
+    }
+    
+    // ============================================================
+    // P8: CARGAR AVENTURAS DINÁMICAMENTE DESDE js/indice-aventuras.js
+    // ============================================================
+    async function cargarAventurasDinamicamente() {
+      const contenedor = document.getElementById('aventuras-dinamicas');
+      try {
+        // 1. Cargar índice base (siempre disponible, sin imports)
+        const modulo = await import(`./js/indice-aventuras.js?v=${Date.now()}`);
+        INDICE_AVENTURAS_DATOS = modulo.INDICE_AVENTURAS;
+        MAPEO_IDIOMAS_DATOS = modulo.MAPEO_IDIOMAS;
+
+        // 2. Intentar calcular totales dinámicamente (no bloqueante)
+        try {
+          const [modPadre, modCoord, modRetos, modAudios] = await Promise.all([
+            import('./js/aventuras-ID-padre.js'),
+            import('./js/coordenadas-aventuras.js'),
+            import('./js/retos-aventuras.js'),
+            import('./js/audios-aventuras.js')
+          ]);
+          for (const [id, meta] of Object.entries(INDICE_AVENTURAS_DATOS)) {
+            const elementos = modPadre.DATOS_PADRE?.[id]?.es?.elementosIDpadre || [];
+            meta.totalParadas    = elementos.filter(e => e.tipo === 'parada' || e.tipo === 'inicio').length;
+            meta.totalTramos     = elementos.filter(e => e.tipo === 'tramo').length;
+            const retos          = modRetos.RETOS_AVENTURAS?.[id]?.es;
+            meta.totalRetos      = Array.isArray(retos) ? retos.length : 0;
+            const coords         = modCoord.DATOS_AVENTURAS?.[id]?.[meta.claveCoord]?.coordenadas || [];
+            meta.totalMonumentos = coords.filter(c => c.tipo === 'referencia').length;
+            const audios         = modAudios.AUDIOS_AVENTURAS?.[id]?.es;
+            meta.totalAudios     = Array.isArray(audios) ? audios.filter(a => a.file && a.file.trim() !== '').length : 0;
+          }
+          console.log('[SELECCION] Totales calculados dinámicamente');
+        } catch (totalesErr) {
+          console.warn('[SELECCION] No se pudieron calcular totales dinámicos, usando 0:', totalesErr);
+        }
+
+        const idioma = idiomaSeleccionado || 'es';
+        contenedor.innerHTML = '';  // Limpiar contenido previo
+
+        const aventurasArray = Object.values(INDICE_AVENTURAS_DATOS);
+        console.log('[SELECCION] Total aventuras a cargar:', aventurasArray.length);
+
+        // Generar botones para cada aventura
+        aventurasArray.forEach(aventura => {
+          const disponibleEnIdioma = aventura.idiomas[idioma]?.disponible;
+          const disponibleGeneral = aventura.disponible;
+          const estaDisponible = disponibleGeneral && disponibleEnIdioma;
+          
+          const boton = document.createElement('button');
+          boton.className = 'btn';
+          boton.style.width = '100%';
+          
+          // Formatear tiempo máximo (minutos a horas)
+          const tiempoHoras = aventura.tiempoEstimado ? Math.round(aventura.tiempoEstimado / 60) : 0;
+          const vehiculo = aventura.vehiculo || '';
+          const distancia = aventura.distanciaKm ? `±${aventura.distanciaKm}km` : '';
+          const stats = `<span style="font-size:1.6em;">${vehiculo}</span>${distancia} <span style="font-size:1.6em;">🏛️</span>${aventura.totalMonumentos || 0} <span style="font-size:1.6em;">📍</span>${aventura.totalParadas || 0} <span style="font-size:1.6em;">🧩</span>${aventura.totalRetos || 0} <span style="font-size:1.6em;">⏳</span>max${tiempoHoras}h`;
+          
+          const innerStyle = 'display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:0.4em; width:100%;';
+          if (estaDisponible) {
+            boton.onclick = () => seleccionarAventura(aventura.id);
+            boton.innerHTML = `<span style="font-weight:bold;">${aventura.nombre}</span><span style="opacity:0.75; font-size:0.8em;">${stats}</span>`;
+          } else {
+            boton.disabled = true;
+            boton.innerHTML = `<span style="font-weight:bold; opacity:0.5;">${aventura.nombre}</span><span style="opacity:0.3; font-size:0.8em;">${stats}</span>`;
+          }
+          boton.style.flexWrap = 'wrap';
+          boton.style.justifyContent = 'center';
+          boton.style.gap = '0.4em';
+          
+          contenedor.appendChild(boton);
+        });
+        
+        // Calcular font-size proporcional al número de botones y altura de pantalla
+        const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize);
+        const usableH = window.innerHeight - 4.25 * remPx; // 3rem arriba (FREE DEMO) + 1.25rem abajo
+        const alturaBoton = usableH / aventurasArray.length;
+        const fontSize = Math.max(10, Math.round(Math.min(alturaBoton * 0.32, 2 * remPx)));
+        contenedor.style.setProperty('--btn-font-size', fontSize + 'px');
+
+        console.log('[SELECCION] Aventuras cargadas dinámicamente para idioma:', idioma);
+      } catch (error) {
+        console.error('[SELECCION] Error cargando aventuras:', error);
+        contenedor.innerHTML = '<p style="color:white; text-align:center;">Error cargando aventuras</p>';
+      }
+    }
+    
+    // ============================================================
+    // P5→P6: MOSTRAR/CERRAR MAPA VINTAGE DE LA AVENTURA
+    // ============================================================
+    function mostrarMapaVintage() {
+      const overlay = document.getElementById('mapa-vintage-overlay');
+      const img = document.getElementById('mapa-vintage-img');
+      if (!overlay || !img) return;
+      
+      const aventura = aventuraSeleccionada || 'Aventura1';
+      const num = aventura.match(/\d+/)?.[0] || '1';
+      // Intentar ambas variantes: Av1_mapa.jpg vs Av2_Mapa.jpg
+      const rutaMapa = `imagenes/imagenes-mapas-vintage/Av${num}_${num === '1' ? 'mapa' : 'Mapa'}.jpg`;
+      
+      img.src = rutaMapa;
+      img.onerror = function() {
+        const rutaAlt = `imagenes/imagenes-mapas-vintage/Av${num}_${num === '1' ? 'Mapa' : 'mapa'}.jpg`;
+        img.src = rutaAlt;
+      };
+      overlay.style.display = 'flex';
+      console.log('[SELECCION] Mapa vintage mostrado:', rutaMapa);
+    }
+
+    function cerrarMapaVintage() {
+      const overlay = document.getElementById('mapa-vintage-overlay');
+      if (overlay) overlay.style.display = 'none';
+      mostrar(7);
+    }
+
+    // ============================================================
+    // P10: CARGAR VIDEO INTRODUCTORIO
+    // ============================================================
+    function cargarVideoIntro() {
+      const video = document.getElementById('video-intro-player');
+      const source = document.getElementById('video-intro-source');
+      const placeholder = document.getElementById('video-intro-placeholder');
+
+      // TODO: Establecer la ruta del video introductorio aquí
+      const rutaVideo = '';
+
+      if (rutaVideo) {
+        source.src = rutaVideo;
+        video.load();
+        video.style.display = '';
+        if (placeholder) placeholder.style.display = 'none';
+        console.log('[SELECCION] Video intro cargado:', rutaVideo);
+      } else {
+        video.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
+        console.log('[SELECCION] Video intro: sin ruta, mostrando placeholder');
+      }
+    }
+
+    // ============================================================
+    // P11: CARGAR TEXTO INTRO DESDE js/textos-aventuras.js
+    // (texto_id dinámico: txt-intro-xx según idioma)
+    // ============================================================
+    async function cargarTextoIntro() {
+      const contenedor = document.getElementById('texto-intro-contenido');
+      try {
+        if (!TEXTOS_DATOS) {
+          const modulo = await import('./js/textos-aventuras.js');
+          TEXTOS_DATOS = modulo.TEXTOS_AVENTURAS;
+        }
+        const idioma = idiomaSeleccionado || 'es';
+        const aventura = aventuraSeleccionada || 'Aventura1';
+        const textosIdioma = TEXTOS_DATOS?.[aventura]?.[idioma];
+        if (textosIdioma && Array.isArray(textosIdioma)) {
+          const textoIntro = textosIdioma.find(t => t.id === `txt-intro-${idioma}`);
+          if (textoIntro && textoIntro.content) {
+            contenedor.innerHTML = `<div style="padding:1.2rem;">${textoIntro.content}</div>`;
+            textoCargado = true;
+            console.log('[SELECCION] Texto intro cargado para idioma:', idioma);
+          } else {
+            contenedor.innerHTML = '<div style="padding:1.2rem;"><p>Texto introductorio no disponible aún.</p></div>';
+          }
+        } else {
+          contenedor.innerHTML = '<div style="padding:1.2rem;"><p>No hay textos para este idioma.</p></div>';
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando texto intro:', error);
+        contenedor.innerHTML = '<div style="padding:1.2rem;"><p>Error cargando texto.</p></div>';
+      }
+    }
+
+    // ============================================================
+    // P12: CARGAR RETO R-2 DESDE js/retos-aventuras.js
+    // (reto_id dinámico: R2-AvX-xx según aventura e idioma)
+    // ============================================================
+    async function cargarRetoR2() {
+      const titulo = document.getElementById('reto-r2-titulo');
+      const pregunta = document.getElementById('reto-r2-pregunta');
+      const opciones = document.getElementById('reto-r2-opciones');
+      const caja = document.getElementById('reto-r2-box');
+      try {
+        if (!RETOS_DATOS) {
+          const modulo = await import('./js/retos-aventuras.js');
+          RETOS_DATOS = modulo.RETOS_AVENTURAS;
+        }
+        const idioma = idiomaSeleccionado || 'es';
+        const aventura = aventuraSeleccionada || 'Aventura1';
+        const retosIdioma = RETOS_DATOS?.[aventura]?.[idioma];
+        if (retosIdioma && Array.isArray(retosIdioma)) {
+          const retoR2 = retosIdioma.find(r => r.reto === 2);
+          if (retoR2) {
+            retoActualR2 = retoR2;
+            titulo.textContent = `Reto ${retoR2.reto}`;
+            pregunta.textContent = retoR2.pregunta;
+            opciones.innerHTML = '';
+            if (retoR2.opciones && Array.isArray(retoR2.opciones)) {
+              retoR2.opciones.forEach((opcion, index) => {
+                const div = document.createElement('div');
+                div.className = 'respuesta';
+                div.innerHTML = `
+                  <input type="radio" name="reto-r2" value="${opcion}" id="opcion-r2-${index}" onchange="habilitarBotonRetoR2()">
+                  <label for="opcion-r2-${index}">${opcion}</label>
+                  <span class="tick" style="display:none; color:#28a745;">✓</span>
+                  <span class="x" style="display:none; color:#dc3545;">✗</span>
+                `;
+                opciones.appendChild(div);
+              });
+            }
+            retoCargadoR2 = true;
+            caja.style.borderColor = '#ccc';
+            console.log('[SELECCION] Reto R-2 cargado:', retoR2.id, retoR2.pregunta);
+          } else {
+            pregunta.textContent = 'Reto R-2 no encontrado';
+          }
+        } else {
+          pregunta.textContent = 'No hay retos para este idioma';
+        }
+      } catch (error) {
+        console.error('[SELECCION] Error cargando reto R2:', error);
+        pregunta.textContent = 'Error cargando reto';
+      }
+    }
+
+    function habilitarBotonRetoR2() {
+      const seleccion = document.querySelector('input[name="reto-r2"]:checked');
+      const boton = document.getElementById('btn-verificar-reto-r2');
+      if (boton) {
+        boton.disabled = !seleccion;
+        boton.style.opacity = seleccion ? '1' : '0.3';
+      }
+    }
+    window.habilitarBotonRetoR2 = habilitarBotonRetoR2;
+
+    // ============================================================
+    // P12: VERIFICAR RESPUESTA DEL RETO R-2
+    // opciones[0] = afirmativa (Sí/Yes/Oui/Sì/Ja/はい) → P12
+    // opciones[1] = negativa (No/NO/Non/Nee/いいえ) → P1
+    // correctas: ["?"] = cualquier respuesta aceptada, la navegación depende de cuál
+    // ============================================================
+    function verificarRetoR2() {
+      if (!retoActualR2) return;
+      const seleccion = document.querySelector('input[name="reto-r2"]:checked');
+      const caja = document.getElementById('reto-r2-box');
+      const boton = document.getElementById('btn-verificar-reto-r2');
+      if (!seleccion) return;
+      const respuestaUsuario = seleccion.value;
+      const esAfirmativa = retoActualR2.opciones && retoActualR2.opciones[0] === respuestaUsuario;
+      const opcionDiv = seleccion.closest('.respuesta');
+      const tick = opcionDiv.querySelector('.tick');
+      caja.style.borderColor = '#28a745';
+      tick.style.display = 'inline';
+      boton.disabled = false;
+      boton.style.opacity = '1';
+      boton.classList.add('success');
+      document.querySelectorAll('input[name="reto-r2"]').forEach(input => { input.disabled = true; });
+      if (esAfirmativa) {
+        console.log('[SELECCION] Reto R2: respuesta afirmativa → P12');
+        setTimeout(() => mostrar(13), 1500);
+      } else {
+        console.log('[SELECCION] Reto R2: respuesta negativa → reinicio a P1');
+        setTimeout(() => {
+          reiniciarSeleccion();
+          mostrar(1);
+        }, 1500);
+      }
+    }
+    
+    // ============================================================
+    // REINICIAR ESTADO DE SELECCIÓN (cuando el usuario dice No en R2)
+    // ============================================================
+    function reiniciarSeleccion() {
+      idiomaSeleccionado = "";
+      aventuraSeleccionada = "";
+      retoActualR1 = null;
+      retoActualR2 = null;
+      terminosCargados = false;
+      audioCargado = false;
+      textoCargado = false;
+      retoCargadoR1 = false;
+      retoCargadoR2 = false;
+      puzzleCompletado = false;
+      codigoValidado = false;
+      console.log('[SELECCION] Estado reiniciado');
     }
   </script>
 
@@ -166,7 +1250,7 @@
                     destino: mensaje.destino,
                     datos: mensaje.datos,
                     timestamp: Date.now()
-                }, window.location.origin);
+                }, '*'); // Usar '*' para permitir file:// URLs
                 return Promise.resolve();
             } catch (e) {
                 console.error('[seleccion] Error enviando mensaje via postMessage:', e);
@@ -240,7 +1324,7 @@
                         datos: mensaje.datos,
                         timestamp: Date.now(),
                         requiereConfirmacion: true
-                    }, window.location.origin);
+                    }, '*'); // Usar '*' para permitir file:// URLs
                 } catch (e) {
                     clearTimeout(timeout);
                     window.removeEventListener('message', confirmListener);
@@ -281,11 +1365,32 @@
                 // NOTA: No verificar __CONTROLADOR_REGISTRADOS aquí porque ya se hace en registrarControladorSeguro
                 // La verificación duplicada causaba que el listener nunca se añadiera
                 
-                // Registrar listener local para este tipo de mensaje
-                window.addEventListener('message', function adapterListener(event) {
+                // Registrar listener local para este tipo de mensaje con soporte para confirmaciones automáticas
+                window.addEventListener('message', async function adapterListener(event) {
                     if (event.source === window.parent && event.data && event.data.tipo === tipo) {
                         try {
-                            handler(event.data);
+                            // Ejecutar handler y capturar resultado
+                            const resultado = await handler(event.data);
+                            
+                            // Si el mensaje requería confirmación y el handler devolvió resultado, enviar confirmación automática
+                            if (event.data.requiereConfirmacion && event.data.id && resultado !== undefined) {
+                                try {
+                                    const confirmacion = {
+                                        tipo: (typeof TIPOS_MENSAJE !== 'undefined' && TIPOS_MENSAJE.SISTEMA && TIPOS_MENSAJE.SISTEMA.CONFIRMACION) || 'SISTEMA.CONFIRMACION',
+                                        idOriginal: event.data.id,
+                                        origen: iframeId,
+                                        destino: event.data.origen || 'padre',
+                                        timestamp: Date.now(),
+                                        datos: resultado
+                                    };
+                                    if (window.parent && window.parent !== window) {
+                                        window.parent.postMessage(confirmacion, '*');
+                                        (window.logger || console).info && (window.logger || console).info(`[messagingAdapter] Auto-confirmación enviada para ${event.data.id}`);
+                                    }
+                                } catch (confError) {
+                                    (window.logger || console).error && (window.logger || console).error(`[messagingAdapter] Error enviando confirmación:`, confError);
+                                }
+                            }
                         } catch (e) {
                             (window.logger || console).error && (window.logger || console).error(`[messagingAdapter] Error en handler ${tipo}:`, e && e.message);
                         }
@@ -301,7 +1406,7 @@
              */
             enviarMensajeCentral: async function(mensaje) {
                 if (window.parent && window.parent !== window) {
-                    window.parent.postMessage(mensaje, window.location.origin);
+                    window.parent.postMessage(mensaje, '*'); // Usar '*' para permitir file:// URLs
                     return { exito: true, metodo: 'postMessage' };
                 }
                 return { exito: false, error: 'No hay padre disponible' };
@@ -788,7 +1893,7 @@
                     logger.info(`${logPrefix} Cambio de modo a "${modo}" efectuado (componente de selección)`);
                     await enviarMensaje({
                         destino: mensaje.origen,
-                        tipo: 'SISTEMA.CAMBIO_MODO_EFECTUADO', // String literal
+                        tipo: TIPOS_MENSAJE.SISTEMA.CAMBIO_MODO_EFECTUADO,
                         origen: CONFIG_HIJO.IFRAME_ID, // String literal
                         datos: { 
                             modo, 
@@ -848,7 +1953,15 @@
             estadoComponente.idiomaSeleccionado = idioma;
             estadoComponente.ultimaInteraccion = Date.now();
             window.idiomaSeleccionado = idioma; // Para funciones legacy
-            
+            idiomaSeleccionado = idioma; // Variable local usada por cargarTerminos, cargarRetoR1, confirmarAventura
+
+            // Resetear flags de contenido para que todo se recargue en el nuevo idioma
+            terminosCargados = false;
+            audioCargado = false;
+            textoCargado = false;
+            retoCargadoR1 = false;
+            retoCargadoR2 = false;
+
             logger.info(`[SELECCION] Idioma seleccionado: ${idioma}`);
             
             // Enviar mensaje al padre
@@ -864,11 +1977,11 @@
             
             logger.debug(`[SELECCION] Mensaje IDIOMA_SELECCIONADO enviado al padre`);
             
-            // Actualizar texto de confirmación
-            const textoIdioma = document.getElementById('idioma-seleccionado-texto');
-            if (textoIdioma) {
-                const nombresIdiomas = { 'es': 'Español', 'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'nl': 'Nederlands', 'ja': '日本語' };
-                textoIdioma.textContent = nombresIdiomas[idioma] || idioma;
+            // Actualizar bandera de confirmación en P3
+            const banderaIdioma = document.getElementById('idioma-bandera-confirmacion');
+            if (banderaIdioma) {
+                const banderasIdiomas = { 'es': 'Bandera España.png', 'en': 'Bandera habla inglesa.png', 'fr': 'Bandera Francia.png', 'it': 'Bandera Italia.png', 'nl': 'Bandera Paises bajos.png', 'ja': 'Bandera Japon.png' };
+                banderaIdioma.src = `imagenes/imagenes-aplicación/${banderasIdiomas[idioma] || banderasIdiomas['es']}`;
             }
             
             // Navegar a confirmación de idioma
@@ -888,6 +2001,7 @@
             estadoComponente.aventuraSeleccionada = aventura;
             estadoComponente.ultimaInteraccion = Date.now();
             window.aventuraSeleccionada = aventura;
+            aventuraSeleccionada = aventura; // Variable local usada por cargarRetoR1, confirmarAventura
             
             logger.info(`[SELECCION] Aventura seleccionada: ${aventura}`);
             
@@ -905,17 +2019,30 @@
             
             logger.debug(`[SELECCION] Mensaje AVENTURA_SELECCIONADA enviado al padre`);
             
-            // Actualizar texto de confirmación
+            // Actualizar texto de confirmación con nombre completo
             const textoAventura = document.getElementById('aventura-seleccionada-texto');
             if (textoAventura) {
-                textoAventura.textContent = aventura;
+                // Mapeo de IDs a nombres completos
+                const nombresAventuras = {
+                    'Aventura1': 'Aventura 1 - València centro histórico 1',
+                    'Aventura2': 'Aventura 2 - València centro histórico 2',
+                    'Aventura3': 'Aventura 3 - València Ciudad de las Artes y las Ciencias',
+                    'Aventura4': 'Aventura 4 - València Parque de Cabecera y Viveros',
+                    'Aventura5': 'Aventura 5 - València murallas',
+                    'AventuraFallas': 'Aventura Especial - València en Fallas',
+                    'Aventura34km': 'Aventura 34 kilómetros'
+                };
+                textoAventura.textContent = nombresAventuras[aventura] || aventura;
             }
             
-            // Navegar a puzzle
-            mostrar(8);
+            // Sincronizar variable global del primer script
+            window.aventuraSeleccionada = aventura;
+            
+            // Mostrar mapa vintage → al cerrar navega a P6 (confirmación)
+            mostrarMapaVintage();
         } catch (error) {
             logger.error(`[SELECCION] Error seleccionando aventura:`, error);
-            mostrar(8);
+            mostrarMapaVintage();
         }
     };
 
@@ -978,10 +2105,10 @@
             });
             
             // Navegar a audio intro
-            mostrar(5);
+            mostrar(6);
         } catch (error) {
             logger.error(`[SELECCION] Error aceptando términos:`, error);
-            mostrar(5);
+            mostrar(6);
         }
     };
 
@@ -1000,56 +2127,15 @@
         console.log('📋 [SELECCION] inicializarLogicaSeleccion() - Lógica de menú visible activada');
         // Aquí se puede agregar lógica adicional que necesite ejecutarse después de la confirmación del padre
     }
+
+    // Escuchar mensaje del padre para navegar a una pantalla específica (ej. tras elegir otra aventura)
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.tipo === TIPOS_MENSAJE.NAVEGACION_PANTALLA && event.data.datos && event.data.datos.pantalla) {
+            console.log('📋 [SELECCION] NAVEGAR_PANTALLA recibido → pantalla', event.data.datos.pantalla);
+            mostrar(event.data.datos.pantalla);
+        }
+    });
   </script>
-
-<!-- P7: Elección de Aventura -->
-<div class="pantalla" id="pantalla7">
-  <div class="free-demo">FREE DEMO</div>
-  <h2>Elección de Aventura</h2>
-  <div class="aventuras-lista">
-    <button class="btn" onclick="seleccionarAventura('Aventura1')">Aventura 1<br><small>València histórica 1<br>Tiempo máximo: 60h</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 2<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 3<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 4<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 5<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura Fallas<br><small>Soon</small></button>
-    <button class="btn" disabled style="opacity:0.5;">Aventura 34Km<br><small>Soon</small></button>
-  </div>
-</div>
-
-<!-- P8: Puzzle -->
-<div class="pantalla" id="pantalla8">
-  <div class="free-demo">FREE DEMO</div>
-  <h2>Puzzle de Bienvenida</h2>
-  <p>Completa el puzzle para continuar</p>
-  <div id="puzzle-container" style="width:300px;height:300px;background:#333;margin:20px auto;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-    <p style="color:#999;">[Puzzle en desarrollo]</p>
-  </div>
-  <button class="btn" onclick="mostrar(9)">Completar Puzzle</button>
-</div>
-
-<!-- P9: Confirmación de aventura -->
-<div class="pantalla" id="pantalla9">
-  <div class="free-demo">FREE DEMO</div>
-  <h2>¿Confirmas la aventura seleccionada?</h2>
-  <p id="aventura-seleccionada-texto">Aventura 1 - València histórica 1</p>
-  <div style="display:flex; gap:20px; justify-content:center;">
-    <button class="btn" onclick="confirmarAventura()">Sí, comenzar</button>
-    <button class="btn" style="background-color:#666;" onclick="mostrar(7)">No, cambiar</button>
-  </div>
-</div>
-
-<!-- P10: Mapa e inicio -->
-<div class="pantalla" id="pantalla10" style="background-color:orange;">
-  <h2>Su Aventura comienza aquí</h2>
-  <p style="background:white;color:black;padding:10px;border-radius:10px;border:2px solid yellow;">
-    Por favor pulse el botón para iniciar la aventura
-  </p>
-  <div style="margin:20px;">
-    <button class="btn" onclick="iniciarAventura()">🚀 Iniciar Aventura</button>
-  </div>
-  <p style="font-size:12px;color:#ccc;">Al pulsar, se cargará el mapa y comenzará la experiencia guiada.</p>
-</div>
 
 </body>
 </html>
