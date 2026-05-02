@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Test Async Handler Confirmation</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #status { font-size: 18px; font-weight: bold; margin: 20px 0; }
+        #log { white-space: pre-wrap; background: #f7f7f7; padding: 10px; border: 1px solid #ddd; }
+        .pass { color: green; }
+        .fail { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Test: Async Message Handler Confirmation</h1>
+    <p>This test verifies that async message handlers can send confirmations without Promise cloning errors.</p>
+    <div id="status">Running...</div>
+    <div id="log"></div>
+
+    <script type="module">
+        const logEl = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+        
+        function log(message) {
+            console.log(message);
+            logEl.textContent += message + '\n';
+        }
+        
+        function setStatus(status, message) {
+            statusEl.textContent = message;
+            statusEl.className = status;
+        }
+
+        // Import mensajeria module
+        let mensajeria;
+        try {
+            mensajeria = await import('../js/mensajeria.js');
+            log('✅ Mensajeria module loaded');
+        } catch (error) {
+            log('❌ Failed to load mensajeria module: ' + error.message);
+            setStatus('fail', 'FAIL: Could not load mensajeria');
+            throw error;
+        }
+
+        // Import constants
+        let TIPOS_MENSAJE;
+        try {
+            const constants = await import('../js/constants.js');
+            TIPOS_MENSAJE = constants.TIPOS_MENSAJE;
+            log('✅ Constants loaded');
+        } catch (error) {
+            log('❌ Failed to load constants: ' + error.message);
+            setStatus('fail', 'FAIL: Could not load constants');
+            throw error;
+        }
+
+        // Initialize mensajeria
+        try {
+            await mensajeria.inicializarMensajeria({ tipo: 'test', id: 'test-parent' });
+            log('✅ Mensajeria initialized');
+        } catch (error) {
+            log('❌ Failed to initialize mensajeria: ' + error.message);
+            setStatus('fail', 'FAIL: Could not initialize mensajeria');
+            throw error;
+        }
+
+        // Test 1: Register an async handler that doesn't explicitly return anything
+        let test1Executed = false;
+        mensajeria.registrarControlador('TEST.ASYNC_NO_RETURN', async (mensaje) => {
+            log('  Handler TEST.ASYNC_NO_RETURN called');
+            test1Executed = true;
+            // Simulate async work
+            await new Promise(resolve => setTimeout(resolve, 10));
+            // No explicit return - returns undefined wrapped in Promise
+        });
+        log('✅ Registered async handler TEST.ASYNC_NO_RETURN');
+
+        // Test 2: Register an async handler that returns a value
+        let test2Executed = false;
+        mensajeria.registrarControlador('TEST.ASYNC_WITH_RETURN', async (mensaje) => {
+            log('  Handler TEST.ASYNC_WITH_RETURN called');
+            test2Executed = true;
+            await new Promise(resolve => setTimeout(resolve, 10));
+            return { success: true, data: 'test-result' };
+        });
+        log('✅ Registered async handler TEST.ASYNC_WITH_RETURN');
+
+        // Test 3: Register a sync handler
+        let test3Executed = false;
+        mensajeria.registrarControlador('TEST.SYNC_HANDLER', (mensaje) => {
+            log('  Handler TEST.SYNC_HANDLER called');
+            test3Executed = true;
+            return { success: true, sync: true };
+        });
+        log('✅ Registered sync handler TEST.SYNC_HANDLER');
+
+        // Listen for errors
+        let errorOccurred = false;
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            const message = args.join(' ');
+            if (message.includes('could not be cloned') || message.includes('Promise')) {
+                errorOccurred = true;
+                log('❌ ERROR DETECTED: ' + message);
+            }
+            originalConsoleError.apply(console, args);
+        };
+
+        // Test sending messages with requiereConfirmacion
+        log('\n🧪 Test 1: Sending message to async handler without return value');
+        try {
+            window.postMessage({
+                tipo: 'TEST.ASYNC_NO_RETURN',
+                origen: 'test-sender',
+                datos: { test: 'data' },
+                requiereConfirmacion: true,
+                timestamp: Date.now()
+            }, window.location.origin);
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            if (errorOccurred) {
+                log('❌ Test 1 FAILED: Error occurred');
+            } else if (!test1Executed) {
+                log('❌ Test 1 FAILED: Handler not executed');
+            } else {
+                log('✅ Test 1 PASSED');
+            }
+        } catch (error) {
+            log('❌ Test 1 FAILED with exception: ' + error.message);
+            errorOccurred = true;
+        }
+
+        log('\n🧪 Test 2: Sending message to async handler with return value');
+        try {
+            window.postMessage({
+                tipo: 'TEST.ASYNC_WITH_RETURN',
+                origen: 'test-sender',
+                datos: { test: 'data' },
+                requiereConfirmacion: true,
+                timestamp: Date.now()
+            }, window.location.origin);
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            if (errorOccurred) {
+                log('❌ Test 2 FAILED: Error occurred');
+            } else if (!test2Executed) {
+                log('❌ Test 2 FAILED: Handler not executed');
+            } else {
+                log('✅ Test 2 PASSED');
+            }
+        } catch (error) {
+            log('❌ Test 2 FAILED with exception: ' + error.message);
+            errorOccurred = true;
+        }
+
+        log('\n🧪 Test 3: Sending message to sync handler');
+        try {
+            window.postMessage({
+                tipo: 'TEST.SYNC_HANDLER',
+                origen: 'test-sender',
+                datos: { test: 'data' },
+                requiereConfirmacion: true,
+                timestamp: Date.now()
+            }, window.location.origin);
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            if (errorOccurred) {
+                log('❌ Test 3 FAILED: Error occurred');
+            } else if (!test3Executed) {
+                log('❌ Test 3 FAILED: Handler not executed');
+            } else {
+                log('✅ Test 3 PASSED');
+            }
+        } catch (error) {
+            log('❌ Test 3 FAILED with exception: ' + error.message);
+            errorOccurred = true;
+        }
+
+        // Final result
+        log('\n' + '='.repeat(50));
+        if (errorOccurred) {
+            setStatus('fail', '❌ FAIL: Promise cloning error detected');
+        } else if (test1Executed && test2Executed && test3Executed) {
+            setStatus('pass', '✅ PASS: All tests passed');
+        } else {
+            setStatus('fail', '❌ FAIL: Some handlers were not executed');
+        }
+
+        // Restore console.error
+        console.error = originalConsoleError;
+    </script>
+</body>
+</html>
